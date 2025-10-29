@@ -434,118 +434,15 @@ const PublicVoiceGenerator = () => {
             throw new Error(`프록시 오류 (${proxyResponse.status}): ${errorText}`);
           }
         } catch (proxyError: any) {
-          console.warn("Supabase 프록시 실패, 직접 호출 시도:", proxyError.message);
-          // 프록시 실패 시 직접 호출로 진행
-        }
-      }
-
-      // 2. 직접 API 호출 시도 (프록시 실패 또는 비활성화 시)
-      for (const baseUrl of possibleBaseUrls) {
-        const endpoint = `${baseUrl}/text-to-speech/${selectedVoice}?output_format=mp3`;
-        
-        try {
-          console.log(`Supertone API 직접 호출 시도: ${endpoint}`);
-          
-          const headers: Record<string, string> = {
-            "Content-Type": "application/json",
-            "x-sup-api-key": apiKey,
-          };
-          
-          // Supertone API 요청 본문 형식
-          // 참고: https://docs.supertoneapi.com/en/user-guide/text-to-speech
-          const styleValue = voiceSettings.emotion.customPrompt || 
-                            (voiceSettings.emotion.preset === "A" ? "neutral" : 
-                             voiceSettings.emotion.preset === "B" ? "happy" : "neutral");
-          
-          const requestBody: Record<string, any> = {
-            text: customText,
-            language: "ko", // 필수: 한국어
-            style: styleValue, // 선택: neutral, happy 등 (기본값 사용 가능)
-            model: "sona_speech_1", // 선택: 기본 모델
-          };
-          
-          // voice_settings 객체 구성 (고급 옵션)
-          // pitch_shift: -12 ~ +12, pitch_variance: 0.1 ~ 2, speed: 0.5 ~ 2
-          const voiceSettingsObj: Record<string, number> = {
-            pitch_shift: Math.max(-12, Math.min(12, Math.round(voiceSettings.pitch / 8.33))), // -100~100을 -12~12로 변환
-            pitch_variance: 1, // 기본값
-            speed: voiceSettings.readingSpeed.preset === "빠름" ? 1.3 : 
-                   voiceSettings.readingSpeed.preset === "느림" ? 0.7 : 1.0, // 0.5 ~ 2 범위
-          };
-          
-          // voice_settings가 기본값이 아닌 경우에만 추가
-          if (voiceSettingsObj.pitch_shift !== 0 || voiceSettingsObj.pitch_variance !== 1 || voiceSettingsObj.speed !== 1) {
-            requestBody.voice_settings = voiceSettingsObj;
-          }
-          
-          response = await fetch(endpoint, {
-            method: "POST",
-            headers,
-            body: JSON.stringify(requestBody),
+          console.error("Supertone 음성 생성 실패:", proxyError.message);
+          toast({
+            title: "❌ 음성 생성 실패",
+            description: proxyError.message || "서버 오류가 발생했습니다.",
+            variant: "destructive",
           });
-            
-          if (response.ok) {
-            console.log(`✅ Supertone API 성공: ${endpoint}`);
-            lastEndpoint = endpoint;
-            break; // 성공한 엔드포인트를 찾았으므로 종료
-          } else if (response.status === 401 || response.status === 403) {
-            // 인증 오류
-            const errorText = await response.text();
-            console.warn(`인증 실패 (${response.status}): ${endpoint} - ${errorText}`);
-            lastError = new Error(`인증 실패: ${errorText}`);
-            continue;
-          } else if (response.status === 404) {
-            // 404는 잘못된 엔드포인트이므로 다음 URL 시도
-            console.warn(`엔드포인트 없음 (404): ${endpoint}`);
-            continue;
-          } else {
-            // 다른 HTTP 오류는 오류 메시지와 함께 표시
-            const errorText = await response.text();
-            console.warn(`HTTP 오류 (${response.status}): ${endpoint} - ${errorText}`);
-            lastError = new Error(`${response.status} ${response.statusText}: ${errorText}`);
-            continue;
-          }
-        } catch (fetchError: any) {
-          // 네트워크/DNS 오류
-          if (fetchError.message?.includes("ERR_NAME_NOT_RESOLVED") || 
-              fetchError.message?.includes("Failed to fetch")) {
-            console.warn(`네트워크 오류 (${endpoint}):`, fetchError.message);
-            lastError = fetchError;
-            continue; // 다음 URL 시도
-          } else {
-            // 예상치 못한 오류
-            lastError = fetchError;
-            continue;
-          }
+          setIsGenerating(false);
+          return;
         }
-      }
-      
-      if (!response || !response.ok) {
-        // 모든 DNS 시도 실패 - 개발 환경에서는 Mock 서비스 사용
-        console.warn("⚠️ Supertone API 연결 실패 - Mock 서비스로 전환");
-        
-        // Mock 서비스로 대체 (개발용)
-        await new Promise(resolve => setTimeout(resolve, 1500)); // 로딩 시뮬레이션
-        
-        // Mock 오디오 데이터 생성
-        const mockAudioData = 'UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBzqO0fPTgjMGHm7A7+OZURE=';
-        const mockAudioUrl = `data:audio/wav;base64,${mockAudioData}`;
-        const estimatedDuration = customText.length * 0.1 / (voiceSettings.readingSpeed.preset === "빠름" ? 1.3 : voiceSettings.readingSpeed.preset === "느림" ? 0.7 : 1.0);
-        
-        setGeneratedAudio(mockAudioUrl);
-        setGeneratedDuration(Math.round(estimatedDuration * 100) / 100);
-        
-        const warningMsg = `⚠️ 개발 모드\n\nSupertone API에 연결할 수 없어 Mock 서비스로 음성을 생성했습니다.\n\n실제 API 사용을 위해:\n1. Supertone 개발자 콘솔 접속: https://console.supertoneapi.com\n2. API 키 확인 및 활성화\n3. 환경변수 VITE_SUPERTONE_API_KEY가 올바른지 확인\n4. 음성 ID 확인: GET /v1/voices 또는 Supertone Play에서 확인\n5. 네트워크/DNS 설정 확인\n\n문서: https://docs.supertoneapi.com/en/user-guide/quickstart`;
-        console.warn(warningMsg);
-        
-        // 사용자에게 알림 (한 번만)
-        const hasShownWarning = sessionStorage.getItem('supertone-warning-shown');
-        if (!hasShownWarning) {
-          alert(warningMsg);
-          sessionStorage.setItem('supertone-warning-shown', 'true');
-        }
-        
-        return; // Mock 서비스 사용 완료
       }
 
       // Supertone API 응답: WAV 오디오 파일 스트림

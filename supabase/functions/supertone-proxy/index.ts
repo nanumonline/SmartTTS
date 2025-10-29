@@ -6,7 +6,7 @@ Deno.serve(async (req: Request) => {
   const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers":
-      "authorization, x-client-info, apikey, content-type, x-sup-api-key",
+      "authorization, x-client-info, apikey, content-type",
     "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
   };
 
@@ -33,7 +33,10 @@ Deno.serve(async (req: Request) => {
           const clone = req.clone();
           const bodyTextForId = await clone.text();
           if (bodyTextForId) {
-            try { const parsed = JSON.parse(bodyTextForId); voiceId = parsed.voice_id || ""; } catch {}
+            try { 
+              const parsed = JSON.parse(bodyTextForId); 
+              voiceId = parsed.voice_id || ""; 
+            } catch {}
           }
         } catch {}
       }
@@ -41,13 +44,14 @@ Deno.serve(async (req: Request) => {
         return new Response(
           JSON.stringify({ error: "voice_id가 필요합니다." }),
           {
-          status: 400,
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "application/json",
-          },
-        }
-      );
+            status: 400,
+            headers: {
+              ...corsHeaders,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+      }
     }
     
     // 요청 본문 가져오기
@@ -166,4 +170,3 @@ Deno.serve(async (req: Request) => {
     );
   }
 });
-
