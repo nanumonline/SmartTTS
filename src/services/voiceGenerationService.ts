@@ -1,3 +1,5 @@
+import { supabase } from "@/integrations/supabase/client";
+
 // 음성 생성 API 서비스
 export interface VoiceSettings {
   emotion: {
@@ -35,38 +37,58 @@ export interface VoiceGenerationResponse {
   error?: string;
 }
 
-// Mock TTS API 서비스
+// Supertone TTS API 서비스
 class VoiceGenerationService {
-  private baseUrl = 'https://api.example-tts.com/v1';
-
   async generateVoice(request: VoiceGenerationRequest): Promise<VoiceGenerationResponse> {
     try {
-      // 실제 API 호출 시뮬레이션
       console.log('음성 생성 요청:', request);
       
-      // 로딩 시뮬레이션
-      await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 1000));
-      
-      // 성공 응답 시뮬레이션
-      const audioUrl = `data:audio/wav;base64,${this.generateMockAudioData()}`;
-      
-      return {
-        success: true,
-        audioUrl,
-        duration: this.calculateDuration(request.text, request.settings)
+      // Supertone API 요청 파라미터 구성
+      const apiRequest = {
+        text: request.text,
+        speed: request.settings.playbackSpeed,
+        pitch: request.settings.pitch,
       };
-    } catch (error) {
+
+      // Edge Function을 통해 Supertone API 호출
+      const { data, error } = await supabase.functions.invoke('supertone-proxy', {
+        body: apiRequest,
+        headers: {
+          'x-sup-api-key': '', // 프론트엔드에서는 API 키를 전달하지 않음 (Edge Function에서 사용)
+        },
+      });
+
+      if (error) {
+        console.error('음성 생성 오류:', error);
+        return {
+          success: false,
+          error: error.message || '음성 생성 중 오류가 발생했습니다.'
+        };
+      }
+
+      // 오디오 데이터 처리
+      if (data instanceof Blob) {
+        const audioUrl = URL.createObjectURL(data);
+        return {
+          success: true,
+          audioUrl,
+          duration: this.calculateDuration(request.text, request.settings)
+        };
+      }
+
       return {
         success: false,
-        error: '음성 생성 중 오류가 발생했습니다.'
+        error: '올바른 오디오 데이터를 받지 못했습니다.'
+      };
+    } catch (error: any) {
+      console.error('음성 생성 예외:', error);
+      return {
+        success: false,
+        error: error.message || '음성 생성 중 오류가 발생했습니다.'
       };
     }
   }
 
-  private generateMockAudioData(): string {
-    // 실제로는 서버에서 생성된 오디오 데이터를 받아옴
-    return 'UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBzqO0fPTgjMGHm7A7+OZURE='; // Mock base64 audio data
-  }
 
   private calculateDuration(text: string, settings: VoiceSettings): number {
     const baseDuration = text.length * 0.1; // 기본 0.1초 per character

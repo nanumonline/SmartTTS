@@ -36,6 +36,7 @@ import { useAuth } from "@/contexts/AuthContext";
 
 const AdvancedVoiceGenerator = () => {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [text, setText] = useState("");
   const [selectedVoice, setSelectedVoice] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);

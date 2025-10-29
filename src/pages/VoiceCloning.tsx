@@ -35,6 +35,7 @@ import { useAuth } from "@/contexts/AuthContext";
 
 const VoiceCloning = () => {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("library");
   const [selectedGender, setSelectedGender] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
