@@ -76,10 +76,25 @@ Deno.serve(async (req: Request) => {
     // 요청 본문 구성
     const body = req.method === "POST" ? JSON.stringify(requestBody) : undefined;
 
+    // Supertone API 키를 환경 변수에서 가져오기
+    const supertoneApiKey = Deno.env.get("SUPERTONE_API_KEY");
+    if (!supertoneApiKey) {
+      return new Response(
+        JSON.stringify({ error: "SUPERTONE_API_KEY가 설정되지 않았습니다." }),
+        {
+          status: 500,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+    }
+
     // 요청 헤더 구성
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      "x-sup-api-key": req.headers.get("x-sup-api-key") || "",
+      "x-sup-api-key": supertoneApiKey,
     };
 
     // Supertone API 호출

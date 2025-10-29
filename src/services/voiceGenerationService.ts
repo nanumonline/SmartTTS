@@ -48,14 +48,12 @@ class VoiceGenerationService {
         text: request.text,
         speed: request.settings.playbackSpeed,
         pitch: request.settings.pitch,
+        voice_id: request.voice, // voice_id 추가
       };
 
       // Edge Function을 통해 Supertone API 호출
-      const { data, error } = await supabase.functions.invoke('supertone-proxy', {
+      const { data, error } = await supabase.functions.invoke('supertone-proxy/text-to-speech', {
         body: apiRequest,
-        headers: {
-          'x-sup-api-key': '', // 프론트엔드에서는 API 키를 전달하지 않음 (Edge Function에서 사용)
-        },
       });
 
       if (error) {
