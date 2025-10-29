@@ -71,3 +71,43 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+
+## CORS 문제 해결 (Supertone API)
+
+브라우저에서 Supertone API를 직접 호출하면 CORS 오류가 발생할 수 있습니다. 이를 해결하기 위해 Supabase Edge Function을 프록시로 사용합니다.
+
+### Edge Function 배포
+
+1. Supabase CLI 설치 (아직 설치하지 않은 경우):
+```bash
+npm install -g supabase
+```
+
+2. Supabase 프로젝트에 로그인:
+```bash
+supabase login
+```
+
+3. 프로젝트 링크:
+```bash
+supabase link --project-ref gxxralruivyhdxyftsrg
+```
+
+4. Edge Function 배포:
+```bash
+supabase functions deploy supertone-proxy
+```
+
+### 환경 변수 설정
+
+`.env.local` 파일에 다음 변수를 설정하세요:
+```env
+VITE_OPENAI_API_KEY=your_openai_api_key
+VITE_SUPERTONE_API_KEY=your_supertone_api_key
+```
+
+### 사용 방법
+
+- Edge Function이 배포되면 자동으로 프록시를 통해 Supertone API를 호출합니다.
+- 프록시 호출이 실패하면 직접 API 호출을 시도하고, 그것도 실패하면 Mock 서비스를 사용합니다.
+- 개발 환경에서는 Mock 서비스가 기본적으로 사용되므로 실제 API 연결 없이도 테스트할 수 있습니다.
