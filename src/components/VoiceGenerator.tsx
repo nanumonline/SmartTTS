@@ -167,56 +167,36 @@ const VoiceGenerator = () => {
   }
 
   async function synthesizeWithSupertone({ text, voiceId, speed }: { text: string; voiceId: string; speed: number; }) {
-    const apiKey = import.meta.env.VITE_SUPERTONE_API_KEY as string;
-    if (!apiKey) throw new Error("Supertone API 키가 설정되지 않았습니다 (VITE_SUPERTONE_API_KEY)");
+    const SUPABASE_URL = "https://gxxralruivyhdxyftsrg.supabase.co";
+    const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4eHJhbHJ1aXZ5aGR4eWZ0c3JnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE2NDM0MzQsImV4cCI6MjA3NzIxOTQzNH0.6lJjJq15spXWrktl-8d5qXI3L5FHkyaEArWiH2R5AjA";
 
-    // Supertone API 최신 형식
-    // 참고: https://docs.supertoneapi.com/en/user-guide/text-to-speech
-    const possibleBaseUrls = [
-      "https://api.supertoneapi.com/v1",
-      "https://api.supertoneapi.com",
-    ];
-    
-    let lastError: Error | null = null;
-    
-    for (const baseUrl of possibleBaseUrls) {
-      try {
-        const endpoint = `${baseUrl}/text-to-speech/${voiceId}?output_format=mp3`;
-        const resp = await fetch(endpoint, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-sup-api-key": apiKey,
-          },
-          body: JSON.stringify({
-            text: text.substring(0, 300), // 최대 300자
-            language: "ko",
-            style: "neutral",
-            model: "sona_speech_1",
-            voice_settings: {
-              speed: Math.max(0.5, Math.min(2, speed)),
-              pitch_shift: 0,
-              pitch_variance: 1,
-            },
-          }),
-        });
-        
-        if (resp.ok) {
-          const blob = await resp.blob();
-          const url = URL.createObjectURL(blob);
-          return url;
-        } else {
-          const err = await resp.text();
-          lastError = new Error(`Supertone 오류 (${resp.status}): ${err}`);
-          continue;
-        }
-      } catch (error: any) {
-        lastError = error;
-        continue;
-      }
+    const endpoint = `${SUPABASE_URL}/functions/v1/supertone-proxy/text-to-speech/${voiceId}?output_format=mp3`;
+    const resp = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+      },
+      body: JSON.stringify({
+        text: text.substring(0, 300),
+        language: "ko",
+        style: "neutral",
+        model: "sona_speech_1",
+        voice_settings: {
+          speed: Math.max(0.5, Math.min(2, speed)),
+          pitch_shift: 0,
+          pitch_variance: 1,
+        },
+      }),
+    });
+
+    if (!resp.ok) {
+      const err = await resp.text();
+      throw new Error(`TTS 프록시 오류 (${resp.status}): ${err}`);
     }
-    
-    throw lastError || new Error("Supertone API 연결 실패");
+
+    const blob = await resp.blob();
+    return URL.createObjectURL(blob);
   }
 
   return (

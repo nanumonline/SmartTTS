@@ -197,55 +197,32 @@ const PublicVoiceGenerator = () => {
     setCustomText(template.template);
   };
 
-  // Supertone API에서 음성 목록 가져오기
+  // Supertone API에서 음성 목록 가져오기 (Supabase Edge Function 프록시 사용)
   // 참고: https://docs.supertoneapi.com/en/user-guide/voice-selection
   const fetchVoices = async () => {
-    const apiKey = import.meta.env.VITE_SUPERTONE_API_KEY as string;
-    if (!apiKey) {
-      console.warn("Supertone API 키가 없어 기본 음성 목록을 사용합니다.");
-      return;
-    }
-
     setIsLoadingVoices(true);
-    const possibleBaseUrls = [
-      "https://api.supertoneapi.com/v1",
-      "https://api.supertoneapi.com",
-      "https://api.supertone.ai/v1",
-    ];
-
-    for (const baseUrl of possibleBaseUrls) {
-      try {
-        const endpoint = `${baseUrl}/voices`;
-        const response = await fetch(endpoint, {
-          method: "GET",
-          headers: {
-            "x-sup-api-key": apiKey,
-          },
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          // 응답이 배열인지 객체인지 확인
-          const voices = Array.isArray(data) ? data : data.voices || [];
-          
-          // 한국어 지원 음성만 필터링 (선택적)
-          const koreanVoices = voices.filter((voice: any) => 
-            voice.language?.includes("ko") || !voice.language
-          );
-          
-          setAvailableVoices(koreanVoices.length > 0 ? koreanVoices : voices);
-          console.log(`✅ 음성 목록 로드 성공: ${voices.length}개`);
-          setIsLoadingVoices(false);
-          return;
-        }
-      } catch (error: any) {
-        console.warn(`음성 목록 로드 실패 (${baseUrl}):`, error.message);
-        continue;
+    try {
+      const SUPABASE_URL = "https://gxxralruivyhdxyftsrg.supabase.co";
+      const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4eHJhbHJ1aXZ5aGR4eWZ0c3JnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE2NDM0MzQsImV4cCI6MjA3NzIxOTQzNH0.6lJjJq15spXWrktl-8d5qXI3L5FHkyaEArWiH2R5AjA";
+      const proxyUrl = `${SUPABASE_URL}/functions/v1/supertone-proxy/voices`;
+      const response = await fetch(proxyUrl, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const voices = Array.isArray(data) ? data : data.voices || [];
+        const koreanVoices = voices.filter((v: any) => v.language?.includes("ko") || !v.language);
+        setAvailableVoices(koreanVoices.length > 0 ? koreanVoices : voices);
+        console.log(`✅ 음성 목록 로드 성공: ${voices.length}개`);
+      } else {
+        console.warn("음성 목록 로드 실패:", await response.text());
       }
+    } catch (e: any) {
+      console.warn("음성 목록 로드 예외:", e.message);
+    } finally {
+      setIsLoadingVoices(false);
     }
-    
-    console.warn("⚠️ 음성 목록을 가져올 수 없어 기본 목록을 사용합니다.");
-    setIsLoadingVoices(false);
   };
 
   // 컴포넌트 마운트 시 음성 목록 로드
@@ -279,42 +256,25 @@ const PublicVoiceGenerator = () => {
     return () => clearTimeout(timer);
   }, [customText, selectedVoice, voiceSettings.readingSpeed.preset, availableVoices]);
 
-  // 예상 오디오 길이 예측 함수
+  // 예상 오디오 길이 예측 함수 (Supabase Edge Function 프록시 사용)
   // 참고: https://docs.supertoneapi.com/en/user-guide/text-to-speech
   // 이 API는 크레딧을 소비하지 않음
   const predictDuration = async (text: string, voiceId: string): Promise<number | null> => {
-    const apiKey = import.meta.env.VITE_SUPERTONE_API_KEY as string;
-    if (!apiKey || !text.trim() || !voiceId) return null;
-
-    const possibleBaseUrls = [
-      "https://api.supertoneapi.com/v1",
-      "https://api.supertoneapi.com",
-    ];
-
-    for (const baseUrl of possibleBaseUrls) {
-      try {
-        const endpoint = `${baseUrl}/predict-duration/${voiceId}`;
-        const response = await fetch(endpoint, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-sup-api-key": apiKey,
-          },
-          body: JSON.stringify({
-            text,
-            language: "ko",
-            style: "neutral",
-          }),
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          return data.duration || null;
-        }
-      } catch (error) {
-        continue;
+    if (!text.trim() || !voiceId) return null;
+    try {
+      const SUPABASE_URL = "https://gxxralruivyhdxyftsrg.supabase.co";
+      const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4eHJhbHJ1aXZ5aGR4eWZ0c3JnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE2NDM0MzQsImV4cCI6MjA3NzIxOTQzNH0.6lJjJq15spXWrktl-8d5qXI3L5FHkyaEArWiH2R5AjA";
+      const proxyUrl = `${SUPABASE_URL}/functions/v1/supertone-proxy/predict-duration/${voiceId}`;
+      const response = await fetch(proxyUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}` },
+        body: JSON.stringify({ text, language: "ko", style: "neutral" }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        return data.duration || null;
       }
-    }
+    } catch (error) {}
     return null;
   };
 
@@ -361,13 +321,6 @@ const PublicVoiceGenerator = () => {
     setIsGenerating(true);
     
     try {
-      const apiKey = import.meta.env.VITE_SUPERTONE_API_KEY as string;
-      if (!apiKey) {
-        alert("Supertone API 키가 설정되지 않았습니다.");
-        setIsGenerating(false);
-        return;
-      }
-
       // Supertone API 호출
       // 참고: https://docs.supertoneapi.com/en/api-reference/introduction
       // 엔드포인트: POST /v1/text-to-speech/{voice_id}
@@ -436,7 +389,6 @@ const PublicVoiceGenerator = () => {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "x-sup-api-key": apiKey,
               "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
             },
             body: JSON.stringify(requestBody),

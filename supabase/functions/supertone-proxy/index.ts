@@ -18,22 +18,29 @@ Deno.serve(async (req: Request) => {
   try {
     const url = new URL(req.url);
     
-    // 경로에서 voice_id 추출: /functions/v1/supertone-proxy/text-to-speech/{voice_id}
+    // 함수 경로 이후 서브패스 추출 (예: /text-to-speech/{voice_id}, /voices, /predict-duration/{voice_id})
+    const pathAfterFunction = url.pathname.replace(/^.*\/supertone-proxy/, "");
+    const isTTS = pathAfterFunction.startsWith("/text-to-speech");
+
+    // TTS의 경우 voice_id 추출 시도 (path -> query -> body)
     let voiceId = "";
-    const pathMatch = url.pathname.match(/\/text-to-speech\/([^/?]+)/);
-    if (pathMatch) {
-      voiceId = pathMatch[1];
-    }
-    
-    // voice_id가 없으면 query parameter에서 시도
-    if (!voiceId) {
-      voiceId = url.searchParams.get("voice_id") || "";
-    }
-    
-    if (!voiceId) {
-      return new Response(
-        JSON.stringify({ error: "voice_id가 필요합니다." }),
-        {
+    if (isTTS) {
+      const pathMatch = pathAfterFunction.match(/\/text-to-speech\/([^/?]+)/);
+      if (pathMatch) voiceId = pathMatch[1];
+      if (!voiceId) voiceId = url.searchParams.get("voice_id") || "";
+      if (!voiceId && req.method === "POST") {
+        try {
+          const clone = req.clone();
+          const bodyTextForId = await clone.text();
+          if (bodyTextForId) {
+            try { const parsed = JSON.parse(bodyTextForId); voiceId = parsed.voice_id || ""; } catch {}
+          }
+        } catch {}
+      }
+      if (!voiceId) {
+        return new Response(
+          JSON.stringify({ error: "voice_id가 필요합니다." }),
+          {
           status: 400,
           headers: {
             ...corsHeaders,
@@ -68,7 +75,15 @@ Deno.serve(async (req: Request) => {
     // Supertone API 호출 URL
     const supetoneBaseUrl = "https://api.supertoneapi.com/v1";
     const outputFormat = url.searchParams.get("output_format") || "mp3";
-    const targetUrl = `${supetoneBaseUrl}/text-to-speech/${voiceId}?output_format=${outputFormat}`;
+
+    let targetUrl = "";
+    if (isTTS) {
+      targetUrl = `${supetoneBaseUrl}/text-to-speech/${voiceId}?output_format=${outputFormat}`;
+    } else {
+      // 기타 엔드포인트는 서브패스를 그대로 전달 (예: /voices, /predict-duration/{voice_id})
+      const query = url.searchParams.toString();
+      targetUrl = `${supetoneBaseUrl}${pathAfterFunction}${query ? `?${query}` : ""}`;
+    }
     
     // 요청 본문 구성
     const body = req.method === "POST" ? JSON.stringify(requestBody) : undefined;
