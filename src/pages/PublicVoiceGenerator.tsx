@@ -57,6 +57,133 @@ const PublicVoiceGenerator = () => {
   const [selectedVoiceInfo, setSelectedVoiceInfo] = useState<any | null>(null);
   const [playingSample, setPlayingSample] = useState<string | null>(null);
 
+  const SUPABASE_PROXY_BASE_URL = "https://gxxralruivyhdxyftsrg.supabase.co/functions/v1/supertone-proxy";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4eHJhbHJ1aXZ5aGR4eWZ0c3JnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE2NDM0MzQsImV4cCI6MjA3NzIxOTQzNH0.6lJjJq15spXWrktl-8d5qXI3L5FHkyaEArWiH2R5AjA";
+  const MOCK_AUDIO_BASE64 = "UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBzqO0fPTgjMGHm7A7+OZURE=";
+
+  const getSpeedMultiplier = () => {
+    const preset = voiceSettings.readingSpeed.preset;
+    if (preset === "빠름") return 1.3;
+    if (preset === "느림") return 0.7;
+    return 1.0;
+  };
+
+  const estimateDurationFromText = (text: string) => {
+    const multiplier = getSpeedMultiplier();
+    const estimated = text.length * 0.1 / multiplier;
+    return Math.round(estimated * 100) / 100;
+  };
+
+  const base64ToBlob = (base64: string, mimeType = "audio/mpeg") => {
+    const cleanBase64 = base64.includes(",") ? base64.split(",").pop() || "" : base64;
+    const decoded = atob(cleanBase64);
+    const bytes = new Uint8Array(decoded.length);
+    for (let i = 0; i < decoded.length; i++) {
+      bytes[i] = decoded.charCodeAt(i);
+    }
+    return new Blob([bytes], { type: mimeType });
+  };
+
+  const parseSupertoneResponse = async (resp: Response) => {
+    if (!resp) {
+      throw new Error("응답이 존재하지 않습니다.");
+    }
+
+    const contentType = resp.headers?.get("content-type")?.toLowerCase() || "";
+    let duration: number | null = null;
+
+    if (contentType.includes("application/json")) {
+      const json = await resp.json();
+      const payload = json.data ?? json.result ?? json;
+      const errorMessage = json.error || json.message || payload?.error || payload?.message || payload?.detail;
+      let base64Audio = payload?.audio_base64 ?? payload?.audioBase64 ?? payload?.audio ?? payload?.audio_data ?? null;
+      let remoteUrl = payload?.audio_url ?? payload?.audioUrl ?? payload?.url ?? payload?.file_url ?? payload?.fileUrl ?? null;
+      duration = payload?.duration ?? payload?.audio_duration ?? payload?.length ?? payload?.meta?.duration ?? json.duration ?? null;
+      const mimeType = payload?.mime_type ?? payload?.mimetype ?? payload?.content_type ?? "audio/mpeg";
+
+      if (base64Audio) {
+        const blob = base64ToBlob(base64Audio, mimeType);
+        return {
+          audioUrl: URL.createObjectURL(blob),
+          duration,
+          mimeType,
+        };
+      }
+
+      if (remoteUrl) {
+        const remoteResponse = await fetch(remoteUrl);
+        if (!remoteResponse.ok) {
+          throw new Error(`오디오 다운로드 실패 (${remoteResponse.status})`);
+        }
+        const remoteBlob = await remoteResponse.blob();
+        const remoteDurationHeader = remoteResponse.headers.get("X-Audio-Length") || remoteResponse.headers.get("x-audio-length");
+        const remoteDuration = remoteDurationHeader ? parseFloat(remoteDurationHeader) : null;
+        return {
+          audioUrl: URL.createObjectURL(remoteBlob),
+          duration: duration ?? remoteDuration,
+          mimeType: remoteBlob.type || mimeType,
+        };
+      }
+
+      if (errorMessage) {
+        throw new Error(errorMessage);
+      }
+
+      throw new Error("오디오 데이터가 포함되어 있지 않습니다.");
+    }
+
+    const blob = await resp.blob();
+    if (!blob || blob.size === 0) {
+      throw new Error("오디오 데이터가 비어 있습니다.");
+    }
+    const durationHeader = resp.headers?.get("X-Audio-Length") || resp.headers?.get("x-audio-length");
+    if (durationHeader) {
+      const parsed = parseFloat(durationHeader);
+      duration = Number.isNaN(parsed) ? null : parsed;
+    }
+    return {
+      audioUrl: URL.createObjectURL(blob),
+      duration,
+      mimeType: blob.type || "audio/mpeg",
+    };
+  };
+
+  const fetchWithSupabaseProxy = async (path: string, init?: RequestInit) => {
+    try {
+      const headers = new Headers(init?.headers as HeadersInit | undefined);
+      if (init?.body && !headers.has("Content-Type")) {
+        headers.set("Content-Type", "application/json");
+      }
+      if (SUPABASE_ANON_KEY) {
+        headers.set("Authorization", `Bearer ${SUPABASE_ANON_KEY}`);
+      }
+      const response = await fetch(`${SUPABASE_PROXY_BASE_URL}${path}`, {
+        ...init,
+        headers,
+      });
+      return response;
+    } catch (error) {
+      console.warn("Supabase 프록시 호출 실패:", error);
+      return null;
+    }
+  };
+
+  const cleanupGeneratedAudioUrl = (url: string | null) => {
+    if (url && url.startsWith("blob:")) {
+      try {
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        console.warn("blob URL 해제 실패:", error);
+      }
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      cleanupGeneratedAudioUrl(generatedAudio);
+    };
+  }, [generatedAudio]);
+
   // 고급 음성 설정 상태
   const [voiceSettings, setVoiceSettings] = useState({
     emotion: {
@@ -201,29 +328,67 @@ const PublicVoiceGenerator = () => {
   // 참고: https://docs.supertoneapi.com/en/user-guide/voice-selection
   const fetchVoices = async () => {
     setIsLoadingVoices(true);
+    let voicesLoaded = false;
     try {
-      const SUPABASE_URL = "https://gxxralruivyhdxyftsrg.supabase.co";
-      const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4eHJhbHJ1aXZ5aGR4eWZ0c3JnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE2NDM0MzQsImV4cCI6MjA3NzIxOTQzNH0.6lJjJq15spXWrktl-8d5qXI3L5FHkyaEArWiH2R5AjA";
-      const proxyUrl = `${SUPABASE_URL}/functions/v1/supertone-proxy/voices`;
-      const response = await fetch(proxyUrl, {
-        method: "GET",
-        headers: { Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}` },
-      });
-      if (response.ok) {
+      const response = await fetchWithSupabaseProxy("/voices", { method: "GET" });
+      if (response?.ok) {
         const data = await response.json();
-        const voices = Array.isArray(data) ? data : data.voices || [];
+        const voices = Array.isArray(data) ? data : data.voices || data.data || [];
         const koreanVoices = voices.filter((v: any) => v.language?.includes("ko") || !v.language);
         setAvailableVoices(koreanVoices.length > 0 ? koreanVoices : voices);
-        console.log(`✅ 음성 목록 로드 성공: ${voices.length}개`);
-      } else {
-        console.warn("음성 목록 로드 실패:", await response.text());
+        console.log(`✅ 음성 목록 로드 성공(프록시): ${voices.length}개`);
+        voicesLoaded = true;
+      } else if (response) {
+        console.warn("음성 목록 로드 실패(프록시):", await response.text());
       }
     } catch (e: any) {
-      console.warn("음성 목록 로드 예외:", e.message);
-    } finally {
-      setIsLoadingVoices(false);
+      console.warn("음성 목록 로드 예외(프록시):", e.message);
     }
+
+    if (!voicesLoaded) {
+      const apiKey = import.meta.env.VITE_SUPERTONE_API_KEY as string | undefined;
+      if (!apiKey) {
+        console.warn("Supertone API 키가 없어 기본 음성 목록을 사용합니다.");
+        setAvailableVoices([]);
+        setIsLoadingVoices(false);
+        return;
+      }
+
+      const possibleBaseUrls = [
+        "https://api.supertoneapi.com/v1",
+        "https://api.supertoneapi.com",
+      ];
+
+      for (const baseUrl of possibleBaseUrls) {
+        try {
+          const response = await fetch(`${baseUrl}/voices`, {
+            method: "GET",
+            headers: { "x-sup-api-key": apiKey },
+          });
+          if (response.ok) {
+            const data = await response.json();
+            const voices = Array.isArray(data) ? data : data.voices || data.data || [];
+            const koreanVoices = voices.filter((v: any) => v.language?.includes("ko") || !v.language);
+            setAvailableVoices(koreanVoices.length > 0 ? koreanVoices : voices);
+            console.log(`✅ 음성 목록 로드 성공(직접): ${voices.length}개`);
+            voicesLoaded = true;
+            break;
+          }
+        } catch (error) {
+          console.warn(`음성 목록 로드 실패 (${baseUrl}):`, error);
+          continue;
+        }
+      }
+    }
+
+    if (!voicesLoaded) {
+      console.warn("⚠️ 음성 목록을 가져올 수 없어 기본 목록을 사용합니다.");
+      setAvailableVoices([]);
+    }
+
+    setIsLoadingVoices(false);
   };
+
 
   // 컴포넌트 마운트 시 음성 목록 로드
   useEffect(() => {
@@ -262,21 +427,20 @@ const PublicVoiceGenerator = () => {
   const predictDuration = async (text: string, voiceId: string): Promise<number | null> => {
     if (!text.trim() || !voiceId) return null;
     try {
-      const SUPABASE_URL = "https://gxxralruivyhdxyftsrg.supabase.co";
-      const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4eHJhbHJ1aXZ5aGR4eWZ0c3JnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE2NDM0MzQsImV4cCI6MjA3NzIxOTQzNH0.6lJjJq15spXWrktl-8d5qXI3L5FHkyaEArWiH2R5AjA";
-      const proxyUrl = `${SUPABASE_URL}/functions/v1/supertone-proxy/predict-duration/${voiceId}`;
-      const response = await fetch(proxyUrl, {
+      const response = await fetchWithSupabaseProxy(`/predict-duration/${voiceId}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}` },
         body: JSON.stringify({ text, language: "ko", style: "neutral" }),
       });
-      if (response.ok) {
+      if (response?.ok) {
         const data = await response.json();
-        return data.duration || null;
+        return data?.duration ?? data?.data?.duration ?? null;
       }
-    } catch (error) {}
+    } catch (error) {
+      console.warn("예상 길이 계산 실패:", error);
+    }
     return null;
   };
+
 
   async function generateWithOpenAI(prompt: string) {
     const { data, error } = await supabase.functions.invoke('openai-text-generation', {
@@ -320,163 +484,157 @@ const PublicVoiceGenerator = () => {
   }
 
   const handleGenerateVoice = async () => {
-    if (!customText.trim()) {
+    const trimmedText = customText.trim();
+    if (!trimmedText) {
       alert("텍스트를 입력해주세요.");
       return;
     }
 
+    if (!selectedVoice) {
+      alert("음성 스타일을 선택해주세요.");
+      return;
+    }
+
+    if (trimmedText.length > 300) {
+      alert(`텍스트가 너무 깁니다. 최대 300자까지 입력 가능합니다. (현재: ${trimmedText.length}자)`);
+      return;
+    }
+
     setIsGenerating(true);
-    
-    try {
-      // Supertone API 호출
-      // 참고: https://docs.supertoneapi.com/en/api-reference/introduction
-      // 엔드포인트: POST /v1/text-to-speech/{voice_id}
-      // 헤더: x-sup-api-key
-      
-      if (!selectedVoice) {
-        alert("음성 스타일을 선택해주세요.");
-        setIsGenerating(false);
-        return;
+
+    const styleValue = voiceSettings.emotion.customPrompt ||
+      (voiceSettings.emotion.preset === "A" ? "neutral" :
+       voiceSettings.emotion.preset === "B" ? "happy" : "neutral");
+
+    const speedValue = getSpeedMultiplier();
+    const pitchShift = Math.max(-12, Math.min(12, Math.round(voiceSettings.pitch / 8.33)));
+
+    const requestBody: Record<string, any> = {
+      text: trimmedText,
+      language: "ko",
+      style: styleValue,
+      model: "sona_speech_1",
+      voice_settings: {
+        speed: speedValue,
+        pitch_shift: pitchShift,
+        pitch_variance: 1,
+      },
+    };
+
+    const estimatedDuration = estimateDurationFromText(trimmedText);
+
+    const tryDirectSupertone = async () => {
+      const apiKey = import.meta.env.VITE_SUPERTONE_API_KEY as string | undefined;
+      if (!apiKey) {
+        throw new Error("Supertone API 키가 설정되지 않았습니다 (VITE_SUPERTONE_API_KEY)");
       }
 
-      // Supertone API 호출
-      // 참고: https://docs.supertoneapi.com/en/user-guide/quickstart
-      // CORS 문제 해결: Supabase Edge Function 프록시 사용
-      const useProxy = true; // Supabase 프록시 활성화
-      
       const possibleBaseUrls = [
         "https://api.supertoneapi.com/v1",
         "https://api.supertoneapi.com",
         "https://api.supertone.ai/v1",
         "https://api.supertone.ai",
       ];
-      
-      let lastError: Error | null = null;
-      let response: Response | null = null;
-      let lastEndpoint = "";
-      
-      // 텍스트 길이 확인 (최대 300자)
-      if (customText.length > 300) {
-        alert(`텍스트가 너무 깁니다. 최대 300자까지 입력 가능합니다. (현재: ${customText.length}자)`);
-        setIsGenerating(false);
-        return;
-      }
 
-      // 1. Supabase Edge Function 프록시를 통한 호출 시도 (CORS 해결)
-      if (useProxy) {
+      let lastError: Error | null = null;
+
+      for (const baseUrl of possibleBaseUrls) {
+        const endpoint = `${baseUrl}/text-to-speech/${selectedVoice}?output_format=mp3`;
         try {
-          console.log("Supabase 프록시를 통해 Supertone API 호출 시도");
-          
-          const styleValue = voiceSettings.emotion.customPrompt || 
-                            (voiceSettings.emotion.preset === "A" ? "neutral" : 
-                             voiceSettings.emotion.preset === "B" ? "happy" : "neutral");
-          
-          const requestBody = {
-            text: customText,
-            language: "ko",
-            style: styleValue,
-            model: "sona_speech_1",
-            voice_settings: {
-              pitch_shift: Math.max(-12, Math.min(12, Math.round(voiceSettings.pitch / 8.33))),
-              pitch_variance: 1,
-              speed: voiceSettings.readingSpeed.preset === "빠름" ? 1.3 : 
-                     voiceSettings.readingSpeed.preset === "느림" ? 0.7 : 1.0,
-            },
-          };
-          
-          // Supabase Edge Function 호출
-          // URL을 통해 voice_id 전달을 위해 직접 fetch 사용
-          const SUPABASE_URL = "https://gxxralruivyhdxyftsrg.supabase.co";
-          const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4eHJhbHJ1aXZ5aGR4eWZ0c3JnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE2NDM0MzQsImV4cCI6MjA3NzIxOTQzNH0.6lJjJq15spXWrktl-8d5qXI3L5FHkyaEArWiH2R5AjA";
-          const proxyUrl = `${SUPABASE_URL}/functions/v1/supertone-proxy/text-to-speech/${selectedVoice}?output_format=mp3`;
-          
-          console.log("Supabase 프록시 URL:", proxyUrl);
-          
-          const proxyResponse = await fetch(proxyUrl, {
+          console.log(`Supertone API 직접 호출 시도: ${endpoint}`);
+          const resp = await fetch(endpoint, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+              "x-sup-api-key": apiKey,
             },
             body: JSON.stringify(requestBody),
           });
-          
-          if (proxyResponse.ok) {
-            // 프록시 성공
-            console.log("✅ Supabase 프록시 성공");
-            
-            // 응답이 오디오 Blob인 경우 처리
-            const contentType = proxyResponse.headers.get("content-type") || "";
-            
-            if (contentType.includes("audio") || contentType.includes("mpeg") || contentType.includes("wav")) {
-              const blob = await proxyResponse.blob();
-              const audioUrl = URL.createObjectURL(blob);
-              setGeneratedAudio(audioUrl);
-              
-              // X-Audio-Length 헤더 확인
-              const audioLengthHeader = proxyResponse.headers.get("X-Audio-Length") || proxyResponse.headers.get("x-audio-length");
-              const audioDuration = audioLengthHeader ? parseFloat(audioLengthHeader) : null;
-              
-              // 예상 길이 사용 또는 추정
-              const finalDuration = audioDuration ?? predictedDuration ?? 
-                (customText.length * 0.1 / (voiceSettings.readingSpeed.preset === "빠름" ? 1.3 : voiceSettings.readingSpeed.preset === "느림" ? 0.7 : 1.0));
-              setGeneratedDuration(Math.round(finalDuration * 100) / 100);
-              
-              toast({
-                title: "✅ 음성 생성 완료",
-                description: `오디오 길이: ${finalDuration.toFixed(2)}초 | 형식: MP3`,
-              });
-              
-              setPredictedDuration(null);
-              setIsGenerating(false);
-              return;
-            } else {
-              // JSON 에러 응답인 경우
-              const errorData = await proxyResponse.json();
-              throw new Error(errorData.error || "프록시 오류");
-            }
-          } else {
-            // HTTP 오류
-            const errorText = await proxyResponse.text();
-            throw new Error(`프록시 오류 (${proxyResponse.status}): ${errorText}`);
+
+          if (resp.ok) {
+            return parseSupertoneResponse(resp);
           }
-        } catch (proxyError: any) {
-          console.warn("Supabase 프록시 실패, 직접 호출 시도:", proxyError.message);
-          // 프록시 실패 시 직접 호출로 진행
+
+          const errorText = await resp.text();
+          lastError = new Error(`${resp.status} ${resp.statusText}: ${errorText}`);
+        } catch (error: any) {
+          lastError = error;
+          if (error?.message?.includes("ERR_NAME_NOT_RESOLVED") || error?.message?.includes("Failed to fetch")) {
+            continue;
+          }
         }
       }
 
-      // Supertone API 응답 처리
-      if (!response || !response.ok) {
-        throw new Error("API 응답이 없거나 실패했습니다.");
+      throw lastError || new Error("Supertone API 호출에 실패했습니다.");
+    };
+
+    try {
+      cleanupGeneratedAudioUrl(generatedAudio);
+
+      let audioResult: { audioUrl: string; duration: number | null; mimeType?: string } | null = null;
+      let source = "프록시";
+
+      // 1. Supabase Edge Function 프록시 시도
+      const proxyResponse = await fetchWithSupabaseProxy(`/text-to-speech/${selectedVoice}?output_format=mp3`, {
+        method: "POST",
+        body: JSON.stringify(requestBody),
+      });
+
+      if (proxyResponse?.ok) {
+        audioResult = await parseSupertoneResponse(proxyResponse);
+      } else if (proxyResponse) {
+        const errorText = await proxyResponse.text();
+        console.warn(`프록시 오류 (${proxyResponse.status}): ${errorText}`);
       }
-      
-      // X-Audio-Length 헤더에 오디오 길이(초)가 포함됨
-      const audioLengthHeader = response.headers?.get("X-Audio-Length") || response.headers?.get("x-audio-length");
-      const audioDuration = audioLengthHeader ? parseFloat(audioLengthHeader) : null;
-      
-      const blob = await response.blob();
-      const audioUrl = URL.createObjectURL(blob);
-      
-      // 오디오 길이 설정 (헤더 값이 있으면 사용, 없으면 추정)
-      const finalDuration = audioDuration ?? 
-        (customText.length * 0.1 / (voiceSettings.readingSpeed.preset === "빠름" ? 1.3 : voiceSettings.readingSpeed.preset === "느림" ? 0.7 : 1.0));
-      
-      setGeneratedAudio(audioUrl);
-      setGeneratedDuration(Math.round(finalDuration * 100) / 100);
-      
-      // 성공 메시지
+
+      // 2. 직접 호출 폴백
+      if (!audioResult) {
+        try {
+          source = "직접 호출";
+          audioResult = await tryDirectSupertone();
+        } catch (directError) {
+          console.warn("직접 호출 실패:", directError);
+        }
+      }
+
+      // 3. Mock 폴백
+      let usedMock = false;
+      if (!audioResult) {
+        source = "Mock";
+        usedMock = true;
+        const blob = base64ToBlob(MOCK_AUDIO_BASE64, "audio/wav");
+        audioResult = {
+          audioUrl: URL.createObjectURL(blob),
+          duration: estimatedDuration,
+          mimeType: "audio/wav",
+        };
+      }
+
+      if (!audioResult) {
+        throw new Error("음성 데이터를 생성할 수 없습니다.");
+      }
+
+      const finalDuration = audioResult.duration ?? predictedDuration ?? estimatedDuration;
+      const roundedDuration = Math.round(finalDuration * 100) / 100;
+
+      setGeneratedAudio(audioResult.audioUrl);
+      setGeneratedDuration(roundedDuration);
+      setPredictedDuration(roundedDuration);
+
+      const description = usedMock
+        ? `Mock 오디오로 대체되었습니다. 예상 길이: ${roundedDuration.toFixed(2)}초`
+        : `오디오 길이: ${roundedDuration.toFixed(2)}초 | 형식: ${audioResult.mimeType || "알 수 없음"}`;
+
       toast({
         title: "✅ 음성 생성 완료",
-        description: `오디오 길이: ${finalDuration.toFixed(2)}초 | 형식: MP3`,
+        description,
       });
-      
-      // 예상 길이 초기화 (실제 생성 완료)
-      setPredictedDuration(null);
+
+      console.log(`음성 생성 성공 - ${source}`);
     } catch (error: any) {
       console.error("음성 생성 오류:", error);
       const errorMessage = error?.message || "음성 생성 중 오류가 발생했습니다.";
-      
+
       toast({
         title: "❌ 음성 생성 실패",
         description: errorMessage,
