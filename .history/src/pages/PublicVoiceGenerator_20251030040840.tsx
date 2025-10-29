@@ -446,13 +446,9 @@ const PublicVoiceGenerator = () => {
         }
       }
 
-      // Supertone API 응답 처리
-      if (!response || !response.ok) {
-        throw new Error("API 응답이 없거나 실패했습니다.");
-      }
-      
+      // Supertone API 응답: WAV 오디오 파일 스트림
       // X-Audio-Length 헤더에 오디오 길이(초)가 포함됨
-      const audioLengthHeader = response.headers?.get("X-Audio-Length") || response.headers?.get("x-audio-length");
+      const audioLengthHeader = response.headers.get("X-Audio-Length") || response.headers.get("x-audio-length");
       const audioDuration = audioLengthHeader ? parseFloat(audioLengthHeader) : null;
       
       const blob = await response.blob();
@@ -1217,4 +1213,3 @@ const PublicVoiceGenerator = () => {
 };
 
 export default PublicVoiceGenerator;
-
