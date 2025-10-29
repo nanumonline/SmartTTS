@@ -1,6 +1,3 @@
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
-
 // Supertone API 프록시 Edge Function
 // CORS 문제를 해결하기 위해 서버 사이드에서 API를 호출합니다
 
