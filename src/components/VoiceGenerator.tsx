@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Play, Download, Wand2, Building2, Users, Megaphone, FileText, User, Building } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 
 const VoiceGenerator = () => {
   const [text, setText] = useState("");
@@ -121,49 +122,44 @@ const VoiceGenerator = () => {
   };
 
   async function generateWithOpenAI(prompt: string) {
-    const apiKey = import.meta.env.VITE_OPENAI_API_KEY as string;
-    if (!apiKey) throw new Error("OpenAI API 키가 설정되지 않았습니다 (VITE_OPENAI_API_KEY)");
-
-    const system = [
-      "당신은 대한민국 공공기관 방송 문구 작성 보조 도우미입니다.",
-      "톤은 격식과 신뢰감을 유지하며 간결해야 합니다.",
-      "방송용으로 호흡이 자연스럽고 발음이 명확하도록 문장을 구성하세요.",
-      "TTS 친화적으로 숫자, 단위를 명확히 표기하세요.",
-    ].join(" ");
-
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        input: [
-          { role: "system", content: system },
-          { role: "user", content: prompt },
-        ],
-      }),
+    const { data, error } = await supabase.functions.invoke('openai-text-generation', {
+      body: {
+        type: 'generate',
+        prompt,
+        organization: user?.organization,
+        department: user?.department,
+      }
     });
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error(`OpenAI 오류: ${err}`);
+
+    if (error) {
+      throw new Error(error.message || 'OpenAI 텍스트 생성 실패');
     }
-    const data = await response.json();
-    // 다양한 응답 포맷 방어적으로 처리
-    const outputText =
-      data.output_text ||
-      data.choices?.[0]?.message?.content?.[0]?.text ||
-      data.choices?.[0]?.message?.content ||
-      data.output?.[0]?.content?.[0]?.text ||
-      "";
-    if (!outputText) throw new Error("OpenAI 응답을 해석할 수 없습니다.");
-    return typeof outputText === "string" ? outputText : JSON.stringify(outputText);
+
+    if (!data?.text) {
+      throw new Error('OpenAI 응답을 해석할 수 없습니다.');
+    }
+
+    return data.text;
   }
 
   async function editWithOpenAI(original: string, instruction: string) {
-    const prompt = `다음 방송 원문을 지침에 맞춰 자연스럽게 수정해 주세요.\n\n[원문]\n${original}\n\n[지침]\n${instruction}\n\n요구사항: 방송용 격식, 명확한 발음, 간결한 문장, 숫자/단위 명확화.`;
-    return generateWithOpenAI(prompt);
+    const { data, error } = await supabase.functions.invoke('openai-text-generation', {
+      body: {
+        type: 'edit',
+        original,
+        instruction,
+      }
+    });
+
+    if (error) {
+      throw new Error(error.message || 'OpenAI 텍스트 편집 실패');
+    }
+
+    if (!data?.text) {
+      throw new Error('OpenAI 응답을 해석할 수 없습니다.');
+    }
+
+    return data.text;
   }
 
   async function synthesizeWithSupertone({ text, voiceId, speed }: { text: string; voiceId: string; speed: number; }) {

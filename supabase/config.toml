@@ -2,3 +2,6 @@ project_id = "gxxralruivyhdxyftsrg"
 
 [functions.supertone-proxy]
 verify_jwt = false
+
+[functions.openai-text-generation]
+verify_jwt = true
