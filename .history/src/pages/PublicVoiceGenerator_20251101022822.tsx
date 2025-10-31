@@ -558,10 +558,16 @@ const PublicVoiceGenerator = () => {
   };
 
   const handleCloneSubmit = () => {
-    const validation = validateCloneForm();
-    if (!validation.valid) {
-      toast({ title: "입력 오류", description: validation.error, variant: "destructive" });
-      addOperationLog("warning", `클론 요청 실패: ${validation.error}`);
+    if (!cloneForm.targetName.trim()) {
+      toast({ title: "대상 이름을 입력해주세요", variant: "destructive" });
+      return;
+    }
+    if (!cloneForm.baseVoiceId) {
+      toast({ title: "기준 음성을 선택해주세요", variant: "destructive" });
+      return;
+    }
+    if (!cloneForm.sampleFile && !cloneForm.sampleName) {
+      toast({ title: "샘플 음성을 업로드해주세요", variant: "destructive" });
       return;
     }
 
@@ -589,8 +595,7 @@ const PublicVoiceGenerator = () => {
     setIsCloneModalOpen(false);
     setCloneForm(createCloneForm({ language: cloneForm.language }));
 
-    toast({ title: "클로닝 요청 접수", description: `${voiceName}를 분석 중입니다.` });
-    addOperationLog("info", `클론 생성 시작: ${voiceName}`);
+    toast({ title: "클로닝 요청 접수", description: "샘플을 분석 중입니다." });
 
     const timer = window.setTimeout(() => {
       const completionTime = new Date().toISOString();
@@ -598,12 +603,10 @@ const PublicVoiceGenerator = () => {
       setCloneRequests((prev) => prev.map((cl) => (cl.id === newClone.id ? completedClone : cl)));
       registerCloneVoice(completedClone);
       toast({ title: "클로닝 완료", description: `${completedClone.voiceName} 음성이 추가되었습니다.` });
-      addOperationLog("success", `클론 생성 완료: ${voiceName}`);
     }, 1500);
 
     cloneTimeoutsRef.current.push(timer);
   };
-
 
   const purposeMeta = getPurposeMeta(selectedPurpose);
 
@@ -1490,7 +1493,7 @@ const PublicVoiceGenerator = () => {
     }
 
     if (trimmedText.length > 300) {
-      toast({ title: "길이 초과", description: `텍스트는 300자 이내여야 합니다. (현재: ${trimmedText.length}자)`, variant: "destructive" }); addOperationLog("warning", "텍스트 길이 초과"); return;
+      alert(`텍스트가 너무 깁니다. 최대 300자까지 입력 가능합니다. (현재: ${trimmedText.length}자)`);
       return;
     }
 
