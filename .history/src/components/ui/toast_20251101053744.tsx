@@ -67,7 +67,7 @@ const ToastClose = React.forwardRef<
   <ToastPrimitives.Close
     ref={ref}
     className={cn(
-      "absolute right-3 top-3 rounded-lg p-1.5 text-gray-400 opacity-0 transition-all duration-200 hover:bg-gray-700/80 hover:text-white group-hover:opacity-100 group-[.destructive]:text-red-300 group-[.destructive]:hover:text-red-100 group-[.destructive]:hover:bg-red-800/50 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-gray-500/50 focus:ring-offset-2 focus:ring-offset-gray-900 active:scale-95",
+      "absolute right-3 top-3 rounded-lg p-1.5 text-gray-400 opacity-0 transition-all duration-200 hover:bg-gray-100/80 hover:text-gray-600 group-hover:opacity-100 group-[.destructive]:text-red-400 group-[.destructive]:hover:text-red-600 group-[.destructive]:hover:bg-red-100/50 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-gray-300/50 focus:ring-offset-2 active:scale-95",
       className,
     )}
     toast-close=""
@@ -82,7 +82,7 @@ const ToastTitle = React.forwardRef<
   React.ElementRef<typeof ToastPrimitives.Title>,
   React.ComponentPropsWithoutRef<typeof ToastPrimitives.Title>
 >(({ className, ...props }, ref) => (
-  <ToastPrimitives.Title ref={ref} className={cn("text-base font-bold font-display tracking-tight text-white leading-snug", className)} {...props} />
+  <ToastPrimitives.Title ref={ref} className={cn("text-sm font-semibold font-display tracking-tight text-gray-900 leading-snug", className)} {...props} />
 ));
 ToastTitle.displayName = ToastPrimitives.Title.displayName;
 
@@ -90,7 +90,7 @@ const ToastDescription = React.forwardRef<
   React.ElementRef<typeof ToastPrimitives.Description>,
   React.ComponentPropsWithoutRef<typeof ToastPrimitives.Description>
 >(({ className, ...props }, ref) => (
-  <ToastPrimitives.Description ref={ref} className={cn("text-sm leading-relaxed text-gray-300 mt-0.5", className)} {...props} />
+  <ToastPrimitives.Description ref={ref} className={cn("text-sm leading-relaxed text-gray-600 mt-0.5", className)} {...props} />
 ));
 ToastDescription.displayName = ToastPrimitives.Description.displayName;
 
