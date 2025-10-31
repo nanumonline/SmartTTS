@@ -389,36 +389,6 @@ const PublicVoiceGenerator = () => {
     return { grouped, flat };
   }, [allVoices]);
 
-  // 실제 음성 목록에서 사용되는 언어만 추출
-  const getAvailableLanguages = useCallback(() => {
-    if (allVoices.length === 0) return [];
-    
-    const foundLanguages = new Set<string>();
-    
-    allVoices.forEach((v: any) => {
-      const langs = Array.isArray(v.language) ? v.language : (v.language ? [v.language] : []);
-      langs.forEach((l: string) => {
-        if (l) foundLanguages.add(normalizeLanguage(l));
-      });
-    });
-    
-    return languageOptions.filter(opt => foundLanguages.has(opt.value));
-  }, [allVoices]);
-
-  // 실제 음성 목록에서 사용되는 성별만 추출
-  const getAvailableGenders = useCallback(() => {
-    if (allVoices.length === 0) return [];
-    
-    const foundGenders = new Set<string>();
-    
-    allVoices.forEach((v: any) => {
-      const gender = v.gender || "";
-      if (gender) foundGenders.add(gender);
-    });
-    
-    return genderOptions.filter(opt => foundGenders.has(opt.value));
-  }, [allVoices]);
-
   const purposeOptions = [
     {
       id: "announcement",
@@ -3436,7 +3406,7 @@ const PublicVoiceGenerator = () => {
                   </SelectTrigger>
                   <SelectContent className="bg-gray-800 border-gray-600">
                     <SelectItem value="all" className="text-white focus:bg-gray-700">전체</SelectItem>
-                    {getAvailableLanguages().map((opt) => (
+                    {languageOptions.map((opt) => (
                       <SelectItem key={opt.value} value={opt.value} className="text-white focus:bg-gray-700">{opt.label}</SelectItem>
                     ))}
                   </SelectContent>
@@ -3448,17 +3418,10 @@ const PublicVoiceGenerator = () => {
                   <SelectTrigger className="bg-gray-800/50 border-gray-600 text-white">
                     <SelectValue placeholder="전체" />
                   </SelectTrigger>
-                  <SelectContent className="bg-gray-800 border-gray-600 max-h-[300px]">
+                  <SelectContent className="bg-gray-800 border-gray-600">
                     <SelectItem value="all" className="text-white focus:bg-gray-700">전체</SelectItem>
-                    {getAvailableStyles().grouped.map((group) => (
-                      <div key={group.group}>
-                        <div className="px-2 py-1.5 text-xs font-semibold text-gray-400 bg-gray-700/50">{group.group}</div>
-                        {group.styles.map((style) => (
-                          <SelectItem key={style.value} value={style.value} className="text-white focus:bg-gray-700 pl-6">
-                            {style.label}
-                          </SelectItem>
-                        ))}
-                      </div>
+                    {styleOptions.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value} className="text-white focus:bg-gray-700">{opt.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -3493,7 +3456,7 @@ const PublicVoiceGenerator = () => {
                   </SelectTrigger>
                   <SelectContent className="bg-gray-800 border-gray-600">
                     <SelectItem value="all" className="text-white focus:bg-gray-700">전체</SelectItem>
-                    {getAvailableGenders().map((opt) => (
+                    {genderOptions.map((opt) => (
                       <SelectItem key={opt.value} value={opt.value} className="text-white focus:bg-gray-700">{opt.label}</SelectItem>
                     ))}
                   </SelectContent>

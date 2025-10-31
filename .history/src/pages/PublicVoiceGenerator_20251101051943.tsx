@@ -316,109 +316,6 @@ const PublicVoiceGenerator = () => {
     return allUseCaseOptions.filter(opt => foundUseCases.has(opt.value));
   }, [allVoices]);
 
-  // 스타일 그룹 정의
-  const styleGroups = [
-    {
-      group: "감정",
-      styles: ["neutral", "happy", "sad", "angry", "disgusted", "surprised", "fearful"]
-    },
-    {
-      group: "톤",
-      styles: ["calm", "energetic", "serious", "friendly", "professional", "casual"]
-    },
-    {
-      group: "속도",
-      styles: ["slow", "normal", "fast"]
-    },
-    {
-      group: "강조",
-      styles: ["whisper", "cheerful", "sarcastic", "emphatic"]
-    }
-  ];
-
-  // 실제 음성 목록에서 사용되는 스타일만 추출하고 그룹화
-  const getAvailableStyles = useCallback(() => {
-    if (allVoices.length === 0) return { grouped: [], flat: [] };
-    
-    const foundStyles = new Set<string>();
-    
-    allVoices.forEach((v: any) => {
-      const styles = Array.isArray(v.styles) ? v.styles : (v.styles ? [v.styles] : []);
-      styles.forEach((s: string) => {
-        if (s) foundStyles.add(s.toLowerCase());
-      });
-    });
-    
-    // 그룹별로 필터링
-    const grouped: Array<{ group: string; styles: Array<{ value: string; label: string }> }> = [];
-    
-    styleGroups.forEach(group => {
-      const availableStyles = group.styles.filter(s => foundStyles.has(s));
-      if (availableStyles.length > 0) {
-        grouped.push({
-          group: group.group,
-          styles: availableStyles.map(s => ({
-            value: s,
-            label: styleCodeToKo(s)
-          }))
-        });
-      }
-    });
-    
-    // 그룹에 포함되지 않은 스타일들
-    const ungrouped = Array.from(foundStyles).filter(s => {
-      return !styleGroups.some(g => g.styles.includes(s));
-    }).map(s => ({
-      value: s,
-      label: styleCodeToKo(s)
-    }));
-    
-    if (ungrouped.length > 0) {
-      grouped.push({
-        group: "기타",
-        styles: ungrouped
-      });
-    }
-    
-    // 평면 리스트도 반환 (기존 호환성)
-    const flat = Array.from(foundStyles).map(s => ({
-      value: s,
-      label: styleCodeToKo(s)
-    }));
-    
-    return { grouped, flat };
-  }, [allVoices]);
-
-  // 실제 음성 목록에서 사용되는 언어만 추출
-  const getAvailableLanguages = useCallback(() => {
-    if (allVoices.length === 0) return [];
-    
-    const foundLanguages = new Set<string>();
-    
-    allVoices.forEach((v: any) => {
-      const langs = Array.isArray(v.language) ? v.language : (v.language ? [v.language] : []);
-      langs.forEach((l: string) => {
-        if (l) foundLanguages.add(normalizeLanguage(l));
-      });
-    });
-    
-    return languageOptions.filter(opt => foundLanguages.has(opt.value));
-  }, [allVoices]);
-
-  // 실제 음성 목록에서 사용되는 성별만 추출
-  const getAvailableGenders = useCallback(() => {
-    if (allVoices.length === 0) return [];
-    
-    const foundGenders = new Set<string>();
-    
-    allVoices.forEach((v: any) => {
-      const gender = v.gender || "";
-      if (gender) foundGenders.add(gender);
-    });
-    
-    return genderOptions.filter(opt => foundGenders.has(opt.value));
-  }, [allVoices]);
-
   const purposeOptions = [
     {
       id: "announcement",
@@ -3421,7 +3318,7 @@ const PublicVoiceGenerator = () => {
       <Dialog open={isVoiceFinderOpen} onOpenChange={setIsVoiceFinderOpen}>
         <DialogContent className="sm:max-w-4xl dark-dialog bg-gray-900/95 border-gray-700">
           <DialogHeader>
-            <DialogTitle style={{ color: '#FFFFFF' }}>음성 검색</DialogTitle>
+            <DialogTitle style={{ color: '#FFFFFF' }}>Supertone 음성 탐색</DialogTitle>
             <DialogDescription style={{ color: '#E5E7EB' }}>
               언어, 스타일, 이름 등을 조합하여 원하는 음성을 검색하고 선택하세요.
             </DialogDescription>
@@ -3436,7 +3333,7 @@ const PublicVoiceGenerator = () => {
                   </SelectTrigger>
                   <SelectContent className="bg-gray-800 border-gray-600">
                     <SelectItem value="all" className="text-white focus:bg-gray-700">전체</SelectItem>
-                    {getAvailableLanguages().map((opt) => (
+                    {languageOptions.map((opt) => (
                       <SelectItem key={opt.value} value={opt.value} className="text-white focus:bg-gray-700">{opt.label}</SelectItem>
                     ))}
                   </SelectContent>
@@ -3448,17 +3345,10 @@ const PublicVoiceGenerator = () => {
                   <SelectTrigger className="bg-gray-800/50 border-gray-600 text-white">
                     <SelectValue placeholder="전체" />
                   </SelectTrigger>
-                  <SelectContent className="bg-gray-800 border-gray-600 max-h-[300px]">
+                  <SelectContent className="bg-gray-800 border-gray-600">
                     <SelectItem value="all" className="text-white focus:bg-gray-700">전체</SelectItem>
-                    {getAvailableStyles().grouped.map((group) => (
-                      <div key={group.group}>
-                        <div className="px-2 py-1.5 text-xs font-semibold text-gray-400 bg-gray-700/50">{group.group}</div>
-                        {group.styles.map((style) => (
-                          <SelectItem key={style.value} value={style.value} className="text-white focus:bg-gray-700 pl-6">
-                            {style.label}
-                          </SelectItem>
-                        ))}
-                      </div>
+                    {styleOptions.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value} className="text-white focus:bg-gray-700">{opt.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -3493,7 +3383,7 @@ const PublicVoiceGenerator = () => {
                   </SelectTrigger>
                   <SelectContent className="bg-gray-800 border-gray-600">
                     <SelectItem value="all" className="text-white focus:bg-gray-700">전체</SelectItem>
-                    {getAvailableGenders().map((opt) => (
+                    {genderOptions.map((opt) => (
                       <SelectItem key={opt.value} value={opt.value} className="text-white focus:bg-gray-700">{opt.label}</SelectItem>
                     ))}
                   </SelectContent>

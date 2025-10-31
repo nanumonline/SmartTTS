@@ -3493,7 +3493,7 @@ const PublicVoiceGenerator = () => {
                   </SelectTrigger>
                   <SelectContent className="bg-gray-800 border-gray-600">
                     <SelectItem value="all" className="text-white focus:bg-gray-700">전체</SelectItem>
-                    {getAvailableGenders().map((opt) => (
+                    {genderOptions.map((opt) => (
                       <SelectItem key={opt.value} value={opt.value} className="text-white focus:bg-gray-700">{opt.label}</SelectItem>
                     ))}
                   </SelectContent>
