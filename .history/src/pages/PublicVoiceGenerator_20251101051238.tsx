@@ -2939,25 +2939,19 @@ const PublicVoiceGenerator = () => {
                           <Label className="text-sm">끊어 읽기</Label>
                           <Info className="w-4 h-4 text-muted-foreground" />
                         </div>
-                        <div className="p-3 bg-muted/50 rounded-lg border border-border">
-                          <p className="text-xs text-muted-foreground mb-2">
-                            텍스트의 특정 위치에 일시정지를 삽입할 수 있습니다. 구간을 추가하여 자연스러운 리듬감을 만드세요.
-                          </p>
-                          <div className="flex items-center gap-2">
-                            <Label className="text-xs">기본 일시정지:</Label>
-                            <Slider
-                              value={[voiceSettings.pause.duration]}
-                              onValueChange={(value) => setVoiceSettings(prev => ({
-                                ...prev,
-                                pause: { ...prev.pause, duration: value[0] }
-                              }))}
-                              min={0}
-                              max={10}
-                              step={0.1}
-                              className="flex-1"
-                            />
-                            <span className="text-sm w-12 text-center">{voiceSettings.pause.duration.toFixed(1)}초</span>
-                          </div>
+                        <div className="flex items-center gap-2">
+                          <Slider
+                            value={[voiceSettings.pause.duration]}
+                            onValueChange={(value) => setVoiceSettings(prev => ({
+                              ...prev,
+                              pause: { ...prev.pause, duration: value[0] }
+                            }))}
+                            min={0}
+                            max={10}
+                            step={0.1}
+                            className="flex-1"
+                          />
+                          <span className="text-sm w-12">{voiceSettings.pause.duration}초</span>
                         </div>
                         <Button
                           variant="outline"

@@ -2939,78 +2939,28 @@ const PublicVoiceGenerator = () => {
                           <Label className="text-sm">끊어 읽기</Label>
                           <Info className="w-4 h-4 text-muted-foreground" />
                         </div>
-                        <div className="p-3 bg-muted/50 rounded-lg border border-border">
-                          <p className="text-xs text-muted-foreground mb-2">
-                            텍스트의 특정 위치에 일시정지를 삽입할 수 있습니다. 구간을 추가하여 자연스러운 리듬감을 만드세요.
-                          </p>
-                          <div className="flex items-center gap-2">
-                            <Label className="text-xs">기본 일시정지:</Label>
-                            <Slider
-                              value={[voiceSettings.pause.duration]}
-                              onValueChange={(value) => setVoiceSettings(prev => ({
-                                ...prev,
-                                pause: { ...prev.pause, duration: value[0] }
-                              }))}
-                              min={0}
-                              max={10}
-                              step={0.1}
-                              className="flex-1"
-                            />
-                            <span className="text-sm w-12 text-center">{voiceSettings.pause.duration.toFixed(1)}초</span>
-                          </div>
+                        <div className="flex items-center gap-2">
+                          <Slider
+                            value={[voiceSettings.pause.duration]}
+                            onValueChange={(value) => setVoiceSettings(prev => ({
+                              ...prev,
+                              pause: { ...prev.pause, duration: value[0] }
+                            }))}
+                            min={0}
+                            max={10}
+                            step={0.1}
+                            className="flex-1"
+                          />
+                          <span className="text-sm w-12">{voiceSettings.pause.duration}초</span>
                         </div>
                         <Button
                           variant="outline"
                           size="sm"
                           className="w-full"
-                          onClick={() => {
-                            setNewPauseSegment({ position: Math.floor(customText.length / 2), duration: 0.5 });
-                            setIsPauseSegmentDialogOpen(true);
-                          }}
-                          disabled={!customText.trim()}
                         >
                           <Plus className="w-4 h-4 mr-2" />
                           구간 추가하기
                         </Button>
-                        
-                        {voiceSettings.pause.segments.length > 0 && (
-                          <div className="space-y-2">
-                            <Label className="text-xs text-muted-foreground">추가된 구간 ({voiceSettings.pause.segments.length}개)</Label>
-                            <div className="space-y-1 max-h-40 overflow-y-auto">
-                              {voiceSettings.pause.segments.map((segment, idx) => (
-                                <div key={idx} className="flex items-center justify-between p-2 bg-muted/50 rounded border border-border">
-                                  <div className="flex-1">
-                                    <span className="text-xs">
-                                      위치: {segment.position}번째 문자 | 
-                                      시간: {segment.duration}초
-                                    </span>
-                                    {customText && (
-                                      <span className="text-xs text-muted-foreground block mt-1">
-                                        "{customText.slice(Math.max(0, segment.position - 5), Math.min(customText.length, segment.position + 5))}"
-                                      </span>
-                                    )}
-                                  </div>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-7 w-7 p-0"
-                                    onClick={() => {
-                                      setVoiceSettings(prev => ({
-                                        ...prev,
-                                        pause: {
-                                          ...prev.pause,
-                                          segments: prev.pause.segments.filter((_, i) => i !== idx)
-                                        }
-                                      }));
-                                    }}
-                                  >
-                                    <X className="w-4 h-4" />
-                                  </Button>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
                       </div>
                     </TabsContent>
 

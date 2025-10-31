@@ -185,10 +185,6 @@ const PublicVoiceGenerator = () => {
   const [cloneRequests, setCloneRequests] = useState<CloneRequest[]>([]);
   const [isCloneModalOpen, setIsCloneModalOpen] = useState(false);
   const [alertDialog, setAlertDialog] = useState<{ open: boolean; title: string; message: string; onConfirm?: () => void }>({ open: false, title: "", message: "" });
-  
-  // 끊어읽기 구간 추가 다이얼로그
-  const [isPauseSegmentDialogOpen, setIsPauseSegmentDialogOpen] = useState(false);
-  const [newPauseSegment, setNewPauseSegment] = useState({ position: 0, duration: 0.5 });
   const createCloneForm = useCallback((overrides?: Partial<CloneFormState>): CloneFormState => ({
     targetName: "",
     baseVoiceId: "",
@@ -1117,7 +1113,7 @@ const PublicVoiceGenerator = () => {
     },
     pause: {
       duration: 0.1,
-      segments: [] as Array<{ position: number; duration: number }>
+      segments: []
     },
     endingTone: {
       mode: "auto"
@@ -1677,21 +1673,7 @@ const PublicVoiceGenerator = () => {
       getEmotionValue(voiceSettings.emotion.preset, voiceSettings.emotion.customPrompt);
 
     const speedValue = getSpeedMultiplier();
-    // 피치: -100 ~ +100 범위를 -12 ~ +12 세미톤으로 변환
     const pitchShift = Math.max(-12, Math.min(12, Math.round(voiceSettings.pitch / 8.33)));
-    
-    // 끊어읽기 구간을 텍스트에 적용 (SSML 형식)
-    let processedText = trimmedText;
-    if (voiceSettings.pause.segments.length > 0) {
-      // 구간을 위치 순으로 정렬
-      const sortedSegments = [...voiceSettings.pause.segments].sort((a, b) => b.position - a.position);
-      // 뒤에서부터 삽입 (인덱스 변경 방지)
-      sortedSegments.forEach((segment) => {
-        const position = Math.min(Math.max(0, segment.position), processedText.length);
-        const breakTag = `<break time="${segment.duration}s"/>`;
-        processedText = processedText.slice(0, position) + breakTag + processedText.slice(position);
-      });
-    }
 
     // 선택된 음성의 지원 언어/모델 파악
     const selected = availableVoices.find((v: any) => v.voice_id === selectedVoice) || selectedVoiceInfo;
@@ -1716,7 +1698,7 @@ const PublicVoiceGenerator = () => {
 
     // 캐시 키 구성 및 캐시 히트 시 바로 반환
     const cacheKey = buildGenerationKey({
-      text: processedText, // pause 구간이 적용된 텍스트 사용
+      text: trimmedText,
       voiceId: selectedVoice,
       language: chosenLanguage,
       model: chosenModel,
@@ -1737,15 +1719,14 @@ const PublicVoiceGenerator = () => {
     setIsGenerating(true);
 
     const requestBody: Record<string, any> = {
-      text: processedText, // pause 구간이 적용된 텍스트
+      text: trimmedText,
       language: chosenLanguage,
       style: styleValue,
       model: chosenModel,
       voice_settings: {
-        speed: speedValue, // 읽는 속도 (0.7 ~ 1.3)
-        pitch_shift: pitchShift, // 피치 변경 (-12 ~ +12 세미톤)
+        speed: speedValue,
+        pitch_shift: pitchShift,
         pitch_variance: 1,
-        playback_speed: voiceSettings.playbackSpeed, // 재생 속도 (0.5 ~ 2.0)
       },
     };
 
@@ -2939,78 +2920,28 @@ const PublicVoiceGenerator = () => {
                           <Label className="text-sm">끊어 읽기</Label>
                           <Info className="w-4 h-4 text-muted-foreground" />
                         </div>
-                        <div className="p-3 bg-muted/50 rounded-lg border border-border">
-                          <p className="text-xs text-muted-foreground mb-2">
-                            텍스트의 특정 위치에 일시정지를 삽입할 수 있습니다. 구간을 추가하여 자연스러운 리듬감을 만드세요.
-                          </p>
-                          <div className="flex items-center gap-2">
-                            <Label className="text-xs">기본 일시정지:</Label>
-                            <Slider
-                              value={[voiceSettings.pause.duration]}
-                              onValueChange={(value) => setVoiceSettings(prev => ({
-                                ...prev,
-                                pause: { ...prev.pause, duration: value[0] }
-                              }))}
-                              min={0}
-                              max={10}
-                              step={0.1}
-                              className="flex-1"
-                            />
-                            <span className="text-sm w-12 text-center">{voiceSettings.pause.duration.toFixed(1)}초</span>
-                          </div>
+                        <div className="flex items-center gap-2">
+                          <Slider
+                            value={[voiceSettings.pause.duration]}
+                            onValueChange={(value) => setVoiceSettings(prev => ({
+                              ...prev,
+                              pause: { ...prev.pause, duration: value[0] }
+                            }))}
+                            min={0}
+                            max={10}
+                            step={0.1}
+                            className="flex-1"
+                          />
+                          <span className="text-sm w-12">{voiceSettings.pause.duration}초</span>
                         </div>
                         <Button
                           variant="outline"
                           size="sm"
                           className="w-full"
-                          onClick={() => {
-                            setNewPauseSegment({ position: Math.floor(customText.length / 2), duration: 0.5 });
-                            setIsPauseSegmentDialogOpen(true);
-                          }}
-                          disabled={!customText.trim()}
                         >
                           <Plus className="w-4 h-4 mr-2" />
                           구간 추가하기
                         </Button>
-                        
-                        {voiceSettings.pause.segments.length > 0 && (
-                          <div className="space-y-2">
-                            <Label className="text-xs text-muted-foreground">추가된 구간 ({voiceSettings.pause.segments.length}개)</Label>
-                            <div className="space-y-1 max-h-40 overflow-y-auto">
-                              {voiceSettings.pause.segments.map((segment, idx) => (
-                                <div key={idx} className="flex items-center justify-between p-2 bg-muted/50 rounded border border-border">
-                                  <div className="flex-1">
-                                    <span className="text-xs">
-                                      위치: {segment.position}번째 문자 | 
-                                      시간: {segment.duration}초
-                                    </span>
-                                    {customText && (
-                                      <span className="text-xs text-muted-foreground block mt-1">
-                                        "{customText.slice(Math.max(0, segment.position - 5), Math.min(customText.length, segment.position + 5))}"
-                                      </span>
-                                    )}
-                                  </div>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-7 w-7 p-0"
-                                    onClick={() => {
-                                      setVoiceSettings(prev => ({
-                                        ...prev,
-                                        pause: {
-                                          ...prev.pause,
-                                          segments: prev.pause.segments.filter((_, i) => i !== idx)
-                                        }
-                                      }));
-                                    }}
-                                  >
-                                    <X className="w-4 h-4" />
-                                  </Button>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
                       </div>
                     </TabsContent>
 
@@ -3021,56 +2952,34 @@ const PublicVoiceGenerator = () => {
                             <Label className="text-sm">PRO 재생 속도</Label>
                             <Info className="w-4 h-4 text-muted-foreground" />
                           </div>
-                          <div className="p-3 bg-muted/50 rounded-lg border border-border">
-                            <p className="text-xs text-muted-foreground mb-2">
-                              생성된 오디오의 재생 속도를 조절합니다. (0.5x ~ 2.0x)
-                            </p>
-                            <Slider
-                              value={[voiceSettings.playbackSpeed]}
-                              onValueChange={(value) => setVoiceSettings(prev => ({
-                                ...prev,
-                                playbackSpeed: value[0]
-                              }))}
-                              min={0.5}
-                              max={2}
-                              step={0.1}
-                              className="w-full"
-                            />
-                            <div className="flex justify-between mt-2">
-                              <span className="text-xs text-muted-foreground">0.5x (느림)</span>
-                              <span className="text-sm font-medium">{voiceSettings.playbackSpeed.toFixed(1)}x</span>
-                              <span className="text-xs text-muted-foreground">2.0x (빠름)</span>
-                            </div>
-                          </div>
+                          <Slider
+                            value={[voiceSettings.playbackSpeed]}
+                            onValueChange={(value) => setVoiceSettings(prev => ({
+                              ...prev,
+                              playbackSpeed: value[0]
+                            }))}
+                            min={0.5}
+                            max={2}
+                            step={0.1}
+                            className="w-full"
+                          />
                         </div>
                         <div className="space-y-2">
                           <div className="flex items-center gap-2">
                             <Label className="text-sm">PRO 피치</Label>
                             <Info className="w-4 h-4 text-muted-foreground" />
                           </div>
-                          <div className="p-3 bg-muted/50 rounded-lg border border-border">
-                            <p className="text-xs text-muted-foreground mb-2">
-                              음성의 높낮이를 조절합니다. (-100: 낮음, 0: 기본, +100: 높음)
-                            </p>
-                            <Slider
-                              value={[voiceSettings.pitch]}
-                              onValueChange={(value) => setVoiceSettings(prev => ({
-                                ...prev,
-                                pitch: value[0]
-                              }))}
-                              min={-100}
-                              max={100}
-                              step={1}
-                              className="w-full"
-                            />
-                            <div className="flex justify-between mt-2">
-                              <span className="text-xs text-muted-foreground">-100 (낮음)</span>
-                              <span className="text-sm font-medium">
-                                {voiceSettings.pitch > 0 ? '+' : ''}{voiceSettings.pitch}
-                              </span>
-                              <span className="text-xs text-muted-foreground">+100 (높음)</span>
-                            </div>
-                          </div>
+                          <Slider
+                            value={[voiceSettings.pitch]}
+                            onValueChange={(value) => setVoiceSettings(prev => ({
+                              ...prev,
+                              pitch: value[0]
+                            }))}
+                            min={-100}
+                            max={100}
+                            step={1}
+                            className="w-full"
+                          />
                         </div>
                       </div>
                     </TabsContent>
