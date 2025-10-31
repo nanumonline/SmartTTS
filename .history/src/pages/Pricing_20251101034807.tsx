@@ -285,12 +285,12 @@ ${plan.name} 플랜에 대해 문의드립니다.
                 </div>
               )}
               
-              <CardHeader className="text-center pb-4">
+              <CardHeader className="text-center pb-4" style={{ backgroundColor: '#FFFFFF' }}>
                 <div className="w-12 h-12 mx-auto mb-4 bg-gradient-to-br from-primary to-accent rounded-lg flex items-center justify-center">
                   <plan.icon className="w-6 h-6 text-white" />
                 </div>
-                <CardTitle className="text-xl">{plan.name}</CardTitle>
-                <CardDescription className="text-sm">
+                <CardTitle className="text-xl" style={{ color: '#111827' }}>{plan.name}</CardTitle>
+                <CardDescription className="text-sm" style={{ color: '#374151' }}>
                   {plan.description}
                 </CardDescription>
                 {plan.tagline && (
@@ -300,22 +300,22 @@ ${plan.name} 플랜에 대해 문의드립니다.
                 )}
               </CardHeader>
               
-              <CardContent className="space-y-6">
+              <CardContent className="space-y-6" style={{ backgroundColor: '#FFFFFF' }}>
                 {/* Price */}
                 <div className="text-center">
                   {plan.isCustom ? (
                     <>
-                      <div className="text-2xl font-bold">문의</div>
+                      <div className="text-2xl font-bold" style={{ color: '#111827' }}>문의</div>
                       <div className="text-sm text-primary font-medium">
                         무제한 크레딧
                       </div>
                     </>
                   ) : (
                     <>
-                      <div className="text-3xl font-bold">
+                      <div className="text-3xl font-bold" style={{ color: '#111827' }}>
                         ₩{(isAnnual ? plan.annualPrice : plan.monthlyPrice).toLocaleString()}
                       </div>
-                      <div className="text-sm text-muted-foreground">
+                      <div className="text-sm" style={{ color: '#6B7280' }}>
                         {isAnnual ? '연간' : '월간'}
                       </div>
                       {plan.credits && (
@@ -324,7 +324,7 @@ ${plan.name} 플랜에 대해 문의드립니다.
                         </div>
                       )}
                       {plan.credits && (
-                        <div className="text-xs text-muted-foreground">
+                        <div className="text-xs" style={{ color: '#9CA3AF' }}>
                           *크레딧은 매월 초기화되며 이월이 불가합니다
                         </div>
                       )}
@@ -337,7 +337,7 @@ ${plan.name} 플랜에 대해 문의드립니다.
                   {plan.features.map((feature, index) => (
                     <div key={index} className="flex items-start gap-2">
                       <Check className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                      <span className="text-sm">{feature}</span>
+                      <span className="text-sm" style={{ color: '#374151' }}>{feature}</span>
                     </div>
                   ))}
                 </div>
@@ -345,15 +345,15 @@ ${plan.name} 플랜에 대해 문의드립니다.
                 {/* API Features */}
                 {plan.apiFeatures && (
                   <div className="space-y-2">
-                    <div className="text-sm font-medium text-muted-foreground">이용 가능한 API</div>
+                    <div className="text-sm font-medium" style={{ color: '#6B7280' }}>이용 가능한 API</div>
                     {plan.apiFeatures.map((apiFeature, index) => (
                       <div key={index} className="flex items-start gap-2">
                         <div className="w-1 h-1 bg-primary rounded-full mt-2 flex-shrink-0"></div>
-                        <span className="text-sm">{apiFeature}</span>
+                        <span className="text-sm" style={{ color: '#374151' }}>{apiFeature}</span>
                       </div>
                     ))}
                     {plan.requestLimit && (
-                      <div className="text-xs text-muted-foreground mt-2">
+                      <div className="text-xs" style={{ color: '#9CA3AF' }}>
                         요청 제한: {plan.requestLimit}
                       </div>
                     )}
@@ -426,13 +426,13 @@ ${plan.name} 플랜에 대해 문의드립니다.
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
           {features.map((feature, index) => (
-            <Card key={index} className="landio-card text-center landio-fade-up" style={{ animationDelay: `${index * 0.1}s` }}>
+            <Card key={index} className="landio-card text-center landio-fade-up" style={{ animationDelay: `${index * 0.1}s`, backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }}>
               <CardContent className="p-6">
                 <div className="w-12 h-12 mx-auto mb-4 bg-primary/10 rounded-xl flex items-center justify-center" style={{ borderRadius: '12px' }}>
                   <feature.icon className="w-6 h-6 text-primary" />
                 </div>
-                <h3 className="font-semibold mb-2 font-display text-card-foreground">{feature.title}</h3>
-                <p className="text-sm leading-relaxed text-muted-foreground">{feature.description}</p>
+                <h3 className="font-semibold mb-2 font-display" style={{ color: '#111827' }}>{feature.title}</h3>
+                <p className="text-sm leading-relaxed" style={{ color: '#374151' }}>{feature.description}</p>
               </CardContent>
             </Card>
           ))}
@@ -442,40 +442,40 @@ ${plan.name} 플랜에 대해 문의드립니다.
         <div className="max-w-3xl mx-auto landio-fade-up">
           <h2 className="landio-text-h2 text-center mb-8" style={{ color: '#1F2937' }}>공공기관 자주 묻는 질문</h2>
           <div className="space-y-4">
-            <Card className="landio-card">
+            <Card className="landio-card" style={{ backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }}>
               <CardContent className="p-6">
-                <h3 className="font-semibold mb-2 font-display text-card-foreground">공공기관 할인이 있나요?</h3>
-                <p className="text-sm leading-relaxed text-muted-foreground">
+                <h3 className="font-semibold mb-2 font-display" style={{ color: '#111827' }}>공공기관 할인이 있나요?</h3>
+                <p className="text-sm leading-relaxed" style={{ color: '#374151' }}>
                   공공기관은 연간 결제 시 20% 할인 혜택을 받을 수 있습니다. 
                   또한 대규모 계약 시 추가 할인 및 맞춤형 조건을 제공합니다.
                 </p>
               </CardContent>
             </Card>
             
-            <Card className="landio-card">
+            <Card className="landio-card" style={{ backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }}>
               <CardContent className="p-6">
-                <h3 className="font-semibold mb-2 font-display text-card-foreground">공공기관 보안 인증은 받았나요?</h3>
-                <p className="text-sm leading-relaxed text-muted-foreground">
+                <h3 className="font-semibold mb-2 font-display" style={{ color: '#111827' }}>공공기관 보안 인증은 받았나요?</h3>
+                <p className="text-sm leading-relaxed" style={{ color: '#374151' }}>
                   네, 공공기관 보안 인증을 받았으며, 개인정보보호법 및 정보통신망법을 준수합니다. 
                   모든 데이터는 국내 서버에서 관리되며, 정부 보안 가이드라인을 충족합니다.
                 </p>
               </CardContent>
             </Card>
             
-            <Card className="landio-card">
+            <Card className="landio-card" style={{ backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }}>
               <CardContent className="p-6">
-                <h3 className="font-semibold mb-2 font-display text-card-foreground">긴급상황 시 지원이 가능한가요?</h3>
-                <p className="text-sm leading-relaxed text-muted-foreground">
+                <h3 className="font-semibold mb-2 font-display" style={{ color: '#111827' }}>긴급상황 시 지원이 가능한가요?</h3>
+                <p className="text-sm leading-relaxed" style={{ color: '#374151' }}>
                   긴급상황 발생 시 24시간 긴급 지원 서비스를 제공합니다. 
                   자연재해, 보안사고 등 공공기관 긴급상황에 즉시 대응할 수 있습니다.
                 </p>
               </CardContent>
             </Card>
             
-            <Card className="landio-card">
+            <Card className="landio-card" style={{ backgroundColor: '#FFFFFF', borderColor: '#E5E7EB' }}>
               <CardContent className="p-6">
-                <h3 className="font-semibold mb-2 font-display text-card-foreground">기관 내부 시스템과 연동이 가능한가요?</h3>
-                <p className="text-sm leading-relaxed text-muted-foreground">
+                <h3 className="font-semibold mb-2 font-display" style={{ color: '#111827' }}>기관 내부 시스템과 연동이 가능한가요?</h3>
+                <p className="text-sm leading-relaxed" style={{ color: '#374151' }}>
                   네, 기관 내부 시스템과의 연동을 지원합니다. 
                   API를 통해 기존 방송 시스템, 홈페이지, 모바일 앱 등과 연동하여 통합 관리가 가능합니다.
                 </p>

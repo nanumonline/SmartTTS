@@ -2944,8 +2944,8 @@ const PublicVoiceGenerator = () => {
                                 <div className="text-xs text-muted-foreground break-all">ID: {voice.voice_id}</div>
                               </div>
                               <div className="flex items-center gap-2">
-                              <Button
-                                size="sm"
+                                <Button
+                                  size="sm"
                                   variant="ghost"
                                   className="landio-button"
                                   onClick={() => {
@@ -3234,7 +3234,7 @@ const PublicVoiceGenerator = () => {
         </DialogContent>
       </Dialog>
 
-    </div>
+     </div>
   );
 };
 
