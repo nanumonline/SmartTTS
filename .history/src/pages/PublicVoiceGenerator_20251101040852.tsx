@@ -2261,7 +2261,7 @@ const PublicVoiceGenerator = () => {
                               setCustomText(out);
                               setLastAIPrompt(openAIPrompt);
                             } catch (e: any) {
-                              setAlertDialog({ open: true, title: "OpenAI 작성 실패", message: e?.message || "OpenAI 작성 중 오류가 발생했습니다." });
+                              alert(e?.message || "OpenAI 작성 실패");
                             } finally {
                               setIsLoadingAI(false);
                             }
@@ -2286,16 +2286,13 @@ const PublicVoiceGenerator = () => {
                           variant="outline"
                           onClick={async () => {
                             try {
-                              if (!customText.trim()) { 
-                                setAlertDialog({ open: true, title: "텍스트 없음", message: "수정할 텍스트를 입력해주세요." });
-                                return; 
-                              }
+                              if (!customText.trim()) { alert("수정할 텍스트가 없습니다"); return; }
                               setIsLoadingAI(true);
                               const out = await editWithOpenAI(customText, openAIInstruction);
                               setCustomText(out);
                               setLastAIInstruction(openAIInstruction);
                             } catch (e: any) {
-                              setAlertDialog({ open: true, title: "OpenAI 수정 실패", message: e?.message || "OpenAI 수정 중 오류가 발생했습니다." });
+                              alert(e?.message || "OpenAI 수정 실패");
                             } finally {
                               setIsLoadingAI(false);
                             }
@@ -3344,23 +3341,6 @@ const PublicVoiceGenerator = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Alert Dialog */}
-      <AlertDialog open={alertDialog.open} onOpenChange={(open) => setAlertDialog({ ...alertDialog, open })}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{alertDialog.title}</AlertDialogTitle>
-            <AlertDialogDescription>{alertDialog.message}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogAction onClick={() => {
-              setAlertDialog({ ...alertDialog, open: false });
-              if (alertDialog.onConfirm) alertDialog.onConfirm();
-            }}>
-              확인
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 };

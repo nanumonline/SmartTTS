@@ -3344,23 +3344,6 @@ const PublicVoiceGenerator = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Alert Dialog */}
-      <AlertDialog open={alertDialog.open} onOpenChange={(open) => setAlertDialog({ ...alertDialog, open })}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{alertDialog.title}</AlertDialogTitle>
-            <AlertDialogDescription>{alertDialog.message}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogAction onClick={() => {
-              setAlertDialog({ ...alertDialog, open: false });
-              if (alertDialog.onConfirm) alertDialog.onConfirm();
-            }}>
-              확인
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 };

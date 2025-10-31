@@ -1531,12 +1531,12 @@ const PublicVoiceGenerator = () => {
   const handleGenerateVoice = async () => {
     const trimmedText = customText.trim();
     if (!trimmedText) {
-      setAlertDialog({ open: true, title: "입력 필요", message: "텍스트를 입력해주세요." });
+      alert("텍스트를 입력해주세요.");
       return;
     }
 
     if (!selectedVoice) {
-      setAlertDialog({ open: true, title: "선택 필요", message: "음성 스타일을 선택해주세요." });
+      alert("음성 스타일을 선택해주세요.");
       return;
     }
 
@@ -1778,7 +1778,7 @@ const PublicVoiceGenerator = () => {
       window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error("다운로드 오류:", error);
-      setAlertDialog({ open: true, title: "다운로드 오류", message: "다운로드 중 오류가 발생했습니다." });
+      alert("다운로드 중 오류가 발생했습니다.");
     }
   };
 
@@ -2261,7 +2261,7 @@ const PublicVoiceGenerator = () => {
                               setCustomText(out);
                               setLastAIPrompt(openAIPrompt);
                             } catch (e: any) {
-                              setAlertDialog({ open: true, title: "OpenAI 작성 실패", message: e?.message || "OpenAI 작성 중 오류가 발생했습니다." });
+                              alert(e?.message || "OpenAI 작성 실패");
                             } finally {
                               setIsLoadingAI(false);
                             }
@@ -2286,16 +2286,13 @@ const PublicVoiceGenerator = () => {
                           variant="outline"
                           onClick={async () => {
                             try {
-                              if (!customText.trim()) { 
-                                setAlertDialog({ open: true, title: "텍스트 없음", message: "수정할 텍스트를 입력해주세요." });
-                                return; 
-                              }
+                              if (!customText.trim()) { alert("수정할 텍스트가 없습니다"); return; }
                               setIsLoadingAI(true);
                               const out = await editWithOpenAI(customText, openAIInstruction);
                               setCustomText(out);
                               setLastAIInstruction(openAIInstruction);
                             } catch (e: any) {
-                              setAlertDialog({ open: true, title: "OpenAI 수정 실패", message: e?.message || "OpenAI 수정 중 오류가 발생했습니다." });
+                              alert(e?.message || "OpenAI 수정 실패");
                             } finally {
                               setIsLoadingAI(false);
                             }
@@ -2346,10 +2343,7 @@ const PublicVoiceGenerator = () => {
                       onClick={async () => {
                         try {
                           const prompt = (lastAIPrompt || openAIPrompt).trim();
-                          if (!prompt) { 
-                            setAlertDialog({ open: true, title: "프롬프트 없음", message: "프롬프트를 입력해주세요." });
-                            return; 
-                          }
+                          if (!prompt) { alert("프롬프트가 없습니다"); return; }
                           setIsLoadingAI(true);
                           const org = user?.organization || "귀 기관";
                           const dept = user?.department || "관계 부서";
@@ -2358,7 +2352,7 @@ const PublicVoiceGenerator = () => {
                           setCustomText(out);
                           setLastAIPrompt(prompt);
                         } catch (e: any) {
-                          setAlertDialog({ open: true, title: "다시 생성 실패", message: e?.message || "다시 생성 중 오류가 발생했습니다." });
+                          alert(e?.message || "다시 생성 실패");
                         } finally {
                           setIsLoadingAI(false);
                         }
@@ -2371,20 +2365,14 @@ const PublicVoiceGenerator = () => {
                       onClick={async () => {
                         try {
                           const instruction = (lastAIInstruction || openAIInstruction).trim();
-                          if (!instruction) { 
-                            setAlertDialog({ open: true, title: "수정 지침 없음", message: "수정 지침을 입력해주세요." });
-                            return; 
-                          }
-                          if (!customText.trim()) { 
-                            setAlertDialog({ open: true, title: "텍스트 없음", message: "수정할 텍스트를 입력해주세요." });
-                            return; 
-                          }
+                          if (!instruction) { alert("수정 지침이 없습니다"); return; }
+                          if (!customText.trim()) { alert("수정할 텍스트가 없습니다"); return; }
                           setIsLoadingAI(true);
                           const out = await editWithOpenAI(customText, instruction);
                           setCustomText(out);
                           setLastAIInstruction(instruction);
                         } catch (e: any) {
-                          setAlertDialog({ open: true, title: "다시 수정 실패", message: e?.message || "다시 수정 중 오류가 발생했습니다." });
+                          alert(e?.message || "다시 수정 실패");
                         } finally {
                           setIsLoadingAI(false);
                         }
@@ -3344,23 +3332,6 @@ const PublicVoiceGenerator = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Alert Dialog */}
-      <AlertDialog open={alertDialog.open} onOpenChange={(open) => setAlertDialog({ ...alertDialog, open })}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{alertDialog.title}</AlertDialogTitle>
-            <AlertDialogDescription>{alertDialog.message}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogAction onClick={() => {
-              setAlertDialog({ ...alertDialog, open: false });
-              if (alertDialog.onConfirm) alertDialog.onConfirm();
-            }}>
-              확인
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 };
