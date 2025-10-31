@@ -3063,7 +3063,7 @@ const PublicVoiceGenerator = () => {
       <Dialog open={isCloneModalOpen} onOpenChange={setIsCloneModalOpen}>
         <DialogContent className="sm:max-w-lg dark-dialog">
           <DialogHeader>
-            <DialogTitle className="text-white font-bold">새 클론 음성 생성</DialogTitle>
+            <DialogTitle className="text-white">새 클론 음성 생성</DialogTitle>
             <DialogDescription className="text-gray-300">
               기준 음성과 샘플 음성을 업로드하면, 동일한 톤의 클론 음성을 만들어 음성 목록에 추가합니다.
             </DialogDescription>
