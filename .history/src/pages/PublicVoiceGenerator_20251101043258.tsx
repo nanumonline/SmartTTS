@@ -3022,79 +3022,78 @@ const PublicVoiceGenerator = () => {
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mt-4">
             <div className="md:col-span-2 space-y-3">
               <div>
-                <Label className="text-xs" style={{ color: '#E5E7EB' }}>언어</Label>
+                <Label className="text-xs text-muted-foreground">언어</Label>
                 <Select value={voiceFilters.language || undefined} onValueChange={(v) => setVoiceFilters(prev => ({ ...prev, language: v === "all" ? "" : v }))}>
-                  <SelectTrigger className="bg-gray-800/50 border-gray-600 text-white">
+                  <SelectTrigger>
                     <SelectValue placeholder="전체" />
                   </SelectTrigger>
-                  <SelectContent className="bg-gray-800 border-gray-600">
-                    <SelectItem value="all" className="text-white focus:bg-gray-700">전체</SelectItem>
+                  <SelectContent>
+                    <SelectItem value="all">전체</SelectItem>
                     {languageOptions.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value} className="text-white focus:bg-gray-700">{opt.label}</SelectItem>
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label className="text-xs" style={{ color: '#E5E7EB' }}>스타일</Label>
+                <Label className="text-xs text-muted-foreground">스타일</Label>
                 <Select value={voiceFilters.style || undefined} onValueChange={(v) => setVoiceFilters(prev => ({ ...prev, style: v === "all" ? "" : v }))}>
-                  <SelectTrigger className="bg-gray-800/50 border-gray-600 text-white">
+                  <SelectTrigger>
                     <SelectValue placeholder="전체" />
                   </SelectTrigger>
-                  <SelectContent className="bg-gray-800 border-gray-600">
-                    <SelectItem value="all" className="text-white focus:bg-gray-700">전체</SelectItem>
+                  <SelectContent>
+                    <SelectItem value="all">전체</SelectItem>
                     {styleOptions.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value} className="text-white focus:bg-gray-700">{opt.label}</SelectItem>
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label className="text-xs" style={{ color: '#E5E7EB' }}>이름 (부분 검색 가능)</Label>
+                <Label className="text-xs text-muted-foreground">이름 (부분 검색 가능)</Label>
                 <Input
                   value={voiceFilters.name}
                   onChange={(e) => setVoiceFilters(prev => ({ ...prev, name: e.target.value }))}
                   placeholder="예: Adam"
-                  className="bg-gray-800/50 border-gray-600 text-white placeholder:text-gray-400 focus-visible:ring-gray-500"
                 />
                 {/* 이름 빠른 선택 */}
                 <div className="mt-2">
                   <Select value={voiceFilters.name || undefined} onValueChange={(v) => setVoiceFilters(prev => ({ ...prev, name: v }))}>
-                    <SelectTrigger className="bg-gray-800/50 border-gray-600 text-white">
+                    <SelectTrigger>
                       <SelectValue placeholder="이름 빠른 선택 (옵션)" />
                     </SelectTrigger>
-                    <SelectContent className="bg-gray-800 border-gray-600">
+                    <SelectContent>
                       {(availableVoices || []).map((v: any) => (
-                        <SelectItem key={v.voice_id} value={v.name || v.voice_id} className="text-white focus:bg-gray-700">{v.name || v.voice_id}</SelectItem>
+                        <SelectItem key={v.voice_id} value={v.name || v.voice_id}>{v.name || v.voice_id}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
               </div>
               <div>
-                <Label className="text-xs" style={{ color: '#E5E7EB' }}>성별</Label>
+                <Label className="text-xs text-muted-foreground">성별</Label>
                 <Select value={voiceFilters.gender || undefined} onValueChange={(v) => setVoiceFilters(prev => ({ ...prev, gender: v === "all" ? "" : v }))}>
-                  <SelectTrigger className="bg-gray-800/50 border-gray-600 text-white">
+                  <SelectTrigger>
                     <SelectValue placeholder="전체" />
                   </SelectTrigger>
-                  <SelectContent className="bg-gray-800 border-gray-600">
-                    <SelectItem value="all" className="text-white focus:bg-gray-700">전체</SelectItem>
+                  <SelectContent>
+                    <SelectItem value="all">전체</SelectItem>
                     {genderOptions.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value} className="text-white focus:bg-gray-700">{opt.label}</SelectItem>
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label className="text-xs" style={{ color: '#E5E7EB' }}>용도</Label>
+                <Label className="text-xs text-muted-foreground">용도</Label>
                 <Select value={voiceFilters.useCase || undefined} onValueChange={(v) => setVoiceFilters(prev => ({ ...prev, useCase: v === "all" ? "" : v }))}>
-                  <SelectTrigger className="bg-gray-800/50 border-gray-600 text-white">
+                  <SelectTrigger>
                     <SelectValue placeholder="전체" />
                   </SelectTrigger>
-                  <SelectContent className="bg-gray-800 border-gray-600">
-                    <SelectItem value="all" className="text-white focus:bg-gray-700">전체</SelectItem>
+                  <SelectContent>
+                    <SelectItem value="all">전체</SelectItem>
                     {useCaseOptions.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value} className="text-white focus:bg-gray-700">{opt.label}</SelectItem>
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -3117,12 +3116,12 @@ const PublicVoiceGenerator = () => {
                   초기화
                 </Button>
               </div>
-              <p className="text-xs" style={{ color: '#9CA3AF' }}>
+              <p className="text-xs text-muted-foreground">
                 💡 언어와 스타일을 함께 지정하면 더 정확한 결과를 얻을 수 있습니다. 샘플의 language/style/model 정보를 참고하세요.
               </p>
             </div>
             <div className="md:col-span-3">
-              <div className="flex items-center justify-between text-xs mb-2" style={{ color: '#E5E7EB' }}>
+              <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
                 <span>검색 결과 {voiceSearchResults.length}{voiceTotalCount ? ` / 총 ${voiceTotalCount}` : ""}개</span>
                 <div className="flex items-center gap-2">
                   {voiceNextToken && (
@@ -3133,11 +3132,11 @@ const PublicVoiceGenerator = () => {
                   )}
                 </div>
               </div>
-              <ScrollArea className="h-96 border border-gray-600 rounded-lg p-3 bg-gray-800/30">
+              <ScrollArea className="h-96 border rounded-lg p-3 bg-muted/30">
                 {isSearchingVoices ? (
-                  <p className="text-sm" style={{ color: '#9CA3AF' }}>검색 중입니다...</p>
+                  <p className="text-sm text-muted-foreground">검색 중입니다...</p>
                 ) : voiceSearchResults.length === 0 ? (
-                  <p className="text-sm" style={{ color: '#9CA3AF' }}>검색 결과가 없습니다. 조건을 조정해보세요.</p>
+                  <p className="text-sm text-muted-foreground">검색 결과가 없습니다. 조건을 조정해보세요.</p>
                 ) : (
                   <div className="space-y-3">
                     {voiceSearchResults.map((voice) => {
@@ -3152,21 +3151,21 @@ const PublicVoiceGenerator = () => {
                       const useCaseKo = useCaseToKo(voice.use_case);
                       const genderColor = voice.gender === "female" ? "bg-red-500" : voice.gender === "male" ? "bg-blue-500" : "bg-gray-400";
                       return (
-                        <Card key={voice.voice_id} className="landio-card border-gray-600 hover:border-blue-500 transition-colors bg-gray-800/50">
+                        <Card key={voice.voice_id} className="landio-card border-border hover:border-primary transition-colors">
                           <CardContent className="p-4 space-y-2">
                             <div className="flex items-start justify-between gap-2">
                               <div>
-                                <div className="font-semibold flex items-center gap-2" style={{ color: '#FFFFFF' }}>
+                                <div className="font-semibold flex items-center gap-2">
                                   <span className={`inline-block w-2.5 h-2.5 rounded-full ${genderColor}`}></span>
                                   {voice.name || voice.voice_id}
                                 </div>
-                                <div className="text-xs break-all" style={{ color: '#9CA3AF' }}>ID: {voice.voice_id}</div>
+                                <div className="text-xs text-muted-foreground break-all">ID: {voice.voice_id}</div>
                               </div>
                               <div className="flex items-center gap-2">
                               <Button
                                 size="sm"
                                   variant="ghost"
-                                  className="landio-button hover:bg-gray-800"
+                                  className="landio-button"
                                   onClick={() => {
                                     const sampleUrl = getPreferredSampleUrl(voice);
                                     if (sampleUrl) {
@@ -3176,12 +3175,12 @@ const PublicVoiceGenerator = () => {
                                     }
                                   }}
                                 >
-                                  {playingSample && getPreferredSampleUrl(voice) === playingSample ? <Pause className="w-3 h-3" style={{ color: '#E5E7EB' }} /> : <Play className="w-3 h-3" style={{ color: '#E5E7EB' }} />}
+                                  {playingSample && getPreferredSampleUrl(voice) === playingSample ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
                                 </Button>
                                 <Button
                                   size="sm"
                                   variant={favoriteVoiceIds.has(voice.voice_id) ? "default" : "outline"}
-                                  className="landio-button hover:bg-gray-800"
+                                  className="landio-button"
                                   onClick={() => toggleFavorite(voice.voice_id)}
                                   title={favoriteVoiceIds.has(voice.voice_id) ? "즐겨찾기 해제" : "즐겨찾기 추가"}
                                 >
@@ -3189,7 +3188,7 @@ const PublicVoiceGenerator = () => {
                                 </Button>
                               <Button
                                 size="sm"
-                                className="landio-button bg-blue-600 hover:bg-blue-700 text-white"
+                                className="landio-button"
                                 onClick={() => {
                                   setSelectedVoice(voice.voice_id);
                                   setSelectedVoiceInfo(voice);
@@ -3203,17 +3202,17 @@ const PublicVoiceGenerator = () => {
                               </Button>
                               </div>
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs" style={{ color: '#9CA3AF' }}>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-muted-foreground">
                               <div>언어: {languages || "-"}</div>
                               <div>스타일: {styles || "-"}</div>
                               <div>모델: {models || "-"}</div>
                               <div>성별: {genderKo}</div>
                             </div>
                             {useCaseKo && (
-                              <Badge variant="secondary" className="text-xs border-gray-600" style={{ color: '#E5E7EB', backgroundColor: 'rgba(75, 85, 99, 0.3)' }}>용도: {useCaseKo}</Badge>
+                              <Badge variant="secondary" className="text-xs">용도: {useCaseKo}</Badge>
                             )}
                             {voice.samples && voice.samples.length > 0 && (
-                              <div className="text-xs" style={{ color: '#9CA3AF' }}>샘플 {voice.samples.length}개 제공</div>
+                              <div className="text-xs text-muted-foreground">샘플 {voice.samples.length}개 제공</div>
                             )}
                           </CardContent>
                         </Card>

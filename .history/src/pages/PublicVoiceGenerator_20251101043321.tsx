@@ -3152,21 +3152,21 @@ const PublicVoiceGenerator = () => {
                       const useCaseKo = useCaseToKo(voice.use_case);
                       const genderColor = voice.gender === "female" ? "bg-red-500" : voice.gender === "male" ? "bg-blue-500" : "bg-gray-400";
                       return (
-                        <Card key={voice.voice_id} className="landio-card border-gray-600 hover:border-blue-500 transition-colors bg-gray-800/50">
+                        <Card key={voice.voice_id} className="landio-card border-border hover:border-primary transition-colors">
                           <CardContent className="p-4 space-y-2">
                             <div className="flex items-start justify-between gap-2">
                               <div>
-                                <div className="font-semibold flex items-center gap-2" style={{ color: '#FFFFFF' }}>
+                                <div className="font-semibold flex items-center gap-2">
                                   <span className={`inline-block w-2.5 h-2.5 rounded-full ${genderColor}`}></span>
                                   {voice.name || voice.voice_id}
                                 </div>
-                                <div className="text-xs break-all" style={{ color: '#9CA3AF' }}>ID: {voice.voice_id}</div>
+                                <div className="text-xs text-muted-foreground break-all">ID: {voice.voice_id}</div>
                               </div>
                               <div className="flex items-center gap-2">
                               <Button
                                 size="sm"
                                   variant="ghost"
-                                  className="landio-button hover:bg-gray-800"
+                                  className="landio-button"
                                   onClick={() => {
                                     const sampleUrl = getPreferredSampleUrl(voice);
                                     if (sampleUrl) {
@@ -3176,12 +3176,12 @@ const PublicVoiceGenerator = () => {
                                     }
                                   }}
                                 >
-                                  {playingSample && getPreferredSampleUrl(voice) === playingSample ? <Pause className="w-3 h-3" style={{ color: '#E5E7EB' }} /> : <Play className="w-3 h-3" style={{ color: '#E5E7EB' }} />}
+                                  {playingSample && getPreferredSampleUrl(voice) === playingSample ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
                                 </Button>
                                 <Button
                                   size="sm"
                                   variant={favoriteVoiceIds.has(voice.voice_id) ? "default" : "outline"}
-                                  className="landio-button hover:bg-gray-800"
+                                  className="landio-button"
                                   onClick={() => toggleFavorite(voice.voice_id)}
                                   title={favoriteVoiceIds.has(voice.voice_id) ? "즐겨찾기 해제" : "즐겨찾기 추가"}
                                 >
@@ -3189,7 +3189,7 @@ const PublicVoiceGenerator = () => {
                                 </Button>
                               <Button
                                 size="sm"
-                                className="landio-button bg-blue-600 hover:bg-blue-700 text-white"
+                                className="landio-button"
                                 onClick={() => {
                                   setSelectedVoice(voice.voice_id);
                                   setSelectedVoiceInfo(voice);
@@ -3203,17 +3203,17 @@ const PublicVoiceGenerator = () => {
                               </Button>
                               </div>
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs" style={{ color: '#9CA3AF' }}>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-muted-foreground">
                               <div>언어: {languages || "-"}</div>
                               <div>스타일: {styles || "-"}</div>
                               <div>모델: {models || "-"}</div>
                               <div>성별: {genderKo}</div>
                             </div>
                             {useCaseKo && (
-                              <Badge variant="secondary" className="text-xs border-gray-600" style={{ color: '#E5E7EB', backgroundColor: 'rgba(75, 85, 99, 0.3)' }}>용도: {useCaseKo}</Badge>
+                              <Badge variant="secondary" className="text-xs">용도: {useCaseKo}</Badge>
                             )}
                             {voice.samples && voice.samples.length > 0 && (
-                              <div className="text-xs" style={{ color: '#9CA3AF' }}>샘플 {voice.samples.length}개 제공</div>
+                              <div className="text-xs text-muted-foreground">샘플 {voice.samples.length}개 제공</div>
                             )}
                           </CardContent>
                         </Card>

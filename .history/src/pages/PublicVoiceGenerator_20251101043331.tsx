@@ -3152,11 +3152,11 @@ const PublicVoiceGenerator = () => {
                       const useCaseKo = useCaseToKo(voice.use_case);
                       const genderColor = voice.gender === "female" ? "bg-red-500" : voice.gender === "male" ? "bg-blue-500" : "bg-gray-400";
                       return (
-                        <Card key={voice.voice_id} className="landio-card border-gray-600 hover:border-blue-500 transition-colors bg-gray-800/50">
+                        <Card key={voice.voice_id} className="landio-card border-border hover:border-primary transition-colors">
                           <CardContent className="p-4 space-y-2">
                             <div className="flex items-start justify-between gap-2">
                               <div>
-                                <div className="font-semibold flex items-center gap-2" style={{ color: '#FFFFFF' }}>
+                                <div className="font-semibold flex items-center gap-2">
                                   <span className={`inline-block w-2.5 h-2.5 rounded-full ${genderColor}`}></span>
                                   {voice.name || voice.voice_id}
                                 </div>
