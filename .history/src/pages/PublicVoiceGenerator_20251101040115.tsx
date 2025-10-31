@@ -3061,7 +3061,16 @@ const PublicVoiceGenerator = () => {
       </Dialog>
 
       <Dialog open={isCloneModalOpen} onOpenChange={setIsCloneModalOpen}>
-        <DialogContent className="sm:max-w-lg dark-dialog">
+        <DialogContent className="sm:max-w-lg bg-gray-900/95 border-gray-700 text-white [&>button]:text-gray-400 [&>button]:hover:text-white [&>button]:hover:bg-gray-800/50">
+          <style>{`
+            [data-radix-dialog-content].bg-gray-900\\/95 button[aria-label="Close"] {
+              color: rgb(156, 163, 175);
+            }
+            [data-radix-dialog-content].bg-gray-900\\/95 button[aria-label="Close"]:hover {
+              color: white;
+              background-color: rgba(31, 41, 55, 0.5);
+            }
+          `}</style>
           <DialogHeader>
             <DialogTitle className="text-white">새 클론 음성 생성</DialogTitle>
             <DialogDescription className="text-gray-300">

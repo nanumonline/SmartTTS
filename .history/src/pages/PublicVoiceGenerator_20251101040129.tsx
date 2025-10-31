@@ -3061,7 +3061,7 @@ const PublicVoiceGenerator = () => {
       </Dialog>
 
       <Dialog open={isCloneModalOpen} onOpenChange={setIsCloneModalOpen}>
-        <DialogContent className="sm:max-w-lg dark-dialog">
+        <DialogContent className="sm:max-w-lg bg-gray-900/95 border-gray-700 text-white">
           <DialogHeader>
             <DialogTitle className="text-white">새 클론 음성 생성</DialogTitle>
             <DialogDescription className="text-gray-300">

@@ -3061,7 +3061,7 @@ const PublicVoiceGenerator = () => {
       </Dialog>
 
       <Dialog open={isCloneModalOpen} onOpenChange={setIsCloneModalOpen}>
-        <DialogContent className="sm:max-w-lg dark-dialog">
+        <DialogContent className="sm:max-w-lg bg-gray-900/95 border-gray-700 text-white">
           <DialogHeader>
             <DialogTitle className="text-white">새 클론 음성 생성</DialogTitle>
             <DialogDescription className="text-gray-300">
@@ -3194,7 +3194,6 @@ const PublicVoiceGenerator = () => {
           <DialogFooter>
             <Button
               variant="outline"
-              className="border-gray-600 text-gray-300 hover:bg-gray-800 hover:text-white"
               onClick={() => {
                 setIsCloneModalOpen(false);
                 setCloneForm(createCloneForm({ language: cloneForm.language }));
@@ -3202,12 +3201,7 @@ const PublicVoiceGenerator = () => {
             >
               취소
             </Button>
-            <Button 
-              onClick={handleCloneSubmit}
-              className="bg-primary hover:bg-primary/90 text-white"
-            >
-              클로닝 요청
-            </Button>
+            <Button onClick={handleCloneSubmit}>클로닝 요청</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

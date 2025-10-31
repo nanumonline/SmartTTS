@@ -3061,7 +3061,7 @@ const PublicVoiceGenerator = () => {
       </Dialog>
 
       <Dialog open={isCloneModalOpen} onOpenChange={setIsCloneModalOpen}>
-        <DialogContent className="sm:max-w-lg dark-dialog">
+        <DialogContent className="sm:max-w-lg bg-gray-900/95 border-gray-700 text-white">
           <DialogHeader>
             <DialogTitle className="text-white">새 클론 음성 생성</DialogTitle>
             <DialogDescription className="text-gray-300">
@@ -3130,7 +3130,7 @@ const PublicVoiceGenerator = () => {
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-gray-200">샘플 업로드 *</Label>
+              <Label>샘플 업로드 *</Label>
               <Tabs 
                 value={cloneForm.sampleType || "file"} 
                 onValueChange={(value) => setCloneForm((prev) => ({ 
@@ -3141,12 +3141,12 @@ const PublicVoiceGenerator = () => {
                   sampleName: value === "file" ? prev.sampleName : undefined,
                 }))}
               >
-                <TabsList className="grid w-full grid-cols-2 bg-gray-800/50">
-                  <TabsTrigger value="file" className="flex items-center gap-2 text-gray-300 data-[state=active]:text-white data-[state=active]:bg-gray-700">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="file" className="flex items-center gap-2">
                     <Upload className="w-4 h-4" />
                     파일 업로드
                   </TabsTrigger>
-                  <TabsTrigger value="youtube" className="flex items-center gap-2 text-gray-300 data-[state=active]:text-white data-[state=active]:bg-gray-700">
+                  <TabsTrigger value="youtube" className="flex items-center gap-2">
                     <Youtube className="w-4 h-4" />
                     유튜브 링크
                   </TabsTrigger>
@@ -3160,12 +3160,11 @@ const PublicVoiceGenerator = () => {
                       const file = e.target.files?.[0] || null;
                       setCloneForm((prev) => ({ ...prev, sampleFile: file, sampleName: file?.name }));
                     }}
-                    className="bg-gray-800/50 border-gray-600 text-white file:text-white file:bg-gray-700 file:border-gray-600"
                   />
                   {cloneForm.sampleName && (
-                    <p className="text-xs text-gray-400">선택된 파일: {cloneForm.sampleName}</p>
+                    <p className="text-xs text-muted-foreground">선택된 파일: {cloneForm.sampleName}</p>
                   )}
-                  <p className="text-xs text-gray-400">
+                  <p className="text-xs text-muted-foreground">
                     지원 형식: WAV, MP3, OGG (최대 50MB)
                   </p>
                 </TabsContent>
@@ -3176,15 +3175,14 @@ const PublicVoiceGenerator = () => {
                     placeholder="https://www.youtube.com/watch?v=... 또는 https://youtu.be/..."
                     value={cloneForm.youtubeUrl || ""}
                     onChange={(e) => setCloneForm((prev) => ({ ...prev, youtubeUrl: e.target.value }))}
-                    className="bg-gray-800/50 border-gray-600 text-white placeholder:text-gray-400 focus-visible:ring-gray-500"
                   />
                   {cloneForm.youtubeUrl && (
-                    <div className="flex items-center gap-2 text-xs text-gray-400">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <Youtube className="w-3 h-3" />
                       <span>유튜브 링크가 입력되었습니다.</span>
                     </div>
                   )}
-                  <p className="text-xs text-gray-400">
+                  <p className="text-xs text-muted-foreground">
                     유튜브 영상에서 오디오가 자동으로 추출됩니다.
                   </p>
                 </TabsContent>
@@ -3194,7 +3192,6 @@ const PublicVoiceGenerator = () => {
           <DialogFooter>
             <Button
               variant="outline"
-              className="border-gray-600 text-gray-300 hover:bg-gray-800 hover:text-white"
               onClick={() => {
                 setIsCloneModalOpen(false);
                 setCloneForm(createCloneForm({ language: cloneForm.language }));
@@ -3202,12 +3199,7 @@ const PublicVoiceGenerator = () => {
             >
               취소
             </Button>
-            <Button 
-              onClick={handleCloneSubmit}
-              className="bg-primary hover:bg-primary/90 text-white"
-            >
-              클로닝 요청
-            </Button>
+            <Button onClick={handleCloneSubmit}>클로닝 요청</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
