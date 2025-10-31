@@ -558,19 +558,9 @@ const PublicVoiceGenerator = () => {
           voiceTrackVolume: 100,
           backgroundTrackVolume: 50,
           effectTrackVolume: 70,
-          selectedVoiceTrack: generation, // 기본으로 현재 생성 기록 선택
-        })
-      );
-    } else if (!existing.selectedVoiceTrack) {
-      // 기존 상태에 선택된 음원이 없으면 현재 생성 기록을 기본값으로 설정
-      setMixingStates((prev) =>
-        new Map(prev).set(generation.id, {
-          ...existing,
-          selectedVoiceTrack: generation,
         })
       );
     }
-    setPreviewMixedAudio(null);
     setIsMixingModalOpen(true);
   };
 
