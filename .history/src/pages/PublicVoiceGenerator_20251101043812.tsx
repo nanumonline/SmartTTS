@@ -231,13 +231,13 @@ const PublicVoiceGenerator = () => {
 
   // 전송 채널 옵션
   const scheduleChannels = [
-    { value: "pc_broadcast", label: "PC (방송장비)", description: "PC를 통해 송출(RJ35) 통해 방송장비의 AUX 단 연결" },
-    { value: "tablet_broadcast", label: "태블릿 (방송장비)", description: "태블릿을 통해 송출(RJ35/USB) 통해 방송장비의 AUX 단 연결" },
     { value: "broadcast_screen", label: "공중파 방송 (화면/자막)" },
     { value: "radio", label: "라디오" },
     { value: "sns", label: "SNS (Facebook/Instagram)" },
     { value: "website", label: "웹사이트 배너/팝업" },
     { value: "email", label: "이메일 뉴스레터" },
+    { value: "pc_broadcast", label: "PC (방송장비)", description: "PC를 통해 송출(RJ35) 통해 방송장비의 AUX 단 연결" },
+    { value: "tablet_broadcast", label: "태블릿 (방송장비)", description: "태블릿을 통해 송출(RJ35/USB) 통해 방송장비의 AUX 단 연결" },
   ];
 
   // 드롭다운 옵션 (한국어 라벨 적용, 언어는 한국어/영어/일본어만)
