@@ -236,8 +236,6 @@ const PublicVoiceGenerator = () => {
     { value: "sns", label: "SNS (Facebook/Instagram)" },
     { value: "website", label: "웹사이트 배너/팝업" },
     { value: "email", label: "이메일 뉴스레터" },
-    { value: "pc_broadcast", label: "PC (방송장비)", description: "PC를 통해 송출(RJ35) 통해 방송장비의 AUX 단 연결" },
-    { value: "tablet_broadcast", label: "태블릿 (방송장비)", description: "태블릿을 통해 송출(RJ35/USB) 통해 방송장비의 AUX 단 연결" },
   ];
 
   // 드롭다운 옵션 (한국어 라벨 적용, 언어는 한국어/영어/일본어만)
@@ -3436,16 +3434,7 @@ const PublicVoiceGenerator = () => {
               <Select>
                 <SelectTrigger className="bg-gray-800/50 border-gray-600 text-white"><SelectValue placeholder="전송 채널을 선택하세요" /></SelectTrigger>
                 <SelectContent className="bg-gray-800 border-gray-600">
-                  {scheduleChannels.map((ch) => (
-                    <SelectItem key={ch.value} value={ch.value} className="text-white focus:bg-gray-700">
-                      <div className="flex flex-col">
-                        <span>{ch.label}</span>
-                        {ch.description && (
-                          <span className="text-xs text-gray-400 mt-0.5">{ch.description}</span>
-                        )}
-                      </div>
-                    </SelectItem>
-                  ))}
+                  {scheduleChannels.map((ch) => (<SelectItem key={ch.value} value={ch.value} className="text-white focus:bg-gray-700">{ch.label}</SelectItem>))}
                 </SelectContent>
               </Select>
             </div>

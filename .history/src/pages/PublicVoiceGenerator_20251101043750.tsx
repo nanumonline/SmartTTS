@@ -3436,16 +3436,7 @@ const PublicVoiceGenerator = () => {
               <Select>
                 <SelectTrigger className="bg-gray-800/50 border-gray-600 text-white"><SelectValue placeholder="전송 채널을 선택하세요" /></SelectTrigger>
                 <SelectContent className="bg-gray-800 border-gray-600">
-                  {scheduleChannels.map((ch) => (
-                    <SelectItem key={ch.value} value={ch.value} className="text-white focus:bg-gray-700">
-                      <div className="flex flex-col">
-                        <span>{ch.label}</span>
-                        {ch.description && (
-                          <span className="text-xs text-gray-400 mt-0.5">{ch.description}</span>
-                        )}
-                      </div>
-                    </SelectItem>
-                  ))}
+                  {scheduleChannels.map((ch) => (<SelectItem key={ch.value} value={ch.value} className="text-white focus:bg-gray-700">{ch.label}</SelectItem>))}
                 </SelectContent>
               </Select>
             </div>
