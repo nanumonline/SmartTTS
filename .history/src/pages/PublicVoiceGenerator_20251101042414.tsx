@@ -3494,44 +3494,43 @@ const PublicVoiceGenerator = () => {
 
       {/* 메시지 이력 관리 다이얼로그 */}
       <Dialog open={isMessageHistoryOpen} onOpenChange={setIsMessageHistoryOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[80vh] dark-dialog bg-gray-900/95 border-gray-700">
+        <DialogContent className="sm:max-w-2xl max-h-[80vh]">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2" style={{ color: '#FFFFFF' }}>
+            <DialogTitle className="flex items-center gap-2">
               <History className="w-5 h-5" />
               메시지 이력 관리
             </DialogTitle>
-            <DialogDescription style={{ color: '#E5E7EB' }}>
+            <DialogDescription>
               저장된 메시지를 확인하고, 불러오거나 수정, 삭제할 수 있습니다.
             </DialogDescription>
           </DialogHeader>
           <ScrollArea className="max-h-[60vh] pr-4">
             <div className="space-y-3">
               {messageHistory.length === 0 ? (
-                <div className="text-center py-8" style={{ color: '#9CA3AF' }}>
+                <div className="text-center py-8 text-muted-foreground">
                   저장된 메시지가 없습니다.
                 </div>
               ) : (
                 messageHistory.map((msg) => {
                   const purposeLabel = purposeOptions.find(p => p.id === msg.purpose)?.label || msg.purpose;
                   return (
-                    <div key={msg.id} className="p-4 border border-gray-600 rounded-lg space-y-3 hover:bg-gray-800/50 transition-colors">
+                    <div key={msg.id} className="p-4 border rounded-lg space-y-3 hover:bg-muted/50 transition-colors">
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 space-y-2">
                           <div className="flex items-center gap-2">
-                            <Badge variant="outline" className="text-xs border-gray-600" style={{ color: '#E5E7EB', backgroundColor: 'rgba(75, 85, 99, 0.3)' }}>
+                            <Badge variant="outline" className="text-xs">
                               {purposeLabel}
                             </Badge>
-                            <span className="text-xs" style={{ color: '#9CA3AF' }}>
+                            <span className="text-xs text-muted-foreground">
                               {new Date(msg.updatedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}
                             </span>
                           </div>
-                          <p className="text-sm line-clamp-3" style={{ color: '#FFFFFF' }}>{msg.text}</p>
+                          <p className="text-sm line-clamp-3">{msg.text}</p>
                         </div>
                         <div className="flex gap-1">
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="hover:bg-gray-800"
                             onClick={() => {
                               setCustomText(msg.text);
                               setSelectedPurpose(msg.purpose);
@@ -3542,12 +3541,11 @@ const PublicVoiceGenerator = () => {
                               });
                             }}
                           >
-                            <Edit className="w-4 h-4" style={{ color: '#E5E7EB' }} />
+                            <Edit className="w-4 h-4" />
                           </Button>
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="hover:bg-gray-800"
                             onClick={() => {
                               const updated = messageHistory.filter(m => m.id !== msg.id);
                               setMessageHistory(updated);
@@ -3558,7 +3556,7 @@ const PublicVoiceGenerator = () => {
                               });
                             }}
                           >
-                            <Trash2 className="w-4 h-4 text-red-400" />
+                            <Trash2 className="w-4 h-4 text-destructive" />
                           </Button>
                         </div>
                       </div>
@@ -3569,12 +3567,7 @@ const PublicVoiceGenerator = () => {
             </div>
           </ScrollArea>
           <DialogFooter>
-            <Button 
-              variant="outline" 
-              className="border-gray-600 hover:bg-gray-800 hover:text-white"
-              style={{ color: '#E5E7EB' }}
-              onClick={() => setIsMessageHistoryOpen(false)}
-            >
+            <Button variant="outline" onClick={() => setIsMessageHistoryOpen(false)}>
               닫기
             </Button>
           </DialogFooter>
