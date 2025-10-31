@@ -323,36 +323,11 @@ const PublicVoiceGenerator = () => {
   const SUPERTONE_API_BASE_URL = "https://supertoneapi.com/v1";
   const MOCK_AUDIO_BASE64 = "UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBzqO0fPTgjMGHm7A7+OZURE=";
 
-  // 감정 프리셋 매핑 (A/B/C/D → 실제 스타일 값)
-  const emotionPresetMap: Record<string, string> = {
-    "A": "neutral",
-    "B": "happy",
-    "C": "sad",
-    "D": "angry"
-  };
-
-  const getEmotionValue = (preset: string, customPrompt: string): string => {
-    if (customPrompt.trim()) return customPrompt.trim();
-    return emotionPresetMap[preset] || "neutral";
-  };
-
   const getSpeedMultiplier = () => {
-    // customTime이 있으면 숫자로 변환하여 사용, 없으면 preset 기반
-    if (voiceSettings.readingSpeed.customTime) {
-      const num = parseFloat(voiceSettings.readingSpeed.customTime);
-      if (!isNaN(num) && num > 0) return num;
-    }
     const preset = voiceSettings.readingSpeed.preset;
     if (preset === "빠름") return 1.3;
     if (preset === "느림") return 0.7;
     return 1.0;
-  };
-
-  // 속도 preset → 숫자 매핑
-  const speedPresetMap: Record<string, string> = {
-    "느림": "0.7",
-    "보통": "1.0",
-    "빠름": "1.3"
   };
 
   const getPurposeMeta = (purposeId: string) => purposeOptions.find((p) => p.id === purposeId) || purposeOptions[0];
@@ -1106,8 +1081,8 @@ const PublicVoiceGenerator = () => {
       tags: ["#명료하게", "#따뜻하게", "#추궁하듯", "#넋을 잃은 듯", "#귀찮은 듯"]
     },
     readingSpeed: {
-      preset: "보통",
-      customTime: "1.0"
+      preset: "normal",
+      customTime: "3.5"
     },
     pause: {
       duration: 0.1,
@@ -1666,9 +1641,9 @@ const PublicVoiceGenerator = () => {
       return;
     }
 
-    // 감정/스타일 값 결정: metaOverrides.style > customPrompt > preset 매핑
-    const styleValue = metaOverrides.style || 
-      getEmotionValue(voiceSettings.emotion.preset, voiceSettings.emotion.customPrompt);
+    const styleValue = (metaOverrides.style || voiceSettings.emotion.customPrompt) ||
+      (voiceSettings.emotion.preset === "A" ? "neutral" :
+       voiceSettings.emotion.preset === "B" ? "happy" : "neutral");
 
     const speedValue = getSpeedMultiplier();
     const pitchShift = Math.max(-12, Math.min(12, Math.round(voiceSettings.pitch / 8.33)));
@@ -2699,7 +2674,7 @@ const PublicVoiceGenerator = () => {
                     <div>
                       <Label className="text-xs text-muted-foreground">언어 (음성 지원 목록)</Label>
                       <Select
-                        value={metaOverrides.language ? metaOverrides.language : "auto"}
+                        value={metaOverrides.language || undefined}
                         onValueChange={(v) => setMetaOverrides(prev => ({ ...prev, language: v === "auto" ? "" : v }))}
                       >
                         <SelectTrigger>
@@ -2709,13 +2684,10 @@ const PublicVoiceGenerator = () => {
                           <SelectItem value="auto">자동</SelectItem>
                           {(() => {
                             const sv = selectedVoiceInfo || availableVoices.find((v: any) => v.voice_id === selectedVoice);
-                            if (!sv) return null;
                             const langs = Array.isArray(sv?.language) ? sv.language : (sv?.language ? [sv.language] : []);
-                            if (langs.length === 0) return null;
-                            return langs.map((l: string) => {
-                              const langLabel = languageCodeToKo(l);
-                              return <SelectItem key={l} value={l}>{langLabel} ({l})</SelectItem>;
-                            });
+                            return langs.map((l: string) => (
+                              <SelectItem key={l} value={l}>{l}</SelectItem>
+                            ));
                           })()}
                         </SelectContent>
                       </Select>
@@ -2723,7 +2695,7 @@ const PublicVoiceGenerator = () => {
                     <div>
                       <Label className="text-xs text-muted-foreground">스타일 (음성 지원 목록)</Label>
                       <Select
-                        value={metaOverrides.style ? metaOverrides.style : "auto"}
+                        value={metaOverrides.style || undefined}
                         onValueChange={(v) => setMetaOverrides(prev => ({ ...prev, style: v === "auto" ? "" : v }))}
                       >
                         <SelectTrigger>
@@ -2733,11 +2705,9 @@ const PublicVoiceGenerator = () => {
                           <SelectItem value="auto">자동</SelectItem>
                           {(() => {
                             const sv = selectedVoiceInfo || availableVoices.find((v: any) => v.voice_id === selectedVoice);
-                            if (!sv) return null;
                             const styles = Array.isArray(sv?.styles) ? sv.styles : (sv?.styles ? [sv.styles] : []);
-                            if (styles.length === 0) return null;
                             return styles.map((s: string) => (
-                              <SelectItem key={s} value={s}>{formatStylesKo(s)}</SelectItem>
+                              <SelectItem key={s} value={s}>{s}</SelectItem>
                             ));
                           })()}
                         </SelectContent>
@@ -2746,7 +2716,7 @@ const PublicVoiceGenerator = () => {
                     <div>
                       <Label className="text-xs text-muted-foreground">모델 (음성 지원 목록)</Label>
                       <Select
-                        value={metaOverrides.model ? metaOverrides.model : "auto"}
+                        value={metaOverrides.model || undefined}
                         onValueChange={(v) => setMetaOverrides(prev => ({ ...prev, model: v === "auto" ? "" : v }))}
                       >
                         <SelectTrigger>
@@ -2756,9 +2726,7 @@ const PublicVoiceGenerator = () => {
                           <SelectItem value="auto">자동</SelectItem>
                           {(() => {
                             const sv = selectedVoiceInfo || availableVoices.find((v: any) => v.voice_id === selectedVoice);
-                            if (!sv) return null;
-                            const models = Array.isArray(sv?.models) ? sv.models : (sv?.models ? [sv.models] : []);
-                            if (models.length === 0) return null;
+                            const models = Array.isArray(sv?.models) ? sv.models : (sv?.models ? [sv?.models] : []);
                             return models.map((m: string) => (
                               <SelectItem key={m} value={m}>{m}</SelectItem>
                             ));
@@ -2782,37 +2750,21 @@ const PublicVoiceGenerator = () => {
                           <Label className="text-sm">PRO 감정</Label>
                           <Info className="w-4 h-4 text-muted-foreground" />
                         </div>
-                        <div className="space-y-2">
-                          <div className="flex gap-1">
-                            {["A", "B", "C", "D"].map((preset) => {
-                              const presetLabels: Record<string, string> = {
-                                "A": "중립 (neutral)",
-                                "B": "기쁨 (happy)",
-                                "C": "슬픔 (sad)",
-                                "D": "분노 (angry)"
-                              };
-                              return (
-                                <Button
-                                  key={preset}
-                                  size="sm"
-                                  variant={voiceSettings.emotion.preset === preset ? "default" : "outline"}
-                                  className="w-auto px-3 h-8"
-                                  onClick={() => {
-                                    // preset 변경 시 customPrompt 초기화 (선택적)
-                                    setVoiceSettings(prev => ({
-                                      ...prev,
-                                      emotion: { ...prev.emotion, preset, customPrompt: "" }
-                                    }));
-                                  }}
-                                >
-                                  {preset} - {presetLabels[preset]}
-                                </Button>
-                              );
-                            })}
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            프리셋을 선택하거나 아래 입력란에 커스텀 감정을 입력하세요.
-                          </p>
+                        <div className="flex gap-1">
+                          {["A", "B", "C", "D"].map((preset) => (
+                            <Button
+                              key={preset}
+                              size="sm"
+                              variant={voiceSettings.emotion.preset === preset ? "default" : "outline"}
+                              className="w-8 h-8 p-0"
+                              onClick={() => setVoiceSettings(prev => ({
+                                ...prev,
+                                emotion: { ...prev.emotion, preset }
+                              }))}
+                            >
+                              {preset}
+                            </Button>
+                          ))}
                         </div>
                         <div className="flex gap-2">
                           <Input
@@ -2824,18 +2776,7 @@ const PublicVoiceGenerator = () => {
                             }))}
                             className="flex-1"
                           />
-                          <Button 
-                            size="sm"
-                            onClick={() => {
-                              const emotionValue = getEmotionValue(voiceSettings.emotion.preset, voiceSettings.emotion.customPrompt);
-                              toast({
-                                title: "감정 적용됨",
-                                description: emotionValue ? `감정: ${emotionValue}` : `감정 프리셋: ${voiceSettings.emotion.preset}`,
-                              });
-                            }}
-                          >
-                            적용
-                          </Button>
+                          <Button size="sm">적용</Button>
                         </div>
                         <div className="flex flex-wrap gap-1">
                           {voiceSettings.emotion.tags.map((tag) => (
@@ -2867,17 +2808,10 @@ const PublicVoiceGenerator = () => {
                               key={speed}
                               size="sm"
                               variant={voiceSettings.readingSpeed.preset === speed ? "default" : "outline"}
-                              onClick={() => {
-                                const speedValue = speedPresetMap[speed] || "1.0";
-                                setVoiceSettings(prev => ({
-                                  ...prev,
-                                  readingSpeed: { 
-                                    ...prev.readingSpeed, 
-                                    preset: speed,
-                                    customTime: speedValue
-                                  }
-                                }));
-                              }}
+                              onClick={() => setVoiceSettings(prev => ({
+                                ...prev,
+                                readingSpeed: { ...prev.readingSpeed, preset: speed }
+                              }))}
                             >
                               {speed}
                             </Button>
@@ -2885,29 +2819,14 @@ const PublicVoiceGenerator = () => {
                         </div>
                         <div className="flex gap-2">
                           <Input
-                            type="number"
-                            step="0.1"
-                            min="0.5"
-                            max="2.0"
                             value={voiceSettings.readingSpeed.customTime}
                             onChange={(e) => setVoiceSettings(prev => ({
                               ...prev,
                               readingSpeed: { ...prev.readingSpeed, customTime: e.target.value }
                             }))}
                             className="flex-1"
-                            placeholder="0.7 ~ 1.3"
                           />
-                          <Button 
-                            size="sm"
-                            onClick={() => {
-                              toast({
-                                title: "속도 적용됨",
-                                description: `읽는 속도: ${voiceSettings.readingSpeed.customTime}x`,
-                              });
-                            }}
-                          >
-                            적용
-                          </Button>
+                          <Button size="sm">적용</Button>
                         </div>
                       </div>
                     </TabsContent>

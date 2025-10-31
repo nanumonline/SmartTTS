@@ -337,11 +337,6 @@ const PublicVoiceGenerator = () => {
   };
 
   const getSpeedMultiplier = () => {
-    // customTime이 있으면 숫자로 변환하여 사용, 없으면 preset 기반
-    if (voiceSettings.readingSpeed.customTime) {
-      const num = parseFloat(voiceSettings.readingSpeed.customTime);
-      if (!isNaN(num) && num > 0) return num;
-    }
     const preset = voiceSettings.readingSpeed.preset;
     if (preset === "빠름") return 1.3;
     if (preset === "느림") return 0.7;
@@ -1106,8 +1101,8 @@ const PublicVoiceGenerator = () => {
       tags: ["#명료하게", "#따뜻하게", "#추궁하듯", "#넋을 잃은 듯", "#귀찮은 듯"]
     },
     readingSpeed: {
-      preset: "보통",
-      customTime: "1.0"
+      preset: "normal",
+      customTime: "3.5"
     },
     pause: {
       duration: 0.1,
@@ -2708,7 +2703,7 @@ const PublicVoiceGenerator = () => {
                         <SelectContent>
                           <SelectItem value="auto">자동</SelectItem>
                           {(() => {
-                            const sv = selectedVoiceInfo || availableVoices.find((v: any) => v.voice_id === selectedVoice);
+                            const sv = selectedVoiceInfo || availableVoices.find((v: any) => v.voice_id === selectedVoice) || allVoices.find((v: any) => v.voice_id === selectedVoice);
                             if (!sv) return null;
                             const langs = Array.isArray(sv?.language) ? sv.language : (sv?.language ? [sv.language] : []);
                             if (langs.length === 0) return null;
@@ -2732,7 +2727,7 @@ const PublicVoiceGenerator = () => {
                         <SelectContent>
                           <SelectItem value="auto">자동</SelectItem>
                           {(() => {
-                            const sv = selectedVoiceInfo || availableVoices.find((v: any) => v.voice_id === selectedVoice);
+                            const sv = selectedVoiceInfo || availableVoices.find((v: any) => v.voice_id === selectedVoice) || allVoices.find((v: any) => v.voice_id === selectedVoice);
                             if (!sv) return null;
                             const styles = Array.isArray(sv?.styles) ? sv.styles : (sv?.styles ? [sv.styles] : []);
                             if (styles.length === 0) return null;
@@ -2755,7 +2750,7 @@ const PublicVoiceGenerator = () => {
                         <SelectContent>
                           <SelectItem value="auto">자동</SelectItem>
                           {(() => {
-                            const sv = selectedVoiceInfo || availableVoices.find((v: any) => v.voice_id === selectedVoice);
+                            const sv = selectedVoiceInfo || availableVoices.find((v: any) => v.voice_id === selectedVoice) || allVoices.find((v: any) => v.voice_id === selectedVoice);
                             if (!sv) return null;
                             const models = Array.isArray(sv?.models) ? sv.models : (sv?.models ? [sv.models] : []);
                             if (models.length === 0) return null;
@@ -2782,37 +2777,21 @@ const PublicVoiceGenerator = () => {
                           <Label className="text-sm">PRO 감정</Label>
                           <Info className="w-4 h-4 text-muted-foreground" />
                         </div>
-                        <div className="space-y-2">
-                          <div className="flex gap-1">
-                            {["A", "B", "C", "D"].map((preset) => {
-                              const presetLabels: Record<string, string> = {
-                                "A": "중립 (neutral)",
-                                "B": "기쁨 (happy)",
-                                "C": "슬픔 (sad)",
-                                "D": "분노 (angry)"
-                              };
-                              return (
-                                <Button
-                                  key={preset}
-                                  size="sm"
-                                  variant={voiceSettings.emotion.preset === preset ? "default" : "outline"}
-                                  className="w-auto px-3 h-8"
-                                  onClick={() => {
-                                    // preset 변경 시 customPrompt 초기화 (선택적)
-                                    setVoiceSettings(prev => ({
-                                      ...prev,
-                                      emotion: { ...prev.emotion, preset, customPrompt: "" }
-                                    }));
-                                  }}
-                                >
-                                  {preset} - {presetLabels[preset]}
-                                </Button>
-                              );
-                            })}
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            프리셋을 선택하거나 아래 입력란에 커스텀 감정을 입력하세요.
-                          </p>
+                        <div className="flex gap-1">
+                          {["A", "B", "C", "D"].map((preset) => (
+                            <Button
+                              key={preset}
+                              size="sm"
+                              variant={voiceSettings.emotion.preset === preset ? "default" : "outline"}
+                              className="w-8 h-8 p-0"
+                              onClick={() => setVoiceSettings(prev => ({
+                                ...prev,
+                                emotion: { ...prev.emotion, preset }
+                              }))}
+                            >
+                              {preset}
+                            </Button>
+                          ))}
                         </div>
                         <div className="flex gap-2">
                           <Input

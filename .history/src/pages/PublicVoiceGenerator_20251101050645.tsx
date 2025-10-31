@@ -2755,7 +2755,7 @@ const PublicVoiceGenerator = () => {
                         <SelectContent>
                           <SelectItem value="auto">자동</SelectItem>
                           {(() => {
-                            const sv = selectedVoiceInfo || availableVoices.find((v: any) => v.voice_id === selectedVoice);
+                            const sv = selectedVoiceInfo || availableVoices.find((v: any) => v.voice_id === selectedVoice) || allVoices.find((v: any) => v.voice_id === selectedVoice);
                             if (!sv) return null;
                             const models = Array.isArray(sv?.models) ? sv.models : (sv?.models ? [sv.models] : []);
                             if (models.length === 0) return null;
