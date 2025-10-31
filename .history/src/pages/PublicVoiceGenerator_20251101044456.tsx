@@ -2490,14 +2490,9 @@ const PublicVoiceGenerator = () => {
                   />
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
-                      <div className="text-xs text-muted-foreground">
-                        <p className="mb-1">템플릿의 {"{"}변수명{"}"} 부분을 실제 내용으로 교체해주세요.</p>
-                        <ul className="list-disc list-inside space-y-0.5 text-[11px]">
-                          <li>예: {"{"}기관명{"}"} → 강원특별자치도청</li>
-                          <li>예: {"{"}담당자명{"}"} → 김철수</li>
-                          <li>예: {"{"}이벤트명{"}"} → 신년인사</li>
-                        </ul>
-                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        템플릿의 {"{"}변수명{"}"} 부분을 실제 내용으로 교체해주세요.
+                      </p>
                       <p className={`text-xs ${customText.length > 300 ? 'text-red-500' : 'text-muted-foreground'}`}>
                         {customText.length} / 300자 (최대)
                       </p>

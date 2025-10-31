@@ -1561,18 +1561,6 @@ const PublicVoiceGenerator = () => {
       return;
     }
 
-    // 템플릿 변수가 남아있는지 확인
-    const remainingVariables = trimmedText.match(/\{([^}]+)\}/g);
-    if (remainingVariables && remainingVariables.length > 0) {
-      const variableNames = remainingVariables.map(v => v.replace(/[{}]/g, '')).join(', ');
-      setAlertDialog({ 
-        open: true, 
-        title: "템플릿 변수 미교체", 
-        message: `다음 변수를 실제 내용으로 교체해주세요: ${variableNames}\n\n예시:\n• {기관명} → 강원특별자치도청\n• {담당자명} → 김철수\n• {이벤트명} → 신년인사` 
-      });
-      return;
-    }
-
     if (!selectedVoice) {
       setAlertDialog({ open: true, title: "선택 필요", message: "음성 스타일을 선택해주세요." });
       return;
@@ -2490,14 +2478,9 @@ const PublicVoiceGenerator = () => {
                   />
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
-                      <div className="text-xs text-muted-foreground">
-                        <p className="mb-1">템플릿의 {"{"}변수명{"}"} 부분을 실제 내용으로 교체해주세요.</p>
-                        <ul className="list-disc list-inside space-y-0.5 text-[11px]">
-                          <li>예: {"{"}기관명{"}"} → 강원특별자치도청</li>
-                          <li>예: {"{"}담당자명{"}"} → 김철수</li>
-                          <li>예: {"{"}이벤트명{"}"} → 신년인사</li>
-                        </ul>
-                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        템플릿의 {"{"}변수명{"}"} 부분을 실제 내용으로 교체해주세요.
+                      </p>
                       <p className={`text-xs ${customText.length > 300 ? 'text-red-500' : 'text-muted-foreground'}`}>
                         {customText.length} / 300자 (최대)
                       </p>
