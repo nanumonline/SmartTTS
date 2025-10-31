@@ -417,7 +417,7 @@ ${plan.name} 플랜에 대해 문의드립니다.
 
         {/* Features Section */}
         <div className="text-center mb-12 landio-fade-up">
-          <h2 className="landio-text-h2 mb-4" style={{ color: '#1F2937' }}>왜 공공기관이 Smart TTS를 선택해야 할까요?</h2>
+          <h2 className="landio-text-h2 mb-4">왜 공공기관이 Smart TTS를 선택해야 할까요?</h2>
           <p className="landio-text-body max-w-2xl mx-auto" style={{ color: '#4B5563' }}>
             공공기관 전용 기능과 안정적인 서비스로 
             시민 서비스 품질을 한 단계 업그레이드하세요

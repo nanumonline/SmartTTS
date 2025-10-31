@@ -63,12 +63,12 @@ DialogFooter.displayName = "DialogFooter";
 
 const DialogTitle = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Title>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title> & { style?: React.CSSProperties }
->(({ className, style, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>
+>(({ className, ...props }, ref) => (
   <DialogPrimitive.Title
     ref={ref}
     className={cn("text-lg font-semibold font-display leading-none tracking-tight", className)}
-    style={{ color: '#1F2937', ...style }}
+    style={{ color: '#1F2937', ...(props.style as object) }}
     {...props}
   />
 ));
@@ -76,9 +76,9 @@ DialogTitle.displayName = DialogPrimitive.Title.displayName;
 
 const DialogDescription = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Description>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Description> & { style?: React.CSSProperties }
->(({ className, style, ...props }, ref) => (
-  <DialogPrimitive.Description ref={ref} className={cn("text-sm leading-relaxed", className)} style={{ color: '#4B5563', ...style }} {...props} />
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Description>
+>(({ className, ...props }, ref) => (
+  <DialogPrimitive.Description ref={ref} className={cn("text-sm leading-relaxed", className)} style={{ color: '#4B5563', ...(props.style as object) }} {...props} />
 ));
 DialogDescription.displayName = DialogPrimitive.Description.displayName;
 

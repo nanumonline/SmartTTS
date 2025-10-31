@@ -223,7 +223,7 @@ ${plan.name} 플랜에 대해 문의드립니다.
         <div className="text-center max-w-3xl mx-auto landio-fade-up">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-card border border-border/50 shadow-md mb-6">
             <Star className="w-4 h-4 text-primary" />
-            <span className="text-sm font-medium" style={{ color: '#1F2937' }}>요금제 선택</span>
+            <span className="text-sm font-medium">요금제 선택</span>
           </div>
           
           <h1 className="landio-text-h1 mb-6">
@@ -417,7 +417,7 @@ ${plan.name} 플랜에 대해 문의드립니다.
 
         {/* Features Section */}
         <div className="text-center mb-12 landio-fade-up">
-          <h2 className="landio-text-h2 mb-4" style={{ color: '#1F2937' }}>왜 공공기관이 Smart TTS를 선택해야 할까요?</h2>
+          <h2 className="landio-text-h2 mb-4">왜 공공기관이 Smart TTS를 선택해야 할까요?</h2>
           <p className="landio-text-body max-w-2xl mx-auto" style={{ color: '#4B5563' }}>
             공공기관 전용 기능과 안정적인 서비스로 
             시민 서비스 품질을 한 단계 업그레이드하세요
@@ -440,7 +440,7 @@ ${plan.name} 플랜에 대해 문의드립니다.
 
         {/* FAQ Section */}
         <div className="max-w-3xl mx-auto landio-fade-up">
-          <h2 className="landio-text-h2 text-center mb-8" style={{ color: '#1F2937' }}>공공기관 자주 묻는 질문</h2>
+          <h2 className="landio-text-h2 text-center mb-8">공공기관 자주 묻는 질문</h2>
           <div className="space-y-4">
             <Card className="landio-card">
               <CardContent className="p-6">
