@@ -439,43 +439,43 @@ ${plan.name} 플랜에 대해 문의드립니다.
         </div>
 
         {/* FAQ Section */}
-        <div className="max-w-3xl mx-auto landio-fade-up">
-          <h2 className="landio-text-h2 text-center mb-8">공공기관 자주 묻는 질문</h2>
+        <div className="max-w-3xl mx-auto">
+          <h2 className="text-3xl font-bold text-center mb-8">공공기관 자주 묻는 질문</h2>
           <div className="space-y-4">
-            <Card className="landio-card">
+            <Card>
               <CardContent className="p-6">
-                <h3 className="font-semibold mb-2 font-display">공공기관 할인이 있나요?</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
+                <h3 className="font-semibold mb-2">공공기관 할인이 있나요?</h3>
+                <p className="text-sm text-muted-foreground">
                   공공기관은 연간 결제 시 20% 할인 혜택을 받을 수 있습니다. 
                   또한 대규모 계약 시 추가 할인 및 맞춤형 조건을 제공합니다.
                 </p>
               </CardContent>
             </Card>
             
-            <Card className="landio-card">
+            <Card>
               <CardContent className="p-6">
-                <h3 className="font-semibold mb-2 font-display">공공기관 보안 인증은 받았나요?</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
+                <h3 className="font-semibold mb-2">공공기관 보안 인증은 받았나요?</h3>
+                <p className="text-sm text-muted-foreground">
                   네, 공공기관 보안 인증을 받았으며, 개인정보보호법 및 정보통신망법을 준수합니다. 
                   모든 데이터는 국내 서버에서 관리되며, 정부 보안 가이드라인을 충족합니다.
                 </p>
               </CardContent>
             </Card>
             
-            <Card className="landio-card">
+            <Card>
               <CardContent className="p-6">
-                <h3 className="font-semibold mb-2 font-display">긴급상황 시 지원이 가능한가요?</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
+                <h3 className="font-semibold mb-2">긴급상황 시 지원이 가능한가요?</h3>
+                <p className="text-sm text-muted-foreground">
                   긴급상황 발생 시 24시간 긴급 지원 서비스를 제공합니다. 
                   자연재해, 보안사고 등 공공기관 긴급상황에 즉시 대응할 수 있습니다.
                 </p>
               </CardContent>
             </Card>
             
-            <Card className="landio-card">
+            <Card>
               <CardContent className="p-6">
-                <h3 className="font-semibold mb-2 font-display">기관 내부 시스템과 연동이 가능한가요?</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
+                <h3 className="font-semibold mb-2">기관 내부 시스템과 연동이 가능한가요?</h3>
+                <p className="text-sm text-muted-foreground">
                   네, 기관 내부 시스템과의 연동을 지원합니다. 
                   API를 통해 기존 방송 시스템, 홈페이지, 모바일 앱 등과 연동하여 통합 관리가 가능합니다.
                 </p>

@@ -137,17 +137,6 @@ All colors MUST be HSL.
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
-    font-family: "Paperlogy", "Inter", "Poppins", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  }
-  
-  /* Paperlogy 폰트 적용 */
-  h1, h2, h3, h4, h5, h6,
-  .font-display,
-  .landio-text-h1,
-  .landio-text-h2 {
-    font-family: "Paperlogy", "Inter", "Poppins", sans-serif;
-    font-feature-settings: "liga" 1, "kern" 1;
-    letter-spacing: -0.02em;
   }
 
   /* Smooth animations */

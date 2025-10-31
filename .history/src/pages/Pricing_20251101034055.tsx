@@ -232,7 +232,7 @@ ${plan.name} 플랜에 대해 문의드립니다.
             <span className="text-foreground">요금제</span>
           </h1>
           
-          <p className="landio-text-body text-muted-foreground mb-8">
+          <p className="text-xl text-muted-foreground mb-8">
             공공기관 규모에 맞는 최적의 플랜으로
             <br />
             AI 음성 방송 서비스를 시작하세요
@@ -269,13 +269,13 @@ ${plan.name} 플랜에 대해 문의드립니다.
         {/* Pricing Cards */}
         <RadioGroup value={selectedPlan} onValueChange={setSelectedPlan} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
           {plans.map((plan) => (
-            <div key={plan.id} className="relative landio-fade-up">
+            <div key={plan.id} className="relative">
               <RadioGroupItem value={plan.id} id={plan.id} className="sr-only" />
               <Label htmlFor={plan.id} className="cursor-pointer">
                 <Card
-                  className={`landio-card relative transition-all duration-300 ${
-                    plan.popular ? 'ring-2 ring-primary shadow-xl scale-105' : ''
-                  } ${plan.color} ${selectedPlan === plan.id ? 'ring-2 ring-primary shadow-xl' : ''}`}
+                  className={`relative transition-all duration-300 hover:shadow-2xl hover:scale-105 hover:-translate-y-2 ${
+                    plan.popular ? 'ring-2 ring-primary shadow-lg scale-105' : ''
+                  } ${plan.color} ${selectedPlan === plan.id ? 'ring-2 ring-primary shadow-lg' : ''}`}
                 >
               {plan.popular && (
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2">
@@ -376,7 +376,7 @@ ${plan.name} 플랜에 대해 문의드립니다.
                 {/* Select Button */}
                 <div className="space-y-2">
                   <Button
-                    className={`w-full landio-button ${plan.buttonColor} text-white`}
+                    className={`w-full ${plan.buttonColor} text-white`}
                     onClick={(e) => {
                       e.stopPropagation();
                       handleInquiry(plan.id);
@@ -416,9 +416,9 @@ ${plan.name} 플랜에 대해 문의드립니다.
         </RadioGroup>
 
         {/* Features Section */}
-        <div className="text-center mb-12 landio-fade-up">
-          <h2 className="landio-text-h2 mb-4">왜 공공기관이 Smart TTS를 선택해야 할까요?</h2>
-          <p className="landio-text-body text-muted-foreground max-w-2xl mx-auto">
+        <div className="text-center mb-12">
+          <h2 className="text-3xl font-bold mb-4">왜 공공기관이 Smart TTS를 선택해야 할까요?</h2>
+          <p className="text-muted-foreground max-w-2xl mx-auto">
             공공기관 전용 기능과 안정적인 서비스로 
             시민 서비스 품질을 한 단계 업그레이드하세요
           </p>
@@ -426,56 +426,56 @@ ${plan.name} 플랜에 대해 문의드립니다.
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
           {features.map((feature, index) => (
-            <Card key={index} className="landio-card text-center landio-fade-up" style={{ animationDelay: `${index * 0.1}s` }}>
+            <Card key={index} className="text-center hover:shadow-lg transition-shadow">
               <CardContent className="p-6">
-                <div className="w-12 h-12 mx-auto mb-4 bg-primary/10 rounded-xl flex items-center justify-center" style={{ borderRadius: '12px' }}>
+                <div className="w-12 h-12 mx-auto mb-4 bg-primary/10 rounded-lg flex items-center justify-center">
                   <feature.icon className="w-6 h-6 text-primary" />
                 </div>
-                <h3 className="font-semibold mb-2 font-display">{feature.title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">{feature.description}</p>
+                <h3 className="font-semibold mb-2">{feature.title}</h3>
+                <p className="text-sm text-muted-foreground">{feature.description}</p>
               </CardContent>
             </Card>
           ))}
         </div>
 
         {/* FAQ Section */}
-        <div className="max-w-3xl mx-auto landio-fade-up">
-          <h2 className="landio-text-h2 text-center mb-8">공공기관 자주 묻는 질문</h2>
+        <div className="max-w-3xl mx-auto">
+          <h2 className="text-3xl font-bold text-center mb-8">공공기관 자주 묻는 질문</h2>
           <div className="space-y-4">
-            <Card className="landio-card">
+            <Card>
               <CardContent className="p-6">
-                <h3 className="font-semibold mb-2 font-display">공공기관 할인이 있나요?</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
+                <h3 className="font-semibold mb-2">공공기관 할인이 있나요?</h3>
+                <p className="text-sm text-muted-foreground">
                   공공기관은 연간 결제 시 20% 할인 혜택을 받을 수 있습니다. 
                   또한 대규모 계약 시 추가 할인 및 맞춤형 조건을 제공합니다.
                 </p>
               </CardContent>
             </Card>
             
-            <Card className="landio-card">
+            <Card>
               <CardContent className="p-6">
-                <h3 className="font-semibold mb-2 font-display">공공기관 보안 인증은 받았나요?</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
+                <h3 className="font-semibold mb-2">공공기관 보안 인증은 받았나요?</h3>
+                <p className="text-sm text-muted-foreground">
                   네, 공공기관 보안 인증을 받았으며, 개인정보보호법 및 정보통신망법을 준수합니다. 
                   모든 데이터는 국내 서버에서 관리되며, 정부 보안 가이드라인을 충족합니다.
                 </p>
               </CardContent>
             </Card>
             
-            <Card className="landio-card">
+            <Card>
               <CardContent className="p-6">
-                <h3 className="font-semibold mb-2 font-display">긴급상황 시 지원이 가능한가요?</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
+                <h3 className="font-semibold mb-2">긴급상황 시 지원이 가능한가요?</h3>
+                <p className="text-sm text-muted-foreground">
                   긴급상황 발생 시 24시간 긴급 지원 서비스를 제공합니다. 
                   자연재해, 보안사고 등 공공기관 긴급상황에 즉시 대응할 수 있습니다.
                 </p>
               </CardContent>
             </Card>
             
-            <Card className="landio-card">
+            <Card>
               <CardContent className="p-6">
-                <h3 className="font-semibold mb-2 font-display">기관 내부 시스템과 연동이 가능한가요?</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
+                <h3 className="font-semibold mb-2">기관 내부 시스템과 연동이 가능한가요?</h3>
+                <p className="text-sm text-muted-foreground">
                   네, 기관 내부 시스템과의 연동을 지원합니다. 
                   API를 통해 기존 방송 시스템, 홈페이지, 모바일 앱 등과 연동하여 통합 관리가 가능합니다.
                 </p>
