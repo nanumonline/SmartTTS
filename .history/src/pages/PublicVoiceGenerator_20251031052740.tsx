@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Slider } from "@/components/ui/slider";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import HomeButton from "@/components/HomeButton";
 import { 
@@ -29,98 +29,12 @@ import {
   Plus,
   Lock,
   CheckCircle,
-  Search,
-  Star
+  Search
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import AudioPlayer from "@/components/AudioPlayer";
-
-type CloneFormState = {
-  targetName: string;
-  baseVoiceId: string;
-  language: string;
-  memo: string;
-  sampleFile: File | null;
-  sampleName?: string;
-};
-
-type CloneRequest = {
-  id: number;
-  targetName: string;
-  baseVoiceId: string;
-  baseVoiceName: string;
-  language: string;
-  status: "processing" | "completed" | "failed";
-  createdAt: string;
-  completedAt?: string;
-  memo?: string;
-  sampleName?: string;
-  voiceId: string;
-  voiceName: string;
-  gender?: string;
-};
-
-type MixingAsset = {
-  id: string;
-  name: string;
-  type: "background" | "effect";
-  url?: string;
-  duration?: number;
-};
-
-type MixingState = {
-  voiceTrackVolume: number;
-  backgroundTrackVolume: number;
-  effectTrackVolume: number;
-  selectedBackground?: MixingAsset;
-  selectedEffect?: MixingAsset;
-};
-
-type ScheduleRequest = {
-  id: number;
-  generationId: number;
-  targetChannel: string;
-  targetName: string;
-  scheduledTime: string;
-  repeatOption: "once" | "daily" | "weekly";
-  status: "scheduled" | "sent" | "failed";
-  createdAt: string;
-  sentAt?: string;
-  failReason?: string;
-  mixingState?: MixingState;
-};
-
-type ReviewState = {
-  generationId: number;
-  status: "draft" | "review" | "approved" | "rejected";
-  comments: string;
-  updatedAt: string;
-};
-
-type UsageStats = {
-  totalCalls: number;
-  totalDuration: number;
-  callsThisMonth: number;
-  durationThisMonth: number;
-  lastUpdated: string;
-};
-
-type CreditBalance = {
-  balance: number;
-  currency: string;
-  lastUpdated: string;
-};
-
-type OperationLog = {
-  id: number;
-  type: "error" | "warning" | "success" | "info";
-  message: string;
-  timestamp: string;
-  context?: any;
-  resolved?: boolean;
-};
 
 const PublicVoiceGenerator = () => {
   const { user } = useAuth();
@@ -134,7 +48,6 @@ const PublicVoiceGenerator = () => {
   const [isLoadingAI, setIsLoadingAI] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState("formal_male");
   const [availableVoices, setAvailableVoices] = useState<any[]>([]);
-  const [allVoices, setAllVoices] = useState<any[]>([]);
   const [isLoadingVoices, setIsLoadingVoices] = useState(false);
   const [voiceSearchLanguage, setVoiceSearchLanguage] = useState<string>("ko");
   const [voiceSearchStyle, setVoiceSearchStyle] = useState<string>("");
@@ -148,7 +61,7 @@ const PublicVoiceGenerator = () => {
   const [playingSample, setPlayingSample] = useState<string | null>(null);
   const [isVoiceFinderOpen, setIsVoiceFinderOpen] = useState(false);
   const [voiceFilters, setVoiceFilters] = useState({
-    language: "ko",
+    language: "",
     style: "",
     name: "",
     gender: "",
@@ -158,76 +71,16 @@ const PublicVoiceGenerator = () => {
   const [isSearchingVoices, setIsSearchingVoices] = useState(false);
   const [voiceNextToken, setVoiceNextToken] = useState<string | null>(null);
   const [voiceTotalCount, setVoiceTotalCount] = useState<number | null>(null);
-  const isAutoLoadingRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const cacheRef = useRef<Map<string, { audioUrl: string; duration: number | null; mimeType?: string }>>(new Map());
-  const cloneTimeoutsRef = useRef<number[]>([]);
   const [generationHistory, setGenerationHistory] = useState<any[]>([]);
   const [metaOverrides, setMetaOverrides] = useState<{ language: string; style: string; model: string }>({ language: "", style: "", model: "" });
-  const [favoriteVoiceIds, setFavoriteVoiceIds] = useState<Set<string>>(new Set());
-  const [selectedPurpose, setSelectedPurpose] = useState<string>("announcement");
-  const [cloneRequests, setCloneRequests] = useState<CloneRequest[]>([]);
-  const [isCloneModalOpen, setIsCloneModalOpen] = useState(false);
-  const createCloneForm = useCallback((overrides?: Partial<CloneFormState>): CloneFormState => ({
-    targetName: "",
-    baseVoiceId: "",
-    language: "ko",
-    memo: "",
-    sampleFile: null,
-    sampleName: undefined,
-    ...overrides,
-  }), []);
-  const [cloneForm, setCloneForm] = useState<CloneFormState>(() => createCloneForm());
-
-  // Phase 3: 믹싱, 예약, 검수 상태 관리
-  const [mixingStates, setMixingStates] = useState<Map<number, MixingState>>(new Map());
-  const [scheduleRequests, setScheduleRequests] = useState<ScheduleRequest[]>([]);
-  const [reviewStates, setReviewStates] = useState<Map<number, ReviewState>>(new Map());
-  const [isMixingModalOpen, setIsMixingModalOpen] = useState(false);
-  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
-  const [selectedGenerationForMixing, setSelectedGenerationForMixing] = useState<any>(null);
-  const [selectedGenerationForSchedule, setSelectedGenerationForSchedule] = useState<any>(null);
-
-  // Phase 4: 사용량 및 크레딧 모니터링
-  const [usageStats, setUsageStats] = useState<UsageStats>({
-    totalCalls: 0,
-    totalDuration: 0,
-    callsThisMonth: 0,
-    durationThisMonth: 0,
-    lastUpdated: new Date().toISOString(),
-  });
-  const [creditBalance, setCreditBalance] = useState<CreditBalance>({
-    balance: 0,
-    currency: "KRW",
-    lastUpdated: new Date().toISOString(),
-  });
-  const [operationLogs, setOperationLogs] = useState<OperationLog[]>([]);
-  const [isMonitoringPanelOpen, setIsMonitoringPanelOpen] = useState(false);
-  const usagePollingRef = useRef<number | null>(null);
-
-  // 믹싱 자산 라이브러리 (사전정의)
-  const mixingAssetLibrary: MixingAsset[] = [
-    { id: "bg_silence", name: "무음", type: "background" },
-    { id: "bg_office", name: "사무실 배경음", type: "background", duration: 3600 },
-    { id: "bg_nature", name: "자연음", type: "background", duration: 3600 },
-    { id: "effect_bell", name: "벨소리", type: "effect", duration: 2 },
-    { id: "effect_chime", name: "칩음", type: "effect", duration: 1.5 },
-  ];
-
-  // 전송 채널 옵션
-  const scheduleChannels = [
-    { value: "broadcast_screen", label: "공중파 방송 (화면/자막)" },
-    { value: "radio", label: "라디오" },
-    { value: "sns", label: "SNS (Facebook/Instagram)" },
-    { value: "website", label: "웹사이트 배너/팝업" },
-    { value: "email", label: "이메일 뉴스레터" },
-  ];
 
   // 드롭다운 옵션 (한국어 라벨 적용, 언어는 한국어/영어/일본어만)
   const languageOptions = [
-    { value: "ko", label: "한국어 🇰🇷" },
-    { value: "en", label: "영어 🇺🇸" },
-    { value: "ja", label: "일본어 🇯🇵" },
+    { value: "ko", label: "한국어" },
+    { value: "en", label: "영어" },
+    { value: "ja", label: "일본어" },
   ];
   const styleOptions = [
     { value: "neutral", label: "중립" },
@@ -267,33 +120,6 @@ const PublicVoiceGenerator = () => {
     { value: "telephone", label: "전화" },
   ];
 
-  const purposeOptions = [
-    {
-      id: "announcement",
-      label: "공공 공지",
-      description: "긴급 안내·재난 알림 등 즉시 전파가 필요한 방송",
-      checklist: ["대상과 지역을 명확히 언급했는가?", "비상 연락처를 포함했는가?", "지시 사항이 명확한가?"],
-    },
-    {
-      id: "event",
-      label: "행사 축사",
-      description: "시장·도지사 등 주요 인사의 행사 축사",
-      checklist: ["행사명/일시/장소를 포함했는가?", "감사 인사와 기대 메시지가 있는가?", "기관 identity가 드러나는가?"],
-    },
-    {
-      id: "promotion",
-      label: "홍보/광고",
-      description: "관광·정책·캠페인 홍보 방송",
-      checklist: ["핵심 메시지가 3문장 이내로 명확한가?", "콜 투 액션이 있는가?", "대상 채널에 맞는 톤인가?"],
-    },
-    {
-      id: "service",
-      label: "서비스 안내",
-      description: "민원·공공서비스 이용 안내",
-      checklist: ["접수 방법과 운영시간을 포함했는가?", "필수 서류/준비물을 안내했는가?", "문의 경로를 제시했는가?"],
-    },
-  ];
-
   // Supertone API 엔드포인트 (공식 레퍼런스: https://docs.supertoneapi.com/en/api-reference/introduction)
   const SUPABASE_PROXY_BASE_URL = "https://gxxralruivyhdxyftsrg.supabase.co/functions/v1/supertone-proxy";
   const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4eHJhbHJ1aXZ5aGR4eWZ0c3JnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE2NDM0MzQsImV4cCI6MjA3NzIxOTQzNH0.6lJjJq15spXWrktl-8d5qXI3L5FHkyaEArWiH2R5AjA";
@@ -305,271 +131,6 @@ const PublicVoiceGenerator = () => {
     if (preset === "빠름") return 1.3;
     if (preset === "느림") return 0.7;
     return 1.0;
-  };
-
-  const getPurposeMeta = (purposeId: string) => purposeOptions.find((p) => p.id === purposeId) || purposeOptions[0];
-
-  const getVoiceMeta = (voiceId: string) => {
-    if (!voiceId) return null;
-    return availableVoices.find((v: any) => v.voice_id === voiceId)
-      || allVoices.find((v: any) => v.voice_id === voiceId)
-      || null;
-  };
-
-  const getVoiceDisplayName = (voiceId: string) => {
-    const meta = getVoiceMeta(voiceId);
-    return meta?.name || voiceId || "-";
-  };
-
-  const registerCloneVoice = (clone: CloneRequest) => {
-    if (!clone?.voiceId) return;
-    const base = getVoiceMeta(clone.baseVoiceId);
-    const baseLanguages = base?.language
-      ? (Array.isArray(base.language) ? base.language : [base.language])
-      : [clone.language || "ko"];
-    const baseStyles = base?.styles
-      ? (Array.isArray(base.styles) ? base.styles : [base.styles])
-      : ["neutral"];
-    const gender = clone.gender || (base as any)?.gender || "neutral";
-    const samples = base?.samples || [];
-    const newVoice = {
-      voice_id: clone.voiceId,
-      name: clone.voiceName,
-      language: baseLanguages,
-      styles: baseStyles,
-      gender,
-      samples,
-      is_clone: true,
-      clone_of: clone.baseVoiceId,
-    };
-    setAllVoices((prev) => (prev.some((v: any) => v.voice_id === clone.voiceId) ? prev : [...prev, newVoice]));
-    setAvailableVoices((prev) => (prev.some((v: any) => v.voice_id === clone.voiceId) ? prev : [...prev, newVoice]));
-  };
-
-  const openCloneModal = (baseVoiceId?: string) => {
-    const base = baseVoiceId ? getVoiceMeta(baseVoiceId) : getVoiceMeta(selectedVoice);
-    const baseId = (base as any)?.voice_id || baseVoiceId || selectedVoice || "";
-    const firstLanguage = base
-      ? normalizeLanguage(Array.isArray(base.language) ? base.language[0] : base.language)
-      : cloneForm.language;
-    setCloneForm(createCloneForm({
-      baseVoiceId: baseId,
-      targetName: base?.name ? `${base.name} 클론` : "",
-      language: firstLanguage || cloneForm.language,
-      memo: "",
-    }));
-    setIsCloneModalOpen(true);
-  };
-
-  const openMixingModal = (generation: any) => {
-    if (!generation?.id) {
-      toast({ title: "생성 기록을 선택해주세요", variant: "destructive" });
-      return;
-    }
-    setSelectedGenerationForMixing(generation);
-    const existing = mixingStates.get(generation.id);
-    if (!existing) {
-      setMixingStates((prev) =>
-        new Map(prev).set(generation.id, {
-          voiceTrackVolume: 100,
-          backgroundTrackVolume: 50,
-          effectTrackVolume: 70,
-        })
-      );
-    }
-    setIsMixingModalOpen(true);
-  };
-
-  const openScheduleModal = (generation: any) => {
-    if (!generation?.id) {
-      toast({ title: "생성 기록을 선택해주세요", variant: "destructive" });
-      return;
-    }
-    setSelectedGenerationForSchedule(generation);
-    setIsScheduleModalOpen(true);
-  };
-
-  const handleMixingSubmit = (form: { background?: string; effect?: string }) => {
-    if (!selectedGenerationForMixing?.id) return;
-    const genId = selectedGenerationForMixing.id;
-    const bg = form.background ? mixingAssetLibrary.find((x) => x.id === form.background) : undefined;
-    const ef = form.effect ? mixingAssetLibrary.find((x) => x.id === form.effect) : undefined;
-    const mixingState = mixingStates.get(genId) || {
-      voiceTrackVolume: 100,
-      backgroundTrackVolume: 50,
-      effectTrackVolume: 70,
-    };
-    const updated = { ...mixingState, selectedBackground: bg, selectedEffect: ef };
-    setMixingStates((prev) => new Map(prev).set(genId, updated));
-    setIsMixingModalOpen(false);
-    toast({ title: "믹싱 설정 저장", description: "음원이 믹싱되었습니다." });
-  };
-
-  const handleScheduleSubmit = (form: { channel: string; scheduledTime: string; repeatOption: "once" | "daily" | "weekly" }) => {
-    if (!selectedGenerationForSchedule?.id) return;
-    const newSchedule: ScheduleRequest = {
-      id: Date.now(),
-      generationId: selectedGenerationForSchedule.id,
-      targetChannel: form.channel,
-      targetName: scheduleChannels.find((c) => c.value === form.channel)?.label || form.channel,
-      scheduledTime: form.scheduledTime,
-      repeatOption: form.repeatOption,
-      status: "scheduled",
-      createdAt: new Date().toISOString(),
-      mixingState: mixingStates.get(selectedGenerationForSchedule.id),
-    };
-    setScheduleRequests((prev) => [newSchedule, ...prev]);
-    setIsScheduleModalOpen(false);
-    toast({ title: "예약 등록", description: `${newSchedule.targetName}으로 ${form.scheduledTime}에 전송 예약되었습니다.` });
-  };
-
-  const getReviewStatus = (generationId: number): ReviewState => {
-    return reviewStates.get(generationId) || {
-      generationId,
-      status: "draft",
-      comments: "",
-      updatedAt: new Date().toISOString(),
-    };
-  };
-
-  const updateReviewStatus = (generationId: number, newStatus: ReviewState["status"], comments?: string) => {
-    const updated: ReviewState = {
-      generationId,
-      status: newStatus,
-      comments: comments || reviewStates.get(generationId)?.comments || "",
-      updatedAt: new Date().toISOString(),
-    };
-    setReviewStates((prev) => new Map(prev).set(generationId, updated));
-    toast({ title: "검수 상태 변경", description: `상태: ${newStatus}` });
-  };
-
-  const addOperationLog = (type: OperationLog["type"], message: string, context?: any) => {
-    const log: OperationLog = {
-      id: Date.now(),
-      type,
-      message,
-      timestamp: new Date().toISOString(),
-      context,
-      resolved: false,
-    };
-    setOperationLogs((prev) => [log, ...prev].slice(0, 50)); // 최대 50개 유지
-  };
-
-  const fetchUsageStats = async () => {
-    try {
-      // Mock 데이터 (실제로는 Supabase Edge Function 호출)
-      const mockUsage: UsageStats = {
-        totalCalls: 1250,
-        totalDuration: 18750,
-        callsThisMonth: 450,
-        durationThisMonth: 6750,
-        lastUpdated: new Date().toISOString(),
-      };
-      setUsageStats(mockUsage);
-      addOperationLog("success", "사용량 데이터 업데이트 완료");
-    } catch (error: any) {
-      addOperationLog("error", `사용량 조회 실패: ${error.message}`);
-    }
-  };
-
-  const fetchCreditBalance = async () => {
-    try {
-      // Mock 데이터 (실제로는 Supabase Edge Function 호출)
-      const mockCredit: CreditBalance = {
-        balance: 45000,
-        currency: "KRW",
-        lastUpdated: new Date().toISOString(),
-      };
-      setCreditBalance(mockCredit);
-      // 임계치 체크
-      if (mockCredit.balance < 10000) {
-        addOperationLog("warning", "크레딧 잔액이 부족합니다. 충전이 필요합니다.");
-      } else if (mockCredit.balance < 50000) {
-        addOperationLog("info", "크레딧 잔액이 50% 이하입니다.");
-      }
-    } catch (error: any) {
-      addOperationLog("error", `크레딧 조회 실패: ${error.message}`);
-    }
-  };
-
-  const startUsagePolling = () => {
-    if (usagePollingRef.current) return; // 이미 실행 중이면 중복 방지
-    fetchUsageStats();
-    fetchCreditBalance();
-    // 30초마다 갱신
-    usagePollingRef.current = window.setInterval(() => {
-      fetchUsageStats();
-      fetchCreditBalance();
-    }, 30000);
-  };
-
-  const stopUsagePolling = () => {
-    if (usagePollingRef.current) {
-      window.clearInterval(usagePollingRef.current);
-      usagePollingRef.current = null;
-    }
-  };
-
-  const handleCloneSubmit = () => {
-    if (!cloneForm.targetName.trim()) {
-      toast({ title: "대상 이름을 입력해주세요", variant: "destructive" });
-      return;
-    }
-    if (!cloneForm.baseVoiceId) {
-      toast({ title: "기준 음성을 선택해주세요", variant: "destructive" });
-      return;
-    }
-    if (!cloneForm.sampleFile && !cloneForm.sampleName) {
-      toast({ title: "샘플 음성을 업로드해주세요", variant: "destructive" });
-      return;
-    }
-
-    const base = getVoiceMeta(cloneForm.baseVoiceId);
-    const sampleName = cloneForm.sampleFile?.name || cloneForm.sampleName || "sample.wav";
-    const id = Date.now();
-    const voiceId = `clone_${id}`;
-    const voiceName = `${cloneForm.targetName.trim()} (클론)`;
-    const newClone: CloneRequest = {
-      id,
-      targetName: cloneForm.targetName.trim(),
-      baseVoiceId: cloneForm.baseVoiceId,
-      baseVoiceName: base?.name || getVoiceDisplayName(cloneForm.baseVoiceId),
-      language: cloneForm.language || "ko",
-      status: "processing",
-      createdAt: new Date().toISOString(),
-      memo: cloneForm.memo,
-      sampleName,
-      voiceId,
-      voiceName,
-      gender: (base as any)?.gender || "neutral",
-    };
-
-    setCloneRequests((prev) => [newClone, ...prev]);
-    setIsCloneModalOpen(false);
-    setCloneForm(createCloneForm({ language: cloneForm.language }));
-
-    toast({ title: "클로닝 요청 접수", description: "샘플을 분석 중입니다." });
-
-    const timer = window.setTimeout(() => {
-      const completionTime = new Date().toISOString();
-      const completedClone: CloneRequest = { ...newClone, status: "completed", completedAt: completionTime };
-      setCloneRequests((prev) => prev.map((cl) => (cl.id === newClone.id ? completedClone : cl)));
-      registerCloneVoice(completedClone);
-      toast({ title: "클로닝 완료", description: `${completedClone.voiceName} 음성이 추가되었습니다.` });
-    }, 1500);
-
-    cloneTimeoutsRef.current.push(timer);
-  };
-
-  const purposeMeta = getPurposeMeta(selectedPurpose);
-
-  const formatDateTime = (iso?: string) => {
-    if (!iso) return "-";
-    try {
-      return new Date(iso).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
-    } catch {
-      return iso;
-    }
   };
 
   const formatErrorDetail = (val: any): string => {
@@ -669,27 +230,6 @@ const PublicVoiceGenerator = () => {
     return useCase ? (map[useCase] || useCase) : undefined;
   };
 
-  // 우선순위: 한국어 > 영어 > 일본어
-  const LANGUAGE_PRIORITY = ["ko", "en", "ja"] as const;
-  const normalizeLanguage = (code?: string) => (code || "").toLowerCase().split("-")[0];
-  const computeVoiceLanguageRank = (voice: any): number => {
-    const langs = Array.isArray(voice?.language) ? voice.language : (voice?.language ? [voice.language] : []);
-    const norm = langs.map((l: string) => normalizeLanguage(l));
-    for (let i = 0; i < LANGUAGE_PRIORITY.length; i++) {
-      if (norm.includes(LANGUAGE_PRIORITY[i])) return i;
-    }
-    return LANGUAGE_PRIORITY.length + 1;
-  };
-
-  const getPreferredSampleUrl = (voice: any): string | null => {
-    const samples: any[] = Array.isArray(voice?.samples) ? voice.samples : [];
-    for (const lang of LANGUAGE_PRIORITY) {
-      const s = samples.find((x) => x?.language === lang && x?.url);
-      if (s?.url) return s.url;
-    }
-    return samples[0]?.url || null;
-  };
-
   const parseSupertoneResponse = async (resp: Response) => {
     if (!resp) {
       throw new Error("응답이 존재하지 않습니다.");
@@ -755,125 +295,15 @@ const PublicVoiceGenerator = () => {
   };
 
   const HISTORY_STORAGE_KEY = "tts_generation_history_v1";
-  const FAV_STORAGE_KEY = "tts_favorite_voice_ids_v1";
-  const PURPOSE_STORAGE_KEY = "tts_selected_purpose_v1";
-  const CLONE_STORAGE_KEY = "tts_clone_requests_v1";
-  const MIXING_STORAGE_KEY = "tts_mixing_states_v1";
-  const SCHEDULE_STORAGE_KEY = "tts_schedule_requests_v1";
-  const REVIEW_STORAGE_KEY = "tts_review_states_v1";
   useEffect(() => {
     try {
       const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          const normalized = parsed.map((item: any, index: number) => {
-            const purposeId = item.purpose || "announcement";
-            const meta = getPurposeMeta(purposeId);
-            return {
-              id: item.id || Date.now() + index,
-              purpose: purposeId,
-              purposeLabel: item.purposeLabel || meta.label,
-              voiceId: item.voiceId || item.voice_id || "",
-              voiceName: item.voiceName || getVoiceDisplayName(item.voiceId || item.voice_id || ""),
-              createdAt: item.createdAt || item.created_at || new Date().toISOString(),
-              duration: item.duration || null,
-              status: item.status || (item.hasAudio === false ? "mock" : "ready"),
-              hasAudio: typeof item.hasAudio === "boolean" ? item.hasAudio : true,
-              language: item.language || "",
-              textPreview: item.textPreview || item.text || "",
-              cacheKey: item.cacheKey || item.key || "",
-            };
-          });
-          setGenerationHistory(normalized);
-        }
-      }
-      const favRaw = localStorage.getItem(FAV_STORAGE_KEY);
-      if (favRaw) {
-        const ids: string[] = JSON.parse(favRaw);
-        if (Array.isArray(ids)) setFavoriteVoiceIds(new Set(ids));
-      }
-      const purposeRaw = localStorage.getItem(PURPOSE_STORAGE_KEY);
-      if (purposeRaw) {
-        setSelectedPurpose(purposeRaw);
-      }
-      const cloneRaw = localStorage.getItem(CLONE_STORAGE_KEY);
-      if (cloneRaw) {
-        const parsed = JSON.parse(cloneRaw);
-        if (Array.isArray(parsed)) {
-          const normalized: CloneRequest[] = parsed.map((item: any, index: number) => {
-            const id = item.id || Date.now() + index;
-            const baseId = item.baseVoiceId || item.base_voice_id || "";
-            const baseName = item.baseVoiceName || item.base_voice_name || getVoiceDisplayName(baseId);
-            const status = item.status === "processing" ? "processing" : "completed";
-            return {
-              id,
-              targetName: item.targetName || item.target_name || baseName || `클론 음성 ${index + 1}`,
-              baseVoiceId: baseId,
-              baseVoiceName: baseName,
-              language: item.language || "ko",
-              status,
-              createdAt: item.createdAt || item.created_at || new Date().toISOString(),
-              completedAt: item.completedAt || item.completed_at,
-              memo: item.memo || "",
-              sampleName: item.sampleName || item.sample_name || "",
-              voiceId: item.voiceId || item.voice_id || `clone_${id}`,
-              voiceName: item.voiceName || item.voice_name || `${baseName} 클론`,
-              gender: item.gender || undefined,
-            };
-          });
-          setCloneRequests(normalized);
-          normalized
-            .filter((clone) => clone.status === "completed" || !clone.status)
-            .forEach((clone) => registerCloneVoice({ ...clone, status: "completed" }));
-        }
+        if (Array.isArray(parsed)) setGenerationHistory(parsed);
       }
     } catch {}
   }, []);
-
-  useEffect(() => {
-    try {
-      if (selectedPurpose) {
-        localStorage.setItem(PURPOSE_STORAGE_KEY, selectedPurpose);
-      }
-    } catch {}
-  }, [selectedPurpose]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(CLONE_STORAGE_KEY, JSON.stringify(cloneRequests));
-    } catch {}
-  }, [cloneRequests]);
-
-  useEffect(() => {
-    try {
-      const mixingRaw = localStorage.getItem(MIXING_STORAGE_KEY);
-      if (mixingRaw) {
-        const data = JSON.parse(mixingRaw);
-        const map = new Map(Object.entries(data));
-        setMixingStates(map as any);
-      }
-      const scheduleRaw = localStorage.getItem(SCHEDULE_STORAGE_KEY);
-      if (scheduleRaw) {
-        const parsed = JSON.parse(scheduleRaw);
-        if (Array.isArray(parsed)) setScheduleRequests(parsed);
-      }
-      const reviewRaw = localStorage.getItem(REVIEW_STORAGE_KEY);
-      if (reviewRaw) {
-        const data = JSON.parse(reviewRaw);
-        const map = new Map(Object.entries(data).map(([k, v]: [string, any]) => [parseInt(k), v]) as any);
-        setReviewStates(map as any);
-      }
-    } catch {}
-  }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(MIXING_STORAGE_KEY, JSON.stringify(Object.fromEntries(mixingStates)));
-      localStorage.setItem(SCHEDULE_STORAGE_KEY, JSON.stringify(scheduleRequests));
-      localStorage.setItem(REVIEW_STORAGE_KEY, JSON.stringify(Object.fromEntries(reviewStates)));
-    } catch {}
-  }, [mixingStates, scheduleRequests, reviewStates]);
 
   const pushHistory = (entry: any) => {
     try {
@@ -896,20 +326,6 @@ const PublicVoiceGenerator = () => {
     return [voiceId, language, model, style, speed.toFixed(2), pitchShift, text].join("::");
   };
 
-  const toggleFavorite = (voiceId: string) => {
-    setFavoriteVoiceIds(prev => {
-      const next = new Set(prev);
-      if (next.has(voiceId)) next.delete(voiceId); else next.add(voiceId);
-      try { localStorage.setItem(FAV_STORAGE_KEY, JSON.stringify(Array.from(next))); } catch {}
-      return next;
-    });
-  };
-
-  const languageCodeToFlag = (code: string) => {
-    const map: Record<string, string> = { ko: "🇰🇷", en: "🇺🇸", ja: "🇯🇵" };
-    return map[code] || "";
-  };
-
   const fetchWithSupabaseProxy = useCallback(async (path: string, init?: RequestInit) => {
     try {
       const headers = new Headers(init?.headers as HeadersInit | undefined);
@@ -927,7 +343,7 @@ const PublicVoiceGenerator = () => {
     } catch (error: any) {
       // AbortError는 정상 흐름(이전 요청 취소)으로 간주하고 로그를 남기지 않음
       if (error?.name !== "AbortError") {
-      console.warn("Supabase 프록시 호출 실패:", error);
+        console.warn("Supabase 프록시 호출 실패:", error);
       }
       return null;
     }
@@ -1123,18 +539,14 @@ const PublicVoiceGenerator = () => {
         const data = await response.json();
         // 응답 형식: { items: [], total: 150, nextPageToken: "..." } 또는 배열/기타 필드
         const voices = data.items || (Array.isArray(data) ? data : (data.voices || data.data || []));
-        setAllVoices(voices);
-        setAvailableVoices(voices);
+        const koreanVoices = voices.filter((v: any) => v.language?.includes("ko") || !v.language);
+        setAvailableVoices(koreanVoices.length > 0 ? koreanVoices : voices);
         const nextToken = data.nextPageToken || data.next_page_token || data.next_token || null;
         setVoiceNextToken(nextToken || null);
         const total = data.total || data.totalCount || null;
         setVoiceTotalCount(total);
         console.log(`✅ 음성 목록 로드 성공(프록시): ${voices.length}개`);
         voicesLoaded = true;
-        // 초기 로드시 전체 자동 로드 (완화된 속도)
-        if (nextToken) {
-          await autoLoadVoicesThrottled(50, 200);
-        }
       } else if (response) {
         console.warn("음성 목록 로드 실패(프록시):", await response.text());
       }
@@ -1164,10 +576,6 @@ const PublicVoiceGenerator = () => {
     return queryString ? `/voices?${queryString}` : "/voices";
   };
 
-  const isAllFilters = (filters: typeof voiceFilters) => {
-    return !filters.language && !filters.style && !filters.name && !filters.gender && !filters.useCase;
-  };
-
   const searchVoices = useCallback(async () => {
     setIsSearchingVoices(true);
     if (abortRef.current) abortRef.current.abort();
@@ -1180,77 +588,39 @@ const PublicVoiceGenerator = () => {
       if (response?.ok) {
         const data = await response.json();
         const results = data.items || (Array.isArray(data) ? data : (data.voices || data.data || []));
-        // 마스터 목록 갱신 후 필터 적용
-        setAllVoices(results);
-        setAvailableVoices(results);
-        // 클라이언트 필터링 적용
-        const filtered = applyClientFilters(results, voiceFilters);
-        setVoiceSearchResults(filtered);
+        setVoiceSearchResults(results);
+        if (results.length > 0) setAvailableVoices(results);
         const nextToken = data.nextPageToken || data.next_page_token || data.next_token || null;
         setVoiceNextToken(nextToken || null);
         const total = data.total || data.totalCount || null;
         setVoiceTotalCount(total);
         console.log(`✅ 음성 검색 성공(프록시): ${results.length}개`);
-        // 모든 필터가 전체이면 즉시 전체 로드하여 개수 일치시키기
-        if (nextToken && isAllFilters(voiceFilters)) {
-          await autoLoadVoicesThrottled(50, 0);
-        } else if (nextToken) {
-          // 그 외에는 완화된 속도로 배경 로드
-          autoLoadVoicesThrottled(5, 300);
-        }
       } else if (response) {
         console.warn("음성 검색 실패(프록시):", await response.text());
         setVoiceSearchResults([]);
       }
     } catch (error: any) {
       if (error?.name !== "AbortError") {
-      console.warn("음성 검색 예외(프록시):", error.message);
-    }
+        console.warn("음성 검색 예외(프록시):", error.message);
+      }
     } finally {
       setIsSearchingVoices(false);
     }
   }, [voiceFilters, fetchWithSupabaseProxy]);
 
-  const loadMoreVoices = async (token?: string | null) => {
-    const useToken = token ?? voiceNextToken;
-    if (!useToken) return { nextToken: null } as const;
-    const path = buildVoiceQueryPath(voiceFilters, { limit: "100", nextPageToken: useToken as string, pageToken: useToken as string });
+  const loadMoreVoices = async () => {
+    if (!voiceNextToken) return;
+    const path = buildVoiceQueryPath(voiceFilters, { limit: "100", nextPageToken: voiceNextToken, pageToken: voiceNextToken });
     const response = await fetchWithSupabaseProxy(path, { method: "GET" });
     if (response?.ok) {
-      let data: any = {};
-      try { data = await response.json(); } catch {}
+      const data = await response.json();
       const results = data.items || (Array.isArray(data) ? data : (data.voices || data.data || []));
-      if (results?.length) {
-        setAllVoices(prev => [...prev, ...results]);
-        setAvailableVoices(prev => [...prev, ...results]);
-        setVoiceSearchResults(prev => applyClientFilters([...prev, ...results], voiceFilters));
-      }
+      setVoiceSearchResults(prev => [...prev, ...results]);
+      if (results.length > 0) setAvailableVoices(prev => [...prev, ...results]);
       const nextToken = data.nextPageToken || data.next_page_token || data.next_token || null;
       setVoiceNextToken(nextToken || null);
       const total = data.total || data.totalCount || null;
       if (total) setVoiceTotalCount(total);
-      return { nextToken: nextToken || null } as const;
-    }
-    return { nextToken: null } as const;
-  };
-
-  const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
-
-  const autoLoadVoicesThrottled = async (maxPages = 5, delayMs = 300) => {
-    if (isAutoLoadingRef.current) return;
-    isAutoLoadingRef.current = true;
-    try {
-      let pages = 0;
-      let token: string | null = voiceNextToken;
-      while (token && pages < maxPages) {
-        const { nextToken } = await loadMoreVoices(token);
-        token = nextToken;
-        pages++;
-        if (!token) break;
-        await sleep(delayMs);
-      }
-    } finally {
-      isAutoLoadingRef.current = false;
     }
   };
 
@@ -1263,66 +633,12 @@ const PublicVoiceGenerator = () => {
     return () => clearTimeout(timer);
   }, [isVoiceFinderOpen, voiceFilters, searchVoices]);
 
-  const applyClientFilters = (voices: any[], filters: typeof voiceFilters) => {
-    const filtered = voices.filter((v) => {
-      // 언어
-      if (filters.language) {
-        const langs = Array.isArray(v.language) ? v.language : (v.language ? [v.language] : []);
-        const norm = langs.map((l: string) => normalizeLanguage(l));
-        if (!norm.includes(filters.language)) return false;
-      }
-      // 이름 부분 검색
-      if (filters.name) {
-        const needle = filters.name.toLowerCase();
-        const name = (v.name || v.voice_id || "").toLowerCase();
-        if (!name.includes(needle)) return false;
-      }
-      // 성별
-      if (filters.gender) {
-        if ((v.gender || "") !== filters.gender) return false;
-      }
-      // 스타일
-      if (filters.style) {
-        const styles = Array.isArray(v.styles) ? v.styles : (v.styles ? [v.styles] : []);
-        const stylesNorm = styles.map((s: string) => (s || "").toLowerCase());
-        if (!stylesNorm.includes(filters.style)) return false;
-      }
-      // 용도
-      if (filters.useCase) {
-        const raw = v.use_case ?? v.useCase ?? v.usecases ?? v.useCases ?? "";
-        const normalizeUseCase = (val: string) => (val || "").toLowerCase().replace(/_/g, "-").replace(/\s+/g, "-");
-        if (Array.isArray(raw)) {
-          const vals = raw.map((x: any) => normalizeUseCase(String(x)));
-          if (!vals.includes(normalizeUseCase(filters.useCase))) return false;
-        } else if (typeof raw === "string") {
-          if (normalizeUseCase(raw) !== normalizeUseCase(filters.useCase)) return false;
-        } else {
-          return false;
-        }
-      }
-      return true;
-    });
-    // 언어 우선순위로 정렬: ko > en > ja > 기타
-    return filtered.sort((a, b) => computeVoiceLanguageRank(a) - computeVoiceLanguageRank(b));
-  };
-
-  useEffect(() => {
-    // 필터 변경 시 클라이언트 필터 적용
-    if (allVoices.length > 0) {
-      setVoiceSearchResults(applyClientFilters(allVoices, voiceFilters));
-    }
-    // 필터 변경 시 완화된 배경 로드
-    if (isVoiceFinderOpen && voiceNextToken) {
-      autoLoadVoicesThrottled(5, 300);
-    }
-  }, [voiceFilters, allVoices]);
-
   // 언마운트/모달 닫힘 시 진행 중 요청 중단 및 검색 상태 정리
   useEffect(() => {
     if (!isVoiceFinderOpen && abortRef.current) {
       abortRef.current.abort();
       abortRef.current = null;
-    setIsSearchingVoices(false);
+      setIsSearchingVoices(false);
     }
   }, [isVoiceFinderOpen]);
 
@@ -1332,9 +648,6 @@ const PublicVoiceGenerator = () => {
         abortRef.current.abort();
         abortRef.current = null;
       }
-      cloneTimeoutsRef.current.forEach((timer) => window.clearTimeout(timer));
-      cloneTimeoutsRef.current = [];
-      stopUsagePolling();
     };
   }, []);
 
@@ -1342,7 +655,6 @@ const PublicVoiceGenerator = () => {
   // 컴포넌트 마운트 시 음성 목록 로드
   useEffect(() => {
     fetchVoices();
-    startUsagePolling();
   }, []);
 
   // 텍스트 변경 시 예상 오디오 길이 자동 예측
@@ -1628,23 +940,16 @@ const PublicVoiceGenerator = () => {
       // 캐시에 저장 및 이력 기록
       cacheRef.current.set(cacheKey, audioResult);
       pushHistory({
-        id: Date.now(),
-        cacheKey,
-        purpose: selectedPurpose,
-        purposeLabel: purposeMeta.label,
-        voiceId: selectedVoice,
-        voiceName: getVoiceDisplayName(selectedVoice),
+        key: cacheKey,
+        voice_id: selectedVoice,
         language: chosenLanguage,
         model: chosenModel,
         style: styleValue,
         speed: speedValue,
-        pitchShift,
-        textPreview: trimmedText.slice(0, 120),
-        textLength: trimmedText.length,
+        pitch_shift: pitchShift,
+        text_length: trimmedText.length,
         duration: roundedDuration,
-        createdAt: new Date().toISOString(),
-        status: usedMock ? "mock" : "ready",
-        hasAudio: !usedMock,
+        created_at: new Date().toISOString(),
       });
     } catch (error: any) {
       console.error("음성 생성 오류:", error);
@@ -1716,84 +1021,6 @@ const PublicVoiceGenerator = () => {
       </div>
 
       <div className="container mx-auto px-4 py-8">
-        <Card className="mb-8">
-          <CardHeader>
-        {/* Phase 4: 사용량 & 크레딧 모니터링 패널 */}
-        <div className="mb-8 grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-muted-foreground">이번 달 생성</span>
-                  <Badge variant="outline">{usageStats.callsThisMonth}회</Badge>
-                </div>
-                <div className="text-2xl font-bold">{Math.round(usageStats.durationThisMonth / 60)}분</div>
-                <div className="text-xs text-muted-foreground">전체: {usageStats.totalCalls}회 / {Math.round(usageStats.totalDuration / 3600)}시간</div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="space-y-2">
-                <span className="text-sm font-medium text-muted-foreground">크레딧 잔액</span>
-                <div className={`text-2xl font-bold ${creditBalance.balance < 50000 ? "text-red-600" : creditBalance.balance < 100000 ? "text-orange-600" : "text-green-600"}`}>
-                  ₩{creditBalance.balance.toLocaleString()}
-                </div>
-                <div className="w-full bg-muted h-2 rounded-full overflow-hidden">
-                  <div className={`h-full transition-all ${creditBalance.balance < 50000 ? "bg-red-600" : "bg-green-600"}`} style={{ width: `${Math.min((creditBalance.balance / 500000) * 100, 100)}%` }} />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-muted-foreground">최근 로그</span>
-                  <Button size="sm" variant="ghost" onClick={() => setIsMonitoringPanelOpen(!isMonitoringPanelOpen)}>자세히</Button>
-                </div>
-                <div className="text-xs space-y-1">
-                  {operationLogs.slice(0, 3).map((log) => (
-                    <div key={log.id} className={`text-[11px] ${log.type === "error" ? "text-red-600" : log.type === "warning" ? "text-orange-600" : log.type === "success" ? "text-green-600" : "text-muted-foreground"}`}>
-                      • {log.message}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-            <CardTitle className="text-lg">문구 목적 설정</CardTitle>
-            <CardDescription>방송 목적을 먼저 선택하면 이후 검수·예약 단계와 기록이 목적별로 정리됩니다.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-              {purposeOptions.map((option) => {
-                const active = option.id === selectedPurpose;
-                return (
-                  <Button
-                    key={option.id}
-                    variant={active ? "default" : "outline"}
-                    className={`h-auto flex flex-col items-start gap-1 text-left ${active ? "border-primary" : ""}`}
-                    onClick={() => setSelectedPurpose(option.id)}
-                  >
-                    <span className="text-sm font-semibold">{option.label}</span>
-                    <span className="text-xs text-muted-foreground leading-snug">{option.description}</span>
-                  </Button>
-                );
-              })}
-            </div>
-            <div className="rounded-lg border border-dashed p-4 bg-muted/30">
-              <h4 className="text-sm font-medium mb-2">검수 체크리스트</h4>
-              <ul className="text-xs text-muted-foreground space-y-1">
-                {purposeMeta.checklist.map((item, idx) => (
-                  <li key={idx}>• {item}</li>
-                ))}
-              </ul>
-            </div>
-          </CardContent>
-        </Card>
-
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* 템플릿 선택 */}
           <div className="lg:col-span-1">
@@ -1941,55 +1168,25 @@ const PublicVoiceGenerator = () => {
                     <SelectContent>
                       {/* API에서 가져온 실제 음성 목록 */}
                       {availableVoices.length > 0 ? (
-                        <>
-                          <div className="px-2 py-1 text-[11px] text-muted-foreground grid gap-2 [grid-template-columns:56px_64px_128px_128px_minmax(120px,1fr)]">
-                            <div>즐겨찾기</div>
-                            <div>성별</div>
-                            <div>이름</div>
-                            <div>국가</div>
-                            <div>스타일</div>
-                          </div>
-                          {[...(allVoices.length > 0 ? allVoices : availableVoices)]
-                            .sort((a: any, b: any) => {
-                              const fa = favoriteVoiceIds.has(a.voice_id) ? 1 : 0;
-                              const fb = favoriteVoiceIds.has(b.voice_id) ? 1 : 0;
-                              if (fa !== fb) return fb - fa; // 즐겨찾기 우선
-                              return computeVoiceLanguageRank(a) - computeVoiceLanguageRank(b);
-                            })
-                            .map((voice: any) => {
+                        availableVoices.map((voice: any) => {
                           const voiceName = voice.name || voice.voice_id;
-                              const flags = (() => {
-                                const arr = Array.isArray(voice.language) ? voice.language : (voice.language ? [voice.language] : []);
-                                return arr.map((c: string) => languageCodeToFlag(c)).filter(Boolean).join(" ") || "";
-                              })();
-                              const stylesKo = formatStylesKo(voice.styles);
-                              const genderKo = genderCodeToKo(voice.gender);
-                              const genderColor = voice.gender === "female" ? "bg-red-500" : voice.gender === "male" ? "bg-blue-500" : "bg-gray-400";
+                          const languages = formatLanguagesKo(voice.language);
+                          const styles = Array.isArray(voice.styles) ? voice.styles.join(", ") : voice.styles || "중립";
+                          
                           return (
                             <SelectItem key={voice.voice_id} value={voice.voice_id}>
-                                  <div className="grid gap-2 items-center [grid-template-columns:56px_64px_128px_128px_minmax(120px,1fr)]">
-                                    <div className="flex items-center">
-                                      <button
-                                        onMouseDown={(e) => e.preventDefault()}
-                                        onClick={(e) => { e.stopPropagation(); toggleFavorite(voice.voice_id); }}
-                                        className={`w-5 h-5 inline-flex items-center justify-center rounded ${favoriteVoiceIds.has(voice.voice_id) ? 'bg-yellow-400/20' : 'bg-transparent'}`}
-                                        title={favoriteVoiceIds.has(voice.voice_id) ? '즐겨찾기 해제' : '즐겨찾기 추가'}
-                                      >
-                                        <Star className={`w-3 h-3 ${favoriteVoiceIds.has(voice.voice_id) ? 'text-yellow-400' : 'text-muted-foreground'}`} />
-                                      </button>
+                              <div className="flex items-center gap-2">
+                                <Building2 className="w-4 h-4" />
+                                <div>
+                                  <div className="font-medium">{voiceName}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    언어: {languages} | 스타일: {styles}
                                   </div>
-                                    <div className="flex items-center gap-1 text-xs">
-                                      <span className={`inline-block w-2.5 h-2.5 rounded-full ${genderColor}`}></span>
-                                      <span>{genderKo}</span>
                                 </div>
-                                    <div className="truncate text-sm font-medium" title={voiceName}>{voiceName}</div>
-                                    <div className="text-xs" title={flags}>{flags}</div>
-                                    <div className="text-xs truncate" title={stylesKo || '-'}>{stylesKo || '-'}</div>
                               </div>
                             </SelectItem>
                           );
-                            })}
-                        </>
+                        })
                       ) : (
                         /* 기본 음성 목록 (API 연결 실패 시) */
                         voiceStyles.map((style) => (
@@ -2022,34 +1219,6 @@ const PublicVoiceGenerator = () => {
                     음성 찾기
                   </Button>
                   <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => openCloneModal(selectedVoice)}
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    클론 생성
-                  </Button>
-                  {favoriteVoiceIds.size > 0 && (
-                    <Select onValueChange={(v) => {
-                      setSelectedVoice(v);
-                      const voice = availableVoices.find((vv: any) => vv.voice_id === v);
-                      setSelectedVoiceInfo(voice || null);
-                    }}>
-                      <SelectTrigger className="h-9 w-48">
-                        <SelectValue placeholder="즐겨찾기에서 선택" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Array.from(favoriteVoiceIds).map((vid) => {
-                          const v = availableVoices.find((x: any) => x.voice_id === vid);
-                          if (!v) return null;
-                          return (
-                            <SelectItem key={vid} value={vid}>{v.name || vid}</SelectItem>
-                          );
-                        })}
-                      </SelectContent>
-                    </Select>
-                  )}
-                  <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => fetchVoices()}
@@ -2065,51 +1234,44 @@ const PublicVoiceGenerator = () => {
                         <div>
                           <h4 className="font-medium text-sm">{selectedVoiceInfo.name}</h4>
                           <p className="text-xs text-muted-foreground">
-                            {(() => {
-                              const langs = Array.isArray(selectedVoiceInfo.language) ? selectedVoiceInfo.language : (selectedVoiceInfo.language ? [selectedVoiceInfo.language] : []);
-                              const langsKo = langs.map((l: string) => languageCodeToKo(l)).join(", ");
-                              const stylesKo = formatStylesKo(selectedVoiceInfo.styles);
-                              return `언어: ${langsKo} | 스타일: ${stylesKo}`;
-                            })()}
+                            언어: {Array.isArray(selectedVoiceInfo.language) ? selectedVoiceInfo.language.join(", ") : selectedVoiceInfo.language}
+                            {" | "}
+                            스타일: {Array.isArray(selectedVoiceInfo.styles) ? selectedVoiceInfo.styles.join(", ") : selectedVoiceInfo.styles}
                           </p>
                         </div>
                       </div>
                       
-                      {/* 샘플 오디오 목록 (언어별 행, 3그리드 버튼) */}
-                      <div className="space-y-3">
-                        {(["ko","en","ja"] as const).map((lang) => {
-                          const langSamples = (selectedVoiceInfo.samples || []).filter((s: any) => s?.language === lang);
-                          if (!langSamples || langSamples.length === 0) return null;
-                          const items = langSamples
-                            .slice(0, 9) // 언어별 최대 9개 (3x3)
-                            .map((s: any) => ({ url: s.url, label: `${languageCodeToFlag(lang)} ${styleCodeToKo(s.style || 'neutral')}` }));
-                          const rows = [] as any[];
-                          for (let i = 0; i < items.length; i += 3) rows.push(items.slice(i, i + 3));
-                          return (
-                            <div key={lang} className="space-y-2">
-                              <div className="text-xs font-medium text-muted-foreground">{languageCodeToKo(lang)}</div>
-                              {rows.map((row, idx) => (
-                                <div key={idx} className="grid grid-cols-3 gap-2">
-                                  {row.map((it: any, j: number) => (
+                      {/* 샘플 오디오 목록 */}
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium text-muted-foreground">샘플 오디오:</p>
+                        <div className="grid grid-cols-1 gap-2">
+                          {selectedVoiceInfo.samples.slice(0, 3).map((sample: any, index: number) => (
+                            <div key={index} className="flex items-center justify-between p-2 bg-background rounded border border-border">
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline" className="text-xs">
+                                  {sample.language} - {sample.style}
+                                </Badge>
+                              </div>
                               <Button
-                                      key={j}
-                                      variant="outline"
-                                      className="justify-between"
-                                      onClick={() => setPlayingSample(prev => prev === it.url ? null : it.url)}
-                                    >
-                                      <span className="text-xs">{it.label}</span>
-                                      {playingSample === it.url ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  if (playingSample === sample.url) {
+                                    setPlayingSample(null);
+                                  } else {
+                                    setPlayingSample(sample.url);
+                                  }
+                                }}
+                              >
+                                {playingSample === sample.url ? (
+                                  <Pause className="w-3 h-3" />
+                                ) : (
+                                  <Play className="w-3 h-3" />
+                                )}
                               </Button>
-                                  ))}
-                                  {Array.from({ length: Math.max(0, 3 - row.length) }).map((_, k) => (
-                                    <div key={`sp-${k}`} />
-                                  ))}
                             </div>
                           ))}
                         </div>
-                          );
-                        })}
-                        
                         {playingSample && (
                           <audio
                             src={playingSample}
@@ -2586,125 +1748,8 @@ const PublicVoiceGenerator = () => {
           </div>
         </div>
 
-        {/* 생성 기록 & 사용 가이드 */}
-        <div className="mt-8 space-y-6">
-          <Card>
-            <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <Mic2 className="w-5 h-5" />
-                  클론 음성 관리
-                </CardTitle>
-                <CardDescription>기존 음성을 기반으로 클론 음성을 생성하고 관리합니다.</CardDescription>
-              </div>
-              <Button size="sm" onClick={() => openCloneModal()}>새 클론 음성 생성</Button>
-            </CardHeader>
-            <CardContent>
-              {cloneRequests.length === 0 ? (
-                <p className="text-sm text-muted-foreground">아직 생성된 클론 음성이 없습니다. 기준 음성을 선택한 후 클론 생성 버튼을 눌러보세요.</p>
-              ) : (
-                <div className="space-y-3">
-                  {cloneRequests.map((clone) => {
-                    const isFavorite = favoriteVoiceIds.has(clone.voiceId);
-                    const languageLabel = languageCodeToKo(clone.language);
-                    return (
-                      <div key={clone.id} className="rounded-lg border border-border bg-muted/20 p-3 grid gap-3 md:grid-cols-[150px_minmax(0,1fr)_180px_180px] items-center">
-                        <div className="space-y-1">
-                          <Badge variant={clone.status === "completed" ? "default" : "outline"}>{clone.status === "completed" ? "완료" : "진행중"}</Badge>
-                          <div className="text-xs text-muted-foreground">{formatDateTime(clone.createdAt)}</div>
-                        </div>
-                        <div className="space-y-1">
-                          <div className="text-sm font-medium">{clone.voiceName}</div>
-                          <div className="text-xs text-muted-foreground">기준 음성: {clone.baseVoiceName || "-"}</div>
-                          <div className="text-xs text-muted-foreground">언어: {languageLabel}</div>
-                        </div>
-                        <div className="space-y-1 text-xs text-muted-foreground">
-                          <div>샘플: {clone.sampleName || "-"}</div>
-                          <div>메모: {clone.memo || "-"}</div>
-                          {clone.completedAt && (
-                            <div>완료: {formatDateTime(clone.completedAt)}</div>
-                          )}
-                        </div>
-                        <div className="flex flex-wrap gap-2 justify-end">
-                          <Button
-                            size="sm"
-                            variant={isFavorite ? "default" : "outline"}
-                            onClick={() => toggleFavorite(clone.voiceId)}
-                          >
-                            {isFavorite ? "즐겨찾기 해제" : "즐겨찾기"}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={clone.status !== "completed"}
-                            onClick={() => {
-                              if (clone.status !== "completed") return;
-                              setSelectedVoice(clone.voiceId);
-                              const meta = getVoiceMeta(clone.voiceId);
-                              setSelectedVoiceInfo(meta || null);
-                              toast({ title: "클론 음성 선택", description: `${clone.voiceName} 음성을 선택했습니다.` });
-                            }}
-                          >
-                            사용하기
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="w-5 h-5" />
-                생성 기록 & 작업 관리
-              </CardTitle>
-              <CardDescription>최근 생성한 음성을 목적별로 관리하고, 향후 클로닝·믹싱·예약 작업을 연결합니다.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {generationHistory.length === 0 ? (
-                <p className="text-sm text-muted-foreground">아직 생성된 음성이 없습니다. 목적을 선택하고 음성을 생성해 보세요.</p>
-              ) : (
-                <div className="space-y-3">
-                  {generationHistory.map((entry) => {
-                    const languageKo = languageCodeToKo(entry.language);
-                    return (
-                      <div key={entry.id} className="rounded-lg border border-border bg-muted/20 p-3 grid gap-3 md:grid-cols-[160px_minmax(0,1fr)_160px_200px] items-center">
-                        <div className="space-y-1">
-                          <Badge>{entry.purposeLabel}</Badge>
-                          <div className="text-xs text-muted-foreground">{formatDateTime(entry.createdAt)}</div>
-                        </div>
-                        <div className="space-y-1">
-                          <div className="text-sm font-medium truncate" title={entry.textPreview}>{entry.textPreview || "(텍스트 없음)"}</div>
-                          <div className="text-xs text-muted-foreground">길이: {entry.duration != null ? `${entry.duration.toFixed(2)}초` : "-"}</div>
-                        </div>
-                        <div className="space-y-1 text-xs text-muted-foreground">
-                          <div>음성: {entry.voiceName || "-"}</div>
-                          <div>언어: {languageKo}</div>
-                          <div>상태: <Badge variant="outline" className="text-[10px] uppercase">{entry.status}</Badge></div>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => openCloneModal(entry.voiceId)}
-                          >
-                            클로닝
-                          </Button>
-                          <Button size="sm" variant="outline" onClick={() => openMixingModal(entry)}>믹싱</Button>
-                          <Button size="sm" variant="outline" onClick={() => openScheduleModal(entry)}>예약</Button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
+        {/* 사용 가이드 */}
+        <div className="mt-8">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -2832,12 +1877,8 @@ const PublicVoiceGenerator = () => {
                 <Button
                   variant="outline"
                   onClick={() => {
-                    // 한국어 기본값으로 필터 초기화
-                    setVoiceFilters({ language: "ko", style: "", name: "", gender: "", useCase: "" });
-                    // 기존 결과를 한국어 기준으로 즉시 재필터링
-                    if (allVoices.length > 0) {
-                      setVoiceSearchResults(applyClientFilters(allVoices, { language: "ko", style: "", name: "", gender: "", useCase: "" } as any));
-                    }
+                    setVoiceFilters({ language: "", style: "", name: "", gender: "", useCase: "" });
+                    setVoiceSearchResults([]);
                   }}
                 >
                   초기화
@@ -2852,10 +1893,17 @@ const PublicVoiceGenerator = () => {
                 <span>검색 결과 {voiceSearchResults.length}{voiceTotalCount ? ` / 총 ${voiceTotalCount}` : ""}개</span>
                 <div className="flex items-center gap-2">
                   {voiceNextToken && (
-                    <Button size="sm" variant="outline" onClick={() => loadMoreVoices()}>더 보기</Button>
+                    <Button size="sm" variant="outline" onClick={loadMoreVoices}>더 보기</Button>
                   )}
                   {voiceNextToken && (
-                    <Button size="sm" variant="outline" onClick={() => autoLoadVoicesThrottled(50, 200)}>전체보기</Button>
+                    <Button size="sm" variant="outline" onClick={async () => {
+                      // 전체보기: 다음 토큰이 없을 때까지 모두 불러오기 (안전장치 20페이지)
+                      let guard = 0;
+                      while (voiceNextToken && guard < 20) {
+                        await loadMoreVoices();
+                        guard++;
+                      }
+                    }}>전체보기</Button>
                   )}
                 </div>
               </div>
@@ -2867,11 +1915,7 @@ const PublicVoiceGenerator = () => {
                 ) : (
                   <div className="space-y-3">
                     {voiceSearchResults.map((voice) => {
-                      const languages = (() => {
-                        const arr = Array.isArray(voice.language) ? voice.language : (voice.language ? [voice.language] : []);
-                        const flags = arr.map((c: string) => languageCodeToFlag(c)).filter(Boolean);
-                        return flags.join(" ") || "-";
-                      })();
+                      const languages = formatLanguagesKo(voice.language);
                       const styles = formatStylesKo(voice.styles);
                       const models = Array.isArray(voice.models) ? voice.models.join(", ") : voice.models;
                       const genderKo = genderCodeToKo(voice.gender);
@@ -2893,7 +1937,7 @@ const PublicVoiceGenerator = () => {
                                   size="sm"
                                   variant="ghost"
                                   onClick={() => {
-                                    const sampleUrl = getPreferredSampleUrl(voice);
+                                    const sampleUrl = voice?.samples && voice.samples.length > 0 ? voice.samples[0]?.url : null;
                                     if (sampleUrl) {
                                       setPlayingSample(prev => prev === sampleUrl ? null : sampleUrl);
                                     } else {
@@ -2901,29 +1945,21 @@ const PublicVoiceGenerator = () => {
                                     }
                                   }}
                                 >
-                                  {playingSample && getPreferredSampleUrl(voice) === playingSample ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+                                  {playingSample && voice?.samples?.[0]?.url === playingSample ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
                                 </Button>
                                 <Button
                                   size="sm"
-                                  variant={favoriteVoiceIds.has(voice.voice_id) ? "default" : "outline"}
-                                  onClick={() => toggleFavorite(voice.voice_id)}
-                                  title={favoriteVoiceIds.has(voice.voice_id) ? "즐겨찾기 해제" : "즐겨찾기 추가"}
+                                  onClick={() => {
+                                    setSelectedVoice(voice.voice_id);
+                                    setSelectedVoiceInfo(voice);
+                                    setIsVoiceFinderOpen(false);
+                                    if (!availableVoices.some(v => v.voice_id === voice.voice_id)) {
+                                      setAvailableVoices(prev => [...prev, voice]);
+                                    }
+                                  }}
                                 >
-                                  <Star className="w-3 h-3 text-yellow-400" />
+                                  선택
                                 </Button>
-                              <Button
-                                size="sm"
-                                onClick={() => {
-                                  setSelectedVoice(voice.voice_id);
-                                  setSelectedVoiceInfo(voice);
-                                  setIsVoiceFinderOpen(false);
-                                  if (!availableVoices.some(v => v.voice_id === voice.voice_id)) {
-                                    setAvailableVoices(prev => [...prev, voice]);
-                                  }
-                                }}
-                              >
-                                선택
-                              </Button>
                               </div>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-muted-foreground">
@@ -2945,238 +1981,12 @@ const PublicVoiceGenerator = () => {
                   </div>
                 )}
               </ScrollArea>
-              {/* 전역 샘플 재생 오디오 */}
-              {(
-                <audio
-                  src={playingSample || undefined}
-                  autoPlay={Boolean(playingSample)}
-                  onEnded={() => setPlayingSample(null)}
-                  onError={() => setPlayingSample(null)}
-                  className="hidden"
-                />
-              )}
             </div>
           </div>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isCloneModalOpen} onOpenChange={setIsCloneModalOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>새 클론 음성 생성</DialogTitle>
-            <DialogDescription>
-              기준 음성과 샘플 음성을 업로드하면, 동일한 톤의 클론 음성을 만들어 음성 목록에 추가합니다.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="clone-target">대상 이름 *</Label>
-              <Input
-                id="clone-target"
-                placeholder="예: 시장님 공식 음성"
-                value={cloneForm.targetName}
-                onChange={(e) => setCloneForm((prev) => ({ ...prev, targetName: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>기준 음성 *</Label>
-              <Select
-                value={cloneForm.baseVoiceId || undefined}
-                onValueChange={(value) => {
-                  const base = getVoiceMeta(value);
-                  const firstLang = base
-                    ? normalizeLanguage(Array.isArray(base.language) ? base.language[0] : base.language) || cloneForm.language
-                    : cloneForm.language;
-                  setCloneForm((prev) => ({ ...prev, baseVoiceId: value, language: firstLang }));
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="기준 음성을 선택하세요" />
-                </SelectTrigger>
-                <SelectContent className="max-h-64">
-                  {allVoices.map((voice: any) => (
-                    <SelectItem key={voice.voice_id} value={voice.voice_id}>
-                      {voice.name || voice.voice_id}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>주요 언어 *</Label>
-              <Select
-                value={cloneForm.language}
-                onValueChange={(value) => setCloneForm((prev) => ({ ...prev, language: value }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="언어를 선택하세요" />
-                </SelectTrigger>
-                <SelectContent>
-                  {languageOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="clone-memo">메모</Label>
-              <Textarea
-                id="clone-memo"
-                placeholder="예: 시장님 축사톤으로 30초 분량"
-                value={cloneForm.memo}
-                onChange={(e) => setCloneForm((prev) => ({ ...prev, memo: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="clone-sample">샘플 업로드 *</Label>
-              <Input
-                id="clone-sample"
-                type="file"
-                accept="audio/*"
-                onChange={(e) => {
-                  const file = e.target.files?.[0] || null;
-                  setCloneForm((prev) => ({ ...prev, sampleFile: file, sampleName: file?.name }));
-                }}
-              />
-              {cloneForm.sampleName && (
-                <p className="text-xs text-muted-foreground">선택된 파일: {cloneForm.sampleName}</p>
-              )}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsCloneModalOpen(false);
-                setCloneForm(createCloneForm({ language: cloneForm.language }));
-              }}
-            >
-              취소
-            </Button>
-            <Button onClick={handleCloneSubmit}>클로닝 요청</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={isMixingModalOpen} onOpenChange={setIsMixingModalOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>음원 믹싱 설정</DialogTitle>
-            <DialogDescription>배경음과 효과음을 선택하고 각 트랙의 음량을 조절합니다.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>배경음 선택</Label>
-              <Select onValueChange={(value) => { const asset = mixingAssetLibrary.find((x) => x.id === value); if (selectedGenerationForMixing?.id && asset) { const state = mixingStates.get(selectedGenerationForMixing.id) || { voiceTrackVolume: 100, backgroundTrackVolume: 50, effectTrackVolume: 70 }; setMixingStates((prev) => new Map(prev).set(selectedGenerationForMixing.id, { ...state, selectedBackground: asset })); } }}>
-                <SelectTrigger><SelectValue placeholder="배경음을 선택하세요" /></SelectTrigger>
-                <SelectContent>
-                  {mixingAssetLibrary.filter((x) => x.type === "background").map((asset) => (<SelectItem key={asset.id} value={asset.id}>{asset.name}</SelectItem>))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>효과음 선택</Label>
-              <Select onValueChange={(value) => { const asset = mixingAssetLibrary.find((x) => x.id === value); if (selectedGenerationForMixing?.id && asset) { const state = mixingStates.get(selectedGenerationForMixing.id) || { voiceTrackVolume: 100, backgroundTrackVolume: 50, effectTrackVolume: 70 }; setMixingStates((prev) => new Map(prev).set(selectedGenerationForMixing.id, { ...state, selectedEffect: asset })); } }}>
-                <SelectTrigger><SelectValue placeholder="효과음을 선택하세요" /></SelectTrigger>
-                <SelectContent>
-                  {mixingAssetLibrary.filter((x) => x.type === "effect").map((asset) => (<SelectItem key={asset.id} value={asset.id}>{asset.name}</SelectItem>))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsMixingModalOpen(false)}>취소</Button>
-            <Button onClick={() => handleMixingSubmit({ background: mixingStates.get(selectedGenerationForMixing?.id)?.selectedBackground?.id, effect: mixingStates.get(selectedGenerationForMixing?.id)?.selectedEffect?.id })}>믹싱 완료</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={isScheduleModalOpen} onOpenChange={setIsScheduleModalOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>예약 전송 설정</DialogTitle>
-            <DialogDescription>음성을 전송할 채널과 시간을 설정합니다. (기준시간: Asia/Seoul)</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="schedule-channel">전송 채널 *</Label>
-              <Select>
-                <SelectTrigger><SelectValue placeholder="전송 채널을 선택하세요" /></SelectTrigger>
-                <SelectContent>
-                  {scheduleChannels.map((ch) => (<SelectItem key={ch.value} value={ch.value}>{ch.label}</SelectItem>))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="schedule-time">전송 시간 *</Label>
-              <Input type="datetime-local" id="schedule-time" />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="schedule-repeat">반복 옵션</Label>
-              <Select defaultValue="once">
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="once">1회 전송</SelectItem>
-                  <SelectItem value="daily">매일</SelectItem>
-                  <SelectItem value="weekly">매주</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsScheduleModalOpen(false)}>취소</Button>
-            <Button onClick={() => handleScheduleSubmit({ channel: "", scheduledTime: "", repeatOption: "once" })}>예약 등록</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={isMonitoringPanelOpen} onOpenChange={setIsMonitoringPanelOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-96 overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>운영 모니터링</DialogTitle>
-            <DialogDescription>최근 API 호출, 오류, 경고 이벤트 로그</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <h4 className="font-semibold text-sm">사용량 통계</h4>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="bg-muted p-3 rounded">
-                  <div className="text-muted-foreground">월별 호출</div>
-                  <div className="text-xl font-bold">{usageStats.callsThisMonth}회</div>
-                </div>
-                <div className="bg-muted p-3 rounded">
-                  <div className="text-muted-foreground">월별 생성시간</div>
-                  <div className="text-xl font-bold">{Math.round(usageStats.durationThisMonth / 60)}분</div>
-                </div>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <h4 className="font-semibold text-sm">최근 이벤트 로그</h4>
-              <ScrollArea className="h-48 border rounded p-3">
-                <div className="space-y-2">
-                  {operationLogs.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">로그가 없습니다.</p>
-                  ) : (
-                    operationLogs.map((log) => (
-                      <div key={log.id} className={`text-xs p-2 rounded border-l-2 ${
-                        log.type === "error" ? "border-red-600 bg-red-50" :
-                        log.type === "warning" ? "border-orange-600 bg-orange-50" :
-                        log.type === "success" ? "border-green-600 bg-green-50" :
-                        "border-blue-600 bg-blue-50"
-                      }`}>
-                        <div className="font-medium">{log.message}</div>
-                        <div className="text-[10px] text-muted-foreground">{new Date(log.timestamp).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}</div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </ScrollArea>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-     </div>
+    </div>
   );
 };
 

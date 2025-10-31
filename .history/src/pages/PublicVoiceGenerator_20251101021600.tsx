@@ -99,29 +99,6 @@ type ReviewState = {
   updatedAt: string;
 };
 
-type UsageStats = {
-  totalCalls: number;
-  totalDuration: number;
-  callsThisMonth: number;
-  durationThisMonth: number;
-  lastUpdated: string;
-};
-
-type CreditBalance = {
-  balance: number;
-  currency: string;
-  lastUpdated: string;
-};
-
-type OperationLog = {
-  id: number;
-  type: "error" | "warning" | "success" | "info";
-  message: string;
-  timestamp: string;
-  context?: any;
-  resolved?: boolean;
-};
-
 const PublicVoiceGenerator = () => {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -187,23 +164,6 @@ const PublicVoiceGenerator = () => {
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [selectedGenerationForMixing, setSelectedGenerationForMixing] = useState<any>(null);
   const [selectedGenerationForSchedule, setSelectedGenerationForSchedule] = useState<any>(null);
-
-  // Phase 4: 사용량 및 크레딧 모니터링
-  const [usageStats, setUsageStats] = useState<UsageStats>({
-    totalCalls: 0,
-    totalDuration: 0,
-    callsThisMonth: 0,
-    durationThisMonth: 0,
-    lastUpdated: new Date().toISOString(),
-  });
-  const [creditBalance, setCreditBalance] = useState<CreditBalance>({
-    balance: 0,
-    currency: "KRW",
-    lastUpdated: new Date().toISOString(),
-  });
-  const [operationLogs, setOperationLogs] = useState<OperationLog[]>([]);
-  const [isMonitoringPanelOpen, setIsMonitoringPanelOpen] = useState(false);
-  const usagePollingRef = useRef<number | null>(null);
 
   // 믹싱 자산 라이브러리 (사전정의)
   const mixingAssetLibrary: MixingAsset[] = [
@@ -441,73 +401,6 @@ const PublicVoiceGenerator = () => {
     };
     setReviewStates((prev) => new Map(prev).set(generationId, updated));
     toast({ title: "검수 상태 변경", description: `상태: ${newStatus}` });
-  };
-
-  const addOperationLog = (type: OperationLog["type"], message: string, context?: any) => {
-    const log: OperationLog = {
-      id: Date.now(),
-      type,
-      message,
-      timestamp: new Date().toISOString(),
-      context,
-      resolved: false,
-    };
-    setOperationLogs((prev) => [log, ...prev].slice(0, 50)); // 최대 50개 유지
-  };
-
-  const fetchUsageStats = async () => {
-    try {
-      // Mock 데이터 (실제로는 Supabase Edge Function 호출)
-      const mockUsage: UsageStats = {
-        totalCalls: 1250,
-        totalDuration: 18750,
-        callsThisMonth: 450,
-        durationThisMonth: 6750,
-        lastUpdated: new Date().toISOString(),
-      };
-      setUsageStats(mockUsage);
-      addOperationLog("success", "사용량 데이터 업데이트 완료");
-    } catch (error: any) {
-      addOperationLog("error", `사용량 조회 실패: ${error.message}`);
-    }
-  };
-
-  const fetchCreditBalance = async () => {
-    try {
-      // Mock 데이터 (실제로는 Supabase Edge Function 호출)
-      const mockCredit: CreditBalance = {
-        balance: 45000,
-        currency: "KRW",
-        lastUpdated: new Date().toISOString(),
-      };
-      setCreditBalance(mockCredit);
-      // 임계치 체크
-      if (mockCredit.balance < 10000) {
-        addOperationLog("warning", "크레딧 잔액이 부족합니다. 충전이 필요합니다.");
-      } else if (mockCredit.balance < 50000) {
-        addOperationLog("info", "크레딧 잔액이 50% 이하입니다.");
-      }
-    } catch (error: any) {
-      addOperationLog("error", `크레딧 조회 실패: ${error.message}`);
-    }
-  };
-
-  const startUsagePolling = () => {
-    if (usagePollingRef.current) return; // 이미 실행 중이면 중복 방지
-    fetchUsageStats();
-    fetchCreditBalance();
-    // 30초마다 갱신
-    usagePollingRef.current = window.setInterval(() => {
-      fetchUsageStats();
-      fetchCreditBalance();
-    }, 30000);
-  };
-
-  const stopUsagePolling = () => {
-    if (usagePollingRef.current) {
-      window.clearInterval(usagePollingRef.current);
-      usagePollingRef.current = null;
-    }
   };
 
   const handleCloneSubmit = () => {
@@ -1334,7 +1227,6 @@ const PublicVoiceGenerator = () => {
       }
       cloneTimeoutsRef.current.forEach((timer) => window.clearTimeout(timer));
       cloneTimeoutsRef.current = [];
-      stopUsagePolling();
     };
   }, []);
 
@@ -1342,7 +1234,6 @@ const PublicVoiceGenerator = () => {
   // 컴포넌트 마운트 시 음성 목록 로드
   useEffect(() => {
     fetchVoices();
-    startUsagePolling();
   }, []);
 
   // 텍스트 변경 시 예상 오디오 길이 자동 예측
@@ -1718,51 +1609,6 @@ const PublicVoiceGenerator = () => {
       <div className="container mx-auto px-4 py-8">
         <Card className="mb-8">
           <CardHeader>
-        {/* Phase 4: 사용량 & 크레딧 모니터링 패널 */}
-        <div className="mb-8 grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-muted-foreground">이번 달 생성</span>
-                  <Badge variant="outline">{usageStats.callsThisMonth}회</Badge>
-                </div>
-                <div className="text-2xl font-bold">{Math.round(usageStats.durationThisMonth / 60)}분</div>
-                <div className="text-xs text-muted-foreground">전체: {usageStats.totalCalls}회 / {Math.round(usageStats.totalDuration / 3600)}시간</div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="space-y-2">
-                <span className="text-sm font-medium text-muted-foreground">크레딧 잔액</span>
-                <div className={`text-2xl font-bold ${creditBalance.balance < 50000 ? "text-red-600" : creditBalance.balance < 100000 ? "text-orange-600" : "text-green-600"}`}>
-                  ₩{creditBalance.balance.toLocaleString()}
-                </div>
-                <div className="w-full bg-muted h-2 rounded-full overflow-hidden">
-                  <div className={`h-full transition-all ${creditBalance.balance < 50000 ? "bg-red-600" : "bg-green-600"}`} style={{ width: `${Math.min((creditBalance.balance / 500000) * 100, 100)}%` }} />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-muted-foreground">최근 로그</span>
-                  <Button size="sm" variant="ghost" onClick={() => setIsMonitoringPanelOpen(!isMonitoringPanelOpen)}>자세히</Button>
-                </div>
-                <div className="text-xs space-y-1">
-                  {operationLogs.slice(0, 3).map((log) => (
-                    <div key={log.id} className={`text-[11px] ${log.type === "error" ? "text-red-600" : log.type === "warning" ? "text-orange-600" : log.type === "success" ? "text-green-600" : "text-muted-foreground"}`}>
-                      • {log.message}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
             <CardTitle className="text-lg">문구 목적 설정</CardTitle>
             <CardDescription>방송 목적을 먼저 선택하면 이후 검수·예약 단계와 기록이 목적별로 정리됩니다.</CardDescription>
           </CardHeader>
@@ -3130,53 +2976,7 @@ const PublicVoiceGenerator = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isMonitoringPanelOpen} onOpenChange={setIsMonitoringPanelOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-96 overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>운영 모니터링</DialogTitle>
-            <DialogDescription>최근 API 호출, 오류, 경고 이벤트 로그</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <h4 className="font-semibold text-sm">사용량 통계</h4>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="bg-muted p-3 rounded">
-                  <div className="text-muted-foreground">월별 호출</div>
-                  <div className="text-xl font-bold">{usageStats.callsThisMonth}회</div>
-                </div>
-                <div className="bg-muted p-3 rounded">
-                  <div className="text-muted-foreground">월별 생성시간</div>
-                  <div className="text-xl font-bold">{Math.round(usageStats.durationThisMonth / 60)}분</div>
-                </div>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <h4 className="font-semibold text-sm">최근 이벤트 로그</h4>
-              <ScrollArea className="h-48 border rounded p-3">
-                <div className="space-y-2">
-                  {operationLogs.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">로그가 없습니다.</p>
-                  ) : (
-                    operationLogs.map((log) => (
-                      <div key={log.id} className={`text-xs p-2 rounded border-l-2 ${
-                        log.type === "error" ? "border-red-600 bg-red-50" :
-                        log.type === "warning" ? "border-orange-600 bg-orange-50" :
-                        log.type === "success" ? "border-green-600 bg-green-50" :
-                        "border-blue-600 bg-blue-50"
-                      }`}>
-                        <div className="font-medium">{log.message}</div>
-                        <div className="text-[10px] text-muted-foreground">{new Date(log.timestamp).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}</div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </ScrollArea>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-     </div>
+    </div>
   );
 };
 

@@ -82,11 +82,11 @@ Deno.serve(async (req: Request) => {
 
     let targetUrl = "";
     if (isTTS) {
-      targetUrl = `${supertoneBaseUrl}/text-to-speech/${voiceId}?output_format=${outputFormat}`;
+      targetUrl = `${supetoneBaseUrl}/text-to-speech/${voiceId}?output_format=${outputFormat}`;
     } else {
       // 기타 엔드포인트는 서브패스를 그대로 전달 (예: /voices, /predict-duration/{voice_id})
       const query = url.searchParams.toString();
-      targetUrl = `${supertoneBaseUrl}${pathAfterFunction}${query ? `?${query}` : ""}`;
+      targetUrl = `${supetoneBaseUrl}${pathAfterFunction}${query ? `?${query}` : ""}`;
     }
     
     // 요청 본문 구성
