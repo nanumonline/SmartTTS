@@ -668,11 +668,7 @@ const PublicVoiceGenerator = () => {
       // 믹싱 상태 업데이트
       const genId = selectedGenerationForMixing.id;
       setMixingStates((prev) => {
-        const current = prev.get(genId) || {
-          voiceTrackVolume: 100,
-          backgroundTrackVolume: 50,
-          effectTrackVolume: 70,
-        };
+        const current = prev.get(genId) || {};
         return new Map(prev).set(genId, {
           ...current,
           mixedAudioUrl: mixedUrl,
@@ -4108,29 +4104,7 @@ const PublicVoiceGenerator = () => {
             {/* 믹싱된 결과 미리듣기 */}
             {previewMixedAudio && (
               <div className="space-y-2 p-3 bg-gray-800/50 rounded border border-gray-700">
-                <div className="flex items-center justify-between mb-2">
-                  <Label style={{ color: '#E5E7EB' }} className="text-sm font-semibold">믹싱된 결과 미리듣기</Label>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="border-gray-600 hover:bg-gray-800 hover:text-white text-xs"
-                      style={{ color: '#E5E7EB' }}
-                      onClick={() => handleExportMix("wav")}
-                    >
-                      WAV 다운로드
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="border-gray-600 hover:bg-gray-800 hover:text-white text-xs"
-                      style={{ color: '#E5E7EB' }}
-                      onClick={() => handleExportMix("mp3")}
-                    >
-                      MP3 다운로드
-                    </Button>
-                  </div>
-                </div>
+                <Label style={{ color: '#E5E7EB' }} className="text-sm font-semibold">믹싱된 결과 미리듣기</Label>
                 <AudioPlayer
                   audioUrl={previewMixedAudio}
                   title="믹싱된 음원"

@@ -668,11 +668,7 @@ const PublicVoiceGenerator = () => {
       // 믹싱 상태 업데이트
       const genId = selectedGenerationForMixing.id;
       setMixingStates((prev) => {
-        const current = prev.get(genId) || {
-          voiceTrackVolume: 100,
-          backgroundTrackVolume: 50,
-          effectTrackVolume: 70,
-        };
+        const current = prev.get(genId) || {};
         return new Map(prev).set(genId, {
           ...current,
           mixedAudioUrl: mixedUrl,
@@ -4108,29 +4104,7 @@ const PublicVoiceGenerator = () => {
             {/* 믹싱된 결과 미리듣기 */}
             {previewMixedAudio && (
               <div className="space-y-2 p-3 bg-gray-800/50 rounded border border-gray-700">
-                <div className="flex items-center justify-between mb-2">
-                  <Label style={{ color: '#E5E7EB' }} className="text-sm font-semibold">믹싱된 결과 미리듣기</Label>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="border-gray-600 hover:bg-gray-800 hover:text-white text-xs"
-                      style={{ color: '#E5E7EB' }}
-                      onClick={() => handleExportMix("wav")}
-                    >
-                      WAV 다운로드
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="border-gray-600 hover:bg-gray-800 hover:text-white text-xs"
-                      style={{ color: '#E5E7EB' }}
-                      onClick={() => handleExportMix("mp3")}
-                    >
-                      MP3 다운로드
-                    </Button>
-                  </div>
-                </div>
+                <Label style={{ color: '#E5E7EB' }} className="text-sm font-semibold">믹싱된 결과 미리듣기</Label>
                 <AudioPlayer
                   audioUrl={previewMixedAudio}
                   title="믹싱된 음원"
@@ -4155,7 +4129,6 @@ const PublicVoiceGenerator = () => {
               variant="outline"
               className="border-gray-600 hover:bg-gray-800 hover:text-white" 
               style={{ color: '#E5E7EB' }}
-              disabled={isMixingAudio}
               onClick={async () => {
                 const state = mixingStates.get(selectedGenerationForMixing?.id);
                 if (!state?.selectedVoiceTrack) {
@@ -4166,10 +4139,18 @@ const PublicVoiceGenerator = () => {
                   });
                   return;
                 }
-                await performMixing(state);
+                // 여기서는 실제 믹싱 로직은 구현하지 않고, 선택된 항목들을 합쳐서 표시
+                // 실제로는 서버에서 믹싱 처리가 필요할 수 있음
+                toast({ 
+                  title: "믹싱 미리보기 생성", 
+                  description: "믹싱된 음원을 생성 중입니다...",
+                });
+                // 실제 구현시에는 서버 API를 호출하여 믹싱된 오디오를 받아와야 함
+                // 임시로 현재 선택된 음원의 URL을 사용
+                setPreviewMixedAudio(state.selectedVoiceTrack.audioUrl);
               }}
             >
-              {isMixingAudio ? "믹싱 중..." : "미리듣기"}
+              미리듣기
             </Button>
             <Button 
               className="bg-blue-600 hover:bg-blue-700 text-white" 

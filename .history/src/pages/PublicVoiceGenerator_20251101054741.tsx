@@ -45,14 +45,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import AudioPlayer from "@/components/AudioPlayer";
-import {
-  exportMixToWav,
-  decodeUrlToBuffer,
-  downloadBlob,
-  formatTime,
-  type MixingSettings,
-  DEFAULT_MIXING_SETTINGS,
-} from "@/lib/audioMixer";
 
 type CloneFormState = {
   targetName: string;
@@ -97,20 +89,6 @@ type MixingState = {
   selectedBackground?: MixingAsset;
   selectedEffect?: MixingAsset;
   mixedAudioUrl?: string; // 믹싱된 결과 음원 URL
-  // 고급 설정
-  masterGain?: number;
-  fadeIn?: number;
-  fadeOut?: number;
-  lowShelf?: number;
-  midPeaking?: number;
-  highShelf?: number;
-  duckingEnabled?: boolean;
-  duckDb?: number;
-  duckThreshold?: number;
-  duckRelease?: number;
-  bgmOffset?: number;
-  ttsOffset?: number;
-  trimEndSec?: number | null;
 };
 
 type ScheduleRequest = {
@@ -234,8 +212,6 @@ const PublicVoiceGenerator = () => {
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [selectedGenerationForMixing, setSelectedGenerationForMixing] = useState<any>(null);
   const [previewMixedAudio, setPreviewMixedAudio] = useState<string | null>(null);
-  const [isMixingAudio, setIsMixingAudio] = useState(false);
-  const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
   const [selectedGenerationForSchedule, setSelectedGenerationForSchedule] = useState<any>(null);
 
   // Phase 4: 사용량 및 크레딧 모니터링
@@ -607,94 +583,6 @@ const PublicVoiceGenerator = () => {
     setIsScheduleModalOpen(true);
   };
 
-  // 실제 믹싱 수행 함수
-  const performMixing = async (state: MixingState) => {
-    if (!state.selectedVoiceTrack?.audioUrl) {
-      toast({
-        title: "음원이 선택되지 않았습니다",
-        description: "믹싱할 음원을 선택해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsMixingAudio(true);
-    try {
-      // AudioContext 초기화
-      const ctx = audioContext || new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 44100 });
-      if (!audioContext) setAudioContext(ctx);
-
-      // 오디오 버퍼 디코딩
-      const ttsBuffer = await decodeUrlToBuffer(ctx, state.selectedVoiceTrack.audioUrl);
-      let bgmBuffer: AudioBuffer | null = null;
-      let effectBuffer: AudioBuffer | null = null;
-
-      // 배경음 디코딩 (URL이 있는 경우만)
-      if (state.selectedBackground?.url) {
-        bgmBuffer = await decodeUrlToBuffer(ctx, state.selectedBackground.url);
-      }
-
-      // 효과음 디코딩 (URL이 있는 경우만)
-      if (state.selectedEffect?.url) {
-        effectBuffer = await decodeUrlToBuffer(ctx, state.selectedEffect.url);
-      }
-
-      // MixingSettings 구성
-      const settings: MixingSettings = {
-        ttsGain: (state.voiceTrackVolume || 100) / 100,
-        bgmGain: (state.backgroundTrackVolume || 50) / 100,
-        effectGain: (state.effectTrackVolume || 70) / 100,
-        masterGain: (state.masterGain !== undefined ? state.masterGain : DEFAULT_MIXING_SETTINGS.masterGain),
-        fadeIn: state.fadeIn !== undefined ? state.fadeIn : DEFAULT_MIXING_SETTINGS.fadeIn,
-        fadeOut: state.fadeOut !== undefined ? state.fadeOut : DEFAULT_MIXING_SETTINGS.fadeOut,
-        lowShelf: state.lowShelf !== undefined ? state.lowShelf : DEFAULT_MIXING_SETTINGS.lowShelf,
-        midPeaking: state.midPeaking !== undefined ? state.midPeaking : DEFAULT_MIXING_SETTINGS.midPeaking,
-        highShelf: state.highShelf !== undefined ? state.highShelf : DEFAULT_MIXING_SETTINGS.highShelf,
-        duckingEnabled: state.duckingEnabled !== undefined ? state.duckingEnabled : DEFAULT_MIXING_SETTINGS.duckingEnabled,
-        duckDb: state.duckDb !== undefined ? state.duckDb : DEFAULT_MIXING_SETTINGS.duckDb,
-        duckThreshold: state.duckThreshold !== undefined ? state.duckThreshold : DEFAULT_MIXING_SETTINGS.duckThreshold,
-        duckRelease: state.duckRelease !== undefined ? state.duckRelease : DEFAULT_MIXING_SETTINGS.duckRelease,
-        bgmOffset: state.bgmOffset !== undefined ? state.bgmOffset : DEFAULT_MIXING_SETTINGS.bgmOffset,
-        ttsOffset: state.ttsOffset !== undefined ? state.ttsOffset : DEFAULT_MIXING_SETTINGS.ttsOffset,
-        trimEndSec: state.trimEndSec !== undefined ? state.trimEndSec : DEFAULT_MIXING_SETTINGS.trimEndSec,
-      };
-
-      // WAV로 내보내기
-      const wavBlob = await exportMixToWav(ttsBuffer, bgmBuffer, effectBuffer, settings);
-      const mixedUrl = URL.createObjectURL(wavBlob);
-      
-      setPreviewMixedAudio(mixedUrl);
-      
-      // 믹싱 상태 업데이트
-      const genId = selectedGenerationForMixing.id;
-      setMixingStates((prev) => {
-        const current = prev.get(genId) || {
-          voiceTrackVolume: 100,
-          backgroundTrackVolume: 50,
-          effectTrackVolume: 70,
-        };
-        return new Map(prev).set(genId, {
-          ...current,
-          mixedAudioUrl: mixedUrl,
-        });
-      });
-
-      toast({
-        title: "믹싱 완료",
-        description: "믹싱된 음원이 생성되었습니다.",
-      });
-    } catch (error: any) {
-      console.error("믹싱 오류:", error);
-      toast({
-        title: "믹싱 실패",
-        description: error.message || "믹싱 중 오류가 발생했습니다.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsMixingAudio(false);
-    }
-  };
-
   const handleMixingSubmit = (form: { background?: string; effect?: string }) => {
     if (!selectedGenerationForMixing?.id) return;
     const genId = selectedGenerationForMixing.id;
@@ -710,65 +598,12 @@ const PublicVoiceGenerator = () => {
       ...mixingState, 
       selectedVoiceTrack: selectedVoice,
       selectedBackground: bg, 
-      selectedEffect: ef,
-      // 기본값 설정
-      masterGain: mixingState.masterGain ?? DEFAULT_MIXING_SETTINGS.masterGain,
-      fadeIn: mixingState.fadeIn ?? DEFAULT_MIXING_SETTINGS.fadeIn,
-      fadeOut: mixingState.fadeOut ?? DEFAULT_MIXING_SETTINGS.fadeOut,
-      lowShelf: mixingState.lowShelf ?? DEFAULT_MIXING_SETTINGS.lowShelf,
-      midPeaking: mixingState.midPeaking ?? DEFAULT_MIXING_SETTINGS.midPeaking,
-      highShelf: mixingState.highShelf ?? DEFAULT_MIXING_SETTINGS.highShelf,
-      duckingEnabled: mixingState.duckingEnabled ?? DEFAULT_MIXING_SETTINGS.duckingEnabled,
-      duckDb: mixingState.duckDb ?? DEFAULT_MIXING_SETTINGS.duckDb,
-      duckThreshold: mixingState.duckThreshold ?? DEFAULT_MIXING_SETTINGS.duckThreshold,
-      duckRelease: mixingState.duckRelease ?? DEFAULT_MIXING_SETTINGS.duckRelease,
-      bgmOffset: mixingState.bgmOffset ?? DEFAULT_MIXING_SETTINGS.bgmOffset,
-      ttsOffset: mixingState.ttsOffset ?? DEFAULT_MIXING_SETTINGS.ttsOffset,
+      selectedEffect: ef 
     };
     setMixingStates((prev) => new Map(prev).set(genId, updated));
     setIsMixingModalOpen(false);
     setPreviewMixedAudio(null);
-    toast({ title: "믹싱 설정 저장", description: "믹싱 설정이 저장되었습니다." });
-  };
-
-  // WAV 내보내기 함수
-  const handleExportMix = async (format: "wav" | "mp3" = "wav") => {
-    const state = mixingStates.get(selectedGenerationForMixing?.id);
-    if (!state?.mixedAudioUrl) {
-      toast({
-        title: "내보낼 음원 없음",
-        description: "먼저 믹싱된 음원을 생성해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      const response = await fetch(state.mixedAudioUrl);
-      const blob = await response.blob();
-      
-      if (format === "wav") {
-        downloadBlob(blob, `tts_bgm_mix_${Date.now()}.wav`);
-      } else {
-        // MP3 변환은 서버 API 필요 (현재는 WAV 다운로드)
-        toast({
-          title: "MP3 변환",
-          description: "MP3 변환은 서버 API를 통해 처리됩니다. 현재는 WAV로 다운로드됩니다.",
-        });
-        downloadBlob(blob, `tts_bgm_mix_${Date.now()}.wav`);
-      }
-
-      toast({
-        title: "다운로드 완료",
-        description: `${format.toUpperCase()} 파일이 다운로드되었습니다.`,
-      });
-    } catch (error: any) {
-      toast({
-        title: "다운로드 실패",
-        description: error.message || "파일 다운로드 중 오류가 발생했습니다.",
-        variant: "destructive",
-      });
-    }
+    toast({ title: "믹싱 설정 저장", description: "음원이 믹싱되었습니다." });
   };
 
   const handleScheduleSubmit = (form: { channel: string; scheduledTime: string; repeatOption: "once" | "daily" | "weekly" }) => {
@@ -1991,7 +1826,7 @@ const PublicVoiceGenerator = () => {
     const speedValue = getSpeedMultiplier();
     // 피치: -100 ~ +100 범위를 -12 ~ +12 세미톤으로 변환
     const pitchShift = Math.max(-12, Math.min(12, Math.round(voiceSettings.pitch / 8.33)));
-
+    
     // 끊어읽기 구간을 텍스트에 적용 (SSML 형식)
     let processedText = trimmedText;
     if (voiceSettings.pause.segments.length > 0) {
@@ -3116,7 +2951,7 @@ const PublicVoiceGenerator = () => {
                           <Info className="w-4 h-4 text-muted-foreground" />
                         </div>
                         <div className="space-y-2">
-                        <div className="flex gap-1">
+                          <div className="flex gap-1">
                             {["A", "B", "C", "D"].map((preset) => {
                               const presetLabels: Record<string, string> = {
                                 "A": "중립 (neutral)",
@@ -3125,21 +2960,21 @@ const PublicVoiceGenerator = () => {
                                 "D": "분노 (angry)"
                               };
                               return (
-                            <Button
-                              key={preset}
-                              size="sm"
-                              variant={voiceSettings.emotion.preset === preset ? "default" : "outline"}
+                                <Button
+                                  key={preset}
+                                  size="sm"
+                                  variant={voiceSettings.emotion.preset === preset ? "default" : "outline"}
                                   className="w-auto px-3 h-8"
                                   onClick={() => {
                                     // preset 변경 시 customPrompt 초기화 (선택적)
                                     setVoiceSettings(prev => ({
-                                ...prev,
+                                      ...prev,
                                       emotion: { ...prev.emotion, preset, customPrompt: "" }
                                     }));
                                   }}
-                            >
+                                >
                                   {preset} - {presetLabels[preset]}
-                            </Button>
+                                </Button>
                               );
                             })}
                           </div>
@@ -3203,7 +3038,7 @@ const PublicVoiceGenerator = () => {
                               onClick={() => {
                                 const speedValue = speedPresetMap[speed] || "1.0";
                                 setVoiceSettings(prev => ({
-                                ...prev,
+                                  ...prev,
                                   readingSpeed: { 
                                     ...prev.readingSpeed, 
                                     preset: speed,
@@ -3255,19 +3090,19 @@ const PublicVoiceGenerator = () => {
                           <p className="text-xs text-muted-foreground mb-2">
                             텍스트의 특정 위치에 일시정지를 삽입할 수 있습니다. 구간을 추가하여 자연스러운 리듬감을 만드세요.
                           </p>
-                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2">
                             <Label className="text-xs">기본 일시정지:</Label>
-                          <Slider
-                            value={[voiceSettings.pause.duration]}
-                            onValueChange={(value) => setVoiceSettings(prev => ({
-                              ...prev,
-                              pause: { ...prev.pause, duration: value[0] }
-                            }))}
-                            min={0}
-                            max={10}
-                            step={0.1}
-                            className="flex-1"
-                          />
+                            <Slider
+                              value={[voiceSettings.pause.duration]}
+                              onValueChange={(value) => setVoiceSettings(prev => ({
+                                ...prev,
+                                pause: { ...prev.pause, duration: value[0] }
+                              }))}
+                              min={0}
+                              max={10}
+                              step={0.1}
+                              className="flex-1"
+                            />
                             <span className="text-sm w-12 text-center">{voiceSettings.pause.duration.toFixed(1)}초</span>
                           </div>
                         </div>
@@ -3337,17 +3172,17 @@ const PublicVoiceGenerator = () => {
                             <p className="text-xs text-muted-foreground mb-2">
                               생성된 오디오의 재생 속도를 조절합니다. (0.5x ~ 2.0x)
                             </p>
-                          <Slider
-                            value={[voiceSettings.playbackSpeed]}
-                            onValueChange={(value) => setVoiceSettings(prev => ({
-                              ...prev,
-                              playbackSpeed: value[0]
-                            }))}
-                            min={0.5}
-                            max={2}
-                            step={0.1}
-                            className="w-full"
-                          />
+                            <Slider
+                              value={[voiceSettings.playbackSpeed]}
+                              onValueChange={(value) => setVoiceSettings(prev => ({
+                                ...prev,
+                                playbackSpeed: value[0]
+                              }))}
+                              min={0.5}
+                              max={2}
+                              step={0.1}
+                              className="w-full"
+                            />
                             <div className="flex justify-between mt-2">
                               <span className="text-xs text-muted-foreground">0.5x (느림)</span>
                               <span className="text-sm font-medium">{voiceSettings.playbackSpeed.toFixed(1)}x</span>
@@ -3364,17 +3199,17 @@ const PublicVoiceGenerator = () => {
                             <p className="text-xs text-muted-foreground mb-2">
                               음성의 높낮이를 조절합니다. (-100: 낮음, 0: 기본, +100: 높음)
                             </p>
-                          <Slider
-                            value={[voiceSettings.pitch]}
-                            onValueChange={(value) => setVoiceSettings(prev => ({
-                              ...prev,
-                              pitch: value[0]
-                            }))}
-                            min={-100}
-                            max={100}
-                            step={1}
-                            className="w-full"
-                          />
+                            <Slider
+                              value={[voiceSettings.pitch]}
+                              onValueChange={(value) => setVoiceSettings(prev => ({
+                                ...prev,
+                                pitch: value[0]
+                              }))}
+                              min={-100}
+                              max={100}
+                              step={1}
+                              className="w-full"
+                            />
                             <div className="flex justify-between mt-2">
                               <span className="text-xs text-muted-foreground">-100 (낮음)</span>
                               <span className="text-sm font-medium">
@@ -3760,7 +3595,7 @@ const PublicVoiceGenerator = () => {
                                 <div className="font-semibold flex items-center gap-2" style={{ color: '#FFFFFF' }}>
                                   <span className={`inline-block w-2.5 h-2.5 rounded-full ${genderColor}`}></span>
                                   {voice.name || voice.voice_id}
-                              </div>
+                                </div>
                                 <div className="text-xs break-all" style={{ color: '#9CA3AF' }}>ID: {voice.voice_id}</div>
                               </div>
                               <div className="flex items-center gap-2">
@@ -3802,7 +3637,7 @@ const PublicVoiceGenerator = () => {
                               >
                                 선택
                               </Button>
-                            </div>
+                              </div>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs" style={{ color: '#9CA3AF' }}>
                               <div>언어: {languages || "-"}</div>
@@ -4108,29 +3943,7 @@ const PublicVoiceGenerator = () => {
             {/* 믹싱된 결과 미리듣기 */}
             {previewMixedAudio && (
               <div className="space-y-2 p-3 bg-gray-800/50 rounded border border-gray-700">
-                <div className="flex items-center justify-between mb-2">
-                  <Label style={{ color: '#E5E7EB' }} className="text-sm font-semibold">믹싱된 결과 미리듣기</Label>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="border-gray-600 hover:bg-gray-800 hover:text-white text-xs"
-                      style={{ color: '#E5E7EB' }}
-                      onClick={() => handleExportMix("wav")}
-                    >
-                      WAV 다운로드
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="border-gray-600 hover:bg-gray-800 hover:text-white text-xs"
-                      style={{ color: '#E5E7EB' }}
-                      onClick={() => handleExportMix("mp3")}
-                    >
-                      MP3 다운로드
-                    </Button>
-                  </div>
-                </div>
+                <Label style={{ color: '#E5E7EB' }} className="text-sm font-semibold">믹싱된 결과 미리듣기</Label>
                 <AudioPlayer
                   audioUrl={previewMixedAudio}
                   title="믹싱된 음원"
@@ -4155,7 +3968,6 @@ const PublicVoiceGenerator = () => {
               variant="outline"
               className="border-gray-600 hover:bg-gray-800 hover:text-white" 
               style={{ color: '#E5E7EB' }}
-              disabled={isMixingAudio}
               onClick={async () => {
                 const state = mixingStates.get(selectedGenerationForMixing?.id);
                 if (!state?.selectedVoiceTrack) {
@@ -4166,10 +3978,18 @@ const PublicVoiceGenerator = () => {
                   });
                   return;
                 }
-                await performMixing(state);
+                // 여기서는 실제 믹싱 로직은 구현하지 않고, 선택된 항목들을 합쳐서 표시
+                // 실제로는 서버에서 믹싱 처리가 필요할 수 있음
+                toast({ 
+                  title: "믹싱 미리보기 생성", 
+                  description: "믹싱된 음원을 생성 중입니다...",
+                });
+                // 실제 구현시에는 서버 API를 호출하여 믹싱된 오디오를 받아와야 함
+                // 임시로 현재 선택된 음원의 URL을 사용
+                setPreviewMixedAudio(state.selectedVoiceTrack.audioUrl);
               }}
             >
-              {isMixingAudio ? "믹싱 중..." : "미리듣기"}
+              미리듣기
             </Button>
             <Button 
               className="bg-blue-600 hover:bg-blue-700 text-white" 

@@ -668,11 +668,7 @@ const PublicVoiceGenerator = () => {
       // 믹싱 상태 업데이트
       const genId = selectedGenerationForMixing.id;
       setMixingStates((prev) => {
-        const current = prev.get(genId) || {
-          voiceTrackVolume: 100,
-          backgroundTrackVolume: 50,
-          effectTrackVolume: 70,
-        };
+        const current = prev.get(genId) || {};
         return new Map(prev).set(genId, {
           ...current,
           mixedAudioUrl: mixedUrl,
