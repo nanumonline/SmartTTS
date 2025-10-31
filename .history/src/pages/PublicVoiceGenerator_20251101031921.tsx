@@ -1739,9 +1739,9 @@ const PublicVoiceGenerator = () => {
   };
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#F5F7FA' }}>
+    <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
       {/* Header */}
-      <div className="border-b border-border bg-white/95 backdrop-blur-lg shadow-sm">
+      <div className="border-b border-border bg-background/80 backdrop-blur-lg">
         <div className="container mx-auto px-4 py-6">
           <div className="flex items-center justify-between">
             <div>
@@ -1767,6 +1767,8 @@ const PublicVoiceGenerator = () => {
       </div>
 
       <div className="container mx-auto px-4 py-8">
+        <Card className="mb-8">
+          <CardHeader>
         {/* Phase 4: 사용량 & 크레딧 모니터링 패널 */}
         <div className="mb-8 grid grid-cols-1 md:grid-cols-3 gap-4 landio-fade-up">
           <Card className="landio-card">
@@ -1812,9 +1814,6 @@ const PublicVoiceGenerator = () => {
             </CardContent>
           </Card>
         </div>
-
-        <Card className="mb-8 landio-card landio-fade-up">
-          <CardHeader>
             <CardTitle className="text-lg">문구 목적 설정</CardTitle>
             <CardDescription>방송 목적을 먼저 선택하면 이후 검수·예약 단계와 기록이 목적별로 정리됩니다.</CardDescription>
           </CardHeader>
@@ -1826,7 +1825,7 @@ const PublicVoiceGenerator = () => {
                   <Button
                     key={option.id}
                     variant={active ? "default" : "outline"}
-                    className={`landio-button h-auto flex flex-col items-start gap-1 text-left ${active ? "border-primary" : ""}`}
+                    className={`h-auto flex flex-col items-start gap-1 text-left ${active ? "border-primary" : ""}`}
                     onClick={() => setSelectedPurpose(option.id)}
                   >
                     <span className="text-sm font-semibold">{option.label}</span>
@@ -1835,7 +1834,7 @@ const PublicVoiceGenerator = () => {
                 );
               })}
             </div>
-            <div className="rounded-xl border border-dashed p-4 bg-muted/30" style={{ borderRadius: '12px' }}>
+            <div className="rounded-lg border border-dashed p-4 bg-muted/30">
               <h4 className="text-sm font-medium mb-2">검수 체크리스트</h4>
               <ul className="text-xs text-muted-foreground space-y-1">
                 {purposeMeta.checklist.map((item, idx) => (
@@ -1849,7 +1848,7 @@ const PublicVoiceGenerator = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* 템플릿 선택 */}
           <div className="lg:col-span-1">
-            <Card className="landio-card landio-fade-up">
+            <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <FileText className="w-5 h-5" />
@@ -1954,7 +1953,7 @@ const PublicVoiceGenerator = () => {
 
           {/* 음성 생성 */}
           <div className="lg:col-span-2">
-            <Card className="landio-card landio-fade-up">
+            <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Mic2 className="w-5 h-5" />
@@ -2583,7 +2582,7 @@ const PublicVoiceGenerator = () => {
                 <Button 
                   onClick={handleGenerateVoice}
                   disabled={isGenerating || !customText.trim() || !selectedVoice}
-                  className="w-full h-11 landio-button"
+                  className="w-full h-11"
                   variant="gradient"
                 >
                   {isGenerating ? (
@@ -2640,7 +2639,7 @@ const PublicVoiceGenerator = () => {
 
         {/* 생성 기록 & 사용 가이드 */}
         <div className="mt-8 space-y-6">
-          <Card className="landio-card landio-fade-up">
+          <Card>
             <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <CardTitle className="flex items-center gap-2">
@@ -2649,7 +2648,7 @@ const PublicVoiceGenerator = () => {
                 </CardTitle>
                 <CardDescription>기존 음성을 기반으로 클론 음성을 생성하고 관리합니다.</CardDescription>
               </div>
-              <Button size="sm" className="landio-button" onClick={() => openCloneModal()}>새 클론 음성 생성</Button>
+              <Button size="sm" onClick={() => openCloneModal()}>새 클론 음성 생성</Button>
             </CardHeader>
             <CardContent>
               {cloneRequests.length === 0 ? (
@@ -2660,7 +2659,7 @@ const PublicVoiceGenerator = () => {
                     const isFavorite = favoriteVoiceIds.has(clone.voiceId);
                     const languageLabel = languageCodeToKo(clone.language);
                     return (
-                      <div key={clone.id} className="rounded-xl border border-border bg-muted/20 p-3 grid gap-3 md:grid-cols-[150px_minmax(0,1fr)_180px_180px] items-center transition-all hover:shadow-md" style={{ borderRadius: '12px' }}>
+                      <div key={clone.id} className="rounded-lg border border-border bg-muted/20 p-3 grid gap-3 md:grid-cols-[150px_minmax(0,1fr)_180px_180px] items-center">
                         <div className="space-y-1">
                           <Badge variant={clone.status === "completed" ? "default" : "outline"}>{clone.status === "completed" ? "완료" : "진행중"}</Badge>
                           <div className="text-xs text-muted-foreground">{formatDateTime(clone.createdAt)}</div>
@@ -2681,7 +2680,6 @@ const PublicVoiceGenerator = () => {
                           <Button
                             size="sm"
                             variant={isFavorite ? "default" : "outline"}
-                            className="landio-button"
                             onClick={() => toggleFavorite(clone.voiceId)}
                           >
                             {isFavorite ? "즐겨찾기 해제" : "즐겨찾기"}
@@ -2689,7 +2687,6 @@ const PublicVoiceGenerator = () => {
                           <Button
                             size="sm"
                             variant="outline"
-                            className="landio-button"
                             disabled={clone.status !== "completed"}
                             onClick={() => {
                               if (clone.status !== "completed") return;
@@ -2710,7 +2707,7 @@ const PublicVoiceGenerator = () => {
             </CardContent>
           </Card>
 
-          <Card className="landio-card landio-fade-up">
+          <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <FileText className="w-5 h-5" />
@@ -2726,7 +2723,7 @@ const PublicVoiceGenerator = () => {
                   {generationHistory.map((entry) => {
                     const languageKo = languageCodeToKo(entry.language);
                     return (
-                      <div key={entry.id} className="rounded-xl border border-border bg-muted/20 p-3 grid gap-3 md:grid-cols-[160px_minmax(0,1fr)_160px_200px] items-center transition-all hover:shadow-md" style={{ borderRadius: '12px' }}>
+                      <div key={entry.id} className="rounded-lg border border-border bg-muted/20 p-3 grid gap-3 md:grid-cols-[160px_minmax(0,1fr)_160px_200px] items-center">
                         <div className="space-y-1">
                           <Badge>{entry.purposeLabel}</Badge>
                           <div className="text-xs text-muted-foreground">{formatDateTime(entry.createdAt)}</div>
@@ -2744,13 +2741,12 @@ const PublicVoiceGenerator = () => {
                           <Button
                             size="sm"
                             variant="outline"
-                            className="landio-button"
                             onClick={() => openCloneModal(entry.voiceId)}
                           >
                             클로닝
                           </Button>
-                          <Button size="sm" variant="outline" className="landio-button" onClick={() => openMixingModal(entry)}>믹싱</Button>
-                          <Button size="sm" variant="outline" className="landio-button" onClick={() => openScheduleModal(entry)}>예약</Button>
+                          <Button size="sm" variant="outline" onClick={() => openMixingModal(entry)}>믹싱</Button>
+                          <Button size="sm" variant="outline" onClick={() => openScheduleModal(entry)}>예약</Button>
                         </div>
                       </div>
                     );
@@ -2760,7 +2756,7 @@ const PublicVoiceGenerator = () => {
             </CardContent>
           </Card>
 
-          <Card className="landio-card landio-fade-up">
+          <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Settings className="w-5 h-5" />
@@ -2933,7 +2929,7 @@ const PublicVoiceGenerator = () => {
                       const useCaseKo = useCaseToKo(voice.use_case);
                       const genderColor = voice.gender === "female" ? "bg-red-500" : voice.gender === "male" ? "bg-blue-500" : "bg-gray-400";
                       return (
-                        <Card key={voice.voice_id} className="landio-card border-border hover:border-primary transition-colors">
+                        <Card key={voice.voice_id} className="border-border hover:border-primary transition-colors">
                           <CardContent className="p-4 space-y-2">
                             <div className="flex items-start justify-between gap-2">
                               <div>
@@ -2947,7 +2943,6 @@ const PublicVoiceGenerator = () => {
                                 <Button
                                   size="sm"
                                   variant="ghost"
-                                  className="landio-button"
                                   onClick={() => {
                                     const sampleUrl = getPreferredSampleUrl(voice);
                                     if (sampleUrl) {
@@ -2962,7 +2957,6 @@ const PublicVoiceGenerator = () => {
                                 <Button
                                   size="sm"
                                   variant={favoriteVoiceIds.has(voice.voice_id) ? "default" : "outline"}
-                                  className="landio-button"
                                   onClick={() => toggleFavorite(voice.voice_id)}
                                   title={favoriteVoiceIds.has(voice.voice_id) ? "즐겨찾기 해제" : "즐겨찾기 추가"}
                                 >
@@ -2970,7 +2964,6 @@ const PublicVoiceGenerator = () => {
                                 </Button>
                               <Button
                                 size="sm"
-                                className="landio-button"
                                 onClick={() => {
                                   setSelectedVoice(voice.voice_id);
                                   setSelectedVoiceInfo(voice);

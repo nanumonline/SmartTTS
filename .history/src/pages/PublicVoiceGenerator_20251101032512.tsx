@@ -2640,7 +2640,7 @@ const PublicVoiceGenerator = () => {
 
         {/* 생성 기록 & 사용 가이드 */}
         <div className="mt-8 space-y-6">
-          <Card className="landio-card landio-fade-up">
+          <Card className="landio-card">
             <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <CardTitle className="flex items-center gap-2">
@@ -2710,7 +2710,7 @@ const PublicVoiceGenerator = () => {
             </CardContent>
           </Card>
 
-          <Card className="landio-card landio-fade-up">
+          <Card className="landio-card">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <FileText className="w-5 h-5" />
@@ -2760,7 +2760,7 @@ const PublicVoiceGenerator = () => {
             </CardContent>
           </Card>
 
-          <Card className="landio-card landio-fade-up">
+          <Card className="landio-card">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Settings className="w-5 h-5" />

@@ -1,0 +1,103 @@
+{
+  "layout": {
+    "structure": "Single-page responsive layout with hero, feature, process, and testimonial sections.",
+    "alignment": "Centered content with full-width hero section.",
+    "sections": [
+      "Hero (AI automation tagline)",
+      "Feature grid",
+      "Process timeline",
+      "Case studies/testimonials",
+      "Contact form"
+    ]
+  },
+  "color_palette": {
+    "primary": "#000000",
+    "secondary": "#FFFFFF",
+    "accent": "#00BFFF",
+    "background": "#F5F7FA",
+    "gradient_usage": "Hero background uses subtle linear gradient for depth."
+  },
+  "typography": {
+    "fonts": [
+      "Inter",
+      "Poppins",
+      "sans-serif"
+    ],
+    "hierarchy": {
+      "h1": "Bold, 56px, letter-spacing: -0.02em",
+      "h2": "Semi-bold, 40px",
+      "body": "16–18px regular weight",
+      "button": "Uppercase, medium weight"
+    },
+    "principles": [
+      "Maintain clear hierarchy between headers and body text.",
+      "Use consistent line-height (1.4–1.6) for readability."
+    ]
+  },
+  "components": {
+    "navigation": {
+      "links": [
+        "Services",
+        "Process",
+        "Pricing",
+        "Blog",
+        "Contact",
+        "Get Template",
+        "Book A Free Call",
+        "Get Started",
+        "Get Started",
+        "Get Started"
+      ],
+      "cta_buttons": [
+        "Get Template",
+        "Book A Free Call",
+        "Get Started"
+      ],
+      "interaction": "Smooth scroll with sticky header"
+    },
+    "hero_section": {
+      "heading": "Automate Smarter. Grow Faster.With AI.",
+      "subtext": "Wefindwhattoautomate,whoyourusersare&howAIcanoptimizeyourworkflow.Bestpartiswealsobuildandlaunchrealsolutions.”",
+      "cta": "Primary button for conversion actions",
+      "animation": "Fade-in and slide-up motion via Framer Motion"
+    },
+    "feature_cards": {
+      "layout": "3-column responsive grid",
+      "hover_effect": "Lift and shadow glow on hover",
+      "content": "Each card highlights one AI capability (automation, analytics, scaling)"
+    },
+    "testimonials": {
+      "format": "Carousel or stacked layout with avatar, quote, and metrics"
+    },
+    "footer": {
+      "design": "Dark background, white text, social links, and call-to-action repetition"
+    }
+  },
+  "animation_principles": {
+    "framework": "Framer Motion",
+    "motion_patterns": [
+      "Fade-up reveal for section entry",
+      "Scale-on-hover for CTA buttons",
+      "Parallax scroll for hero background"
+    ],
+    "duration_easing": {
+      "default_duration": "0.5–0.8s",
+      "easing": "easeInOut cubic-bezier(0.4, 0, 0.2, 1)"
+    }
+  },
+  "accessibility": {
+    "contrast_ratio": "WCAG AA compliant (min 4.5:1 for text)",
+    "keyboard_focus": "Outline visible on tab focus",
+    "responsive": "All interactive components adapt from 320px to 1440px"
+  },
+  "interaction_feedback": {
+    "hover_state": "Subtle color darkening and shadow animation",
+    "click_state": "Slight scale-down feedback",
+    "loading_state": "Animated spinner or progress shimmer"
+  },
+  "visual_identity": {
+    "theme": "Modern AI aesthetic with neutral base tones and vibrant blue accents",
+    "corner_radius": "12px across components",
+    "shadows": "Soft drop shadow for elevation depth (rgba(0,0,0,0.1))"
+  }
+}
