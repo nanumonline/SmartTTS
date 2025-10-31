@@ -33,10 +33,7 @@ import {
   Search,
   Star,
   Youtube,
-  Upload,
-  Trash2,
-  Edit,
-  History
+  Upload
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -2320,13 +2317,13 @@ const PublicVoiceGenerator = () => {
 
                       {aiMode === "generate" ? (
                         <div className="space-y-2">
-                      <Label htmlFor="ai-gen">요청 내용</Label>
-                      <Textarea
-                        id="ai-gen"
-                        placeholder="예: 폭염 대비 시민 행동요령을 20초 분량으로 작성"
-                        value={openAIPrompt}
-                        onChange={(e) => setOpenAIPrompt(e.target.value)}
-                      />
+                          <Label htmlFor="ai-gen">요청 내용</Label>
+                          <Textarea
+                            id="ai-gen"
+                            placeholder="예: 폭염 대비 시민 행동요령을 20초 분량으로 작성"
+                            value={openAIPrompt}
+                            onChange={(e) => setOpenAIPrompt(e.target.value)}
+                          />
                           <div className="flex justify-end gap-2">
                             <Button
                               variant="outline"
@@ -2335,18 +2332,18 @@ const PublicVoiceGenerator = () => {
                             >
                               이력 보기
                             </Button>
-                        <Button
-                          variant="outline"
-                          onClick={async () => {
-                            try {
-                              setIsLoadingAI(true);
-                              const org = user?.organization || "귀 기관";
-                              const dept = user?.department || "관계 부서";
+                            <Button
+                              variant="outline"
+                              onClick={async () => {
+                                try {
+                                  setIsLoadingAI(true);
+                                  const org = user?.organization || "귀 기관";
+                                  const dept = user?.department || "관계 부서";
                                   const purposeLabel = purposeMeta?.label || "공지";
                                   const basePrompt = `${org} ${dept} 방송문 (${purposeLabel}): ${openAIPrompt}. ${purposeMeta?.optimizedPrompt || ""}`;
-                              const out = await generateWithOpenAI(basePrompt);
-                              setCustomText(out);
-                              setLastAIPrompt(openAIPrompt);
+                                  const out = await generateWithOpenAI(basePrompt);
+                                  setCustomText(out);
+                                  setLastAIPrompt(openAIPrompt);
                                   
                                   // 메시지 이력 저장
                                   const newMessage = {
@@ -2364,26 +2361,26 @@ const PublicVoiceGenerator = () => {
                                     title: "작성 완료",
                                     description: "메시지가 이력에 저장되었습니다.",
                                   });
-                            } catch (e: any) {
+                                } catch (e: any) {
                                   setAlertDialog({ open: true, title: "OpenAI 작성 실패", message: e?.message || "OpenAI 작성 중 오류가 발생했습니다." });
-                            } finally {
-                              setIsLoadingAI(false);
-                            }
-                          }}
-                          disabled={isLoadingAI || !openAIPrompt.trim()}
-                        >
-                          {isLoadingAI ? "작성 중..." : "OpenAI로 작성"}
-                        </Button>
-                      </div>
+                                } finally {
+                                  setIsLoadingAI(false);
+                                }
+                              }}
+                              disabled={isLoadingAI || !openAIPrompt.trim()}
+                            >
+                              {isLoadingAI ? "작성 중..." : "OpenAI로 작성"}
+                            </Button>
+                          </div>
                         </div>
                       ) : (
                         <div className="space-y-2">
-                      <Label htmlFor="ai-edit">수정 지침</Label>
+                          <Label htmlFor="ai-edit">수정 지침</Label>
                           <Textarea
-                        id="ai-edit"
+                            id="ai-edit"
                             placeholder="예: 20초 분량으로 단문으로 작성하고, 숫자를 명확히 발음할 수 있도록 수정"
-                        value={openAIInstruction}
-                        onChange={(e) => setOpenAIInstruction(e.target.value)}
+                            value={openAIInstruction}
+                            onChange={(e) => setOpenAIInstruction(e.target.value)}
                             className="min-h-[100px]"
                           />
                           <div className="flex justify-end gap-2">
@@ -2394,20 +2391,20 @@ const PublicVoiceGenerator = () => {
                             >
                               이력 보기
                             </Button>
-                        <Button
-                          variant="outline"
-                          onClick={async () => {
-                            try {
+                            <Button
+                              variant="outline"
+                              onClick={async () => {
+                                try {
                                   if (!customText.trim()) { 
                                     setAlertDialog({ open: true, title: "텍스트 없음", message: "수정할 텍스트를 입력해주세요." });
                                     return; 
                                   }
-                              setIsLoadingAI(true);
+                                  setIsLoadingAI(true);
                                   const checklistGuide = purposeMeta?.checklist?.join(", ") || "";
                                   const instructionWithChecklist = `${openAIInstruction}. ${purposeMeta?.optimizedPrompt || ""} ${checklistGuide ? `검수 체크리스트: ${checklistGuide}` : ""}`;
                                   const out = await editWithOpenAI(customText, instructionWithChecklist);
-                              setCustomText(out);
-                              setLastAIInstruction(openAIInstruction);
+                                  setCustomText(out);
+                                  setLastAIInstruction(openAIInstruction);
                                   
                                   // 메시지 이력 업데이트 또는 새로 저장
                                   const existing = messageHistory.find(m => m.text === customText);
@@ -2436,17 +2433,17 @@ const PublicVoiceGenerator = () => {
                                     title: "수정 완료",
                                     description: "메시지가 이력에 저장되었습니다.",
                                   });
-                            } catch (e: any) {
+                                } catch (e: any) {
                                   setAlertDialog({ open: true, title: "OpenAI 수정 실패", message: e?.message || "OpenAI 수정 중 오류가 발생했습니다." });
-                            } finally {
-                              setIsLoadingAI(false);
-                            }
-                          }}
-                          disabled={isLoadingAI || !openAIInstruction.trim()}
-                        >
-                          {isLoadingAI ? "수정 중..." : "OpenAI로 수정"}
-                        </Button>
-                      </div>
+                                } finally {
+                                  setIsLoadingAI(false);
+                                }
+                              }}
+                              disabled={isLoadingAI || !openAIInstruction.trim()}
+                            >
+                              {isLoadingAI ? "수정 중..." : "OpenAI로 수정"}
+                            </Button>
+                          </div>
                         </div>
                       )}
                     </TabsContent>
@@ -2497,9 +2494,7 @@ const PublicVoiceGenerator = () => {
                           setIsLoadingAI(true);
                           const org = user?.organization || "귀 기관";
                           const dept = user?.department || "관계 부서";
-                          const purposeLabel = purposeMeta?.label || "공지";
-                          const checklistGuide = purposeMeta?.checklist?.join(", ") || "";
-                          const basePrompt = `${org} ${dept} 방송문 (${purposeLabel}): ${prompt}. ${purposeMeta?.optimizedPrompt || ""} ${checklistGuide ? `검수 체크리스트를 확인하세요: ${checklistGuide}` : ""}`;
+                          const basePrompt = `${org} ${dept} 방송문: ${prompt}`;
                           const out = await generateWithOpenAI(basePrompt);
                           setCustomText(out);
                           setLastAIPrompt(prompt);
@@ -2526,9 +2521,7 @@ const PublicVoiceGenerator = () => {
                             return; 
                           }
                           setIsLoadingAI(true);
-                          const checklistGuide = purposeMeta?.checklist?.join(", ") || "";
-                          const instructionWithChecklist = `${instruction}. ${purposeMeta?.optimizedPrompt || ""} ${checklistGuide ? `검수 체크리스트를 확인하세요: ${checklistGuide}` : ""}`;
-                          const out = await editWithOpenAI(customText, instructionWithChecklist);
+                          const out = await editWithOpenAI(customText, instruction);
                           setCustomText(out);
                           setLastAIInstruction(instruction);
                         } catch (e: any) {
@@ -3489,88 +3482,6 @@ const PublicVoiceGenerator = () => {
               </ScrollArea>
             </div>
           </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* 메시지 이력 관리 다이얼로그 */}
-      <Dialog open={isMessageHistoryOpen} onOpenChange={setIsMessageHistoryOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[80vh]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <History className="w-5 h-5" />
-              메시지 이력 관리
-            </DialogTitle>
-            <DialogDescription>
-              저장된 메시지를 확인하고, 불러오거나 수정, 삭제할 수 있습니다.
-            </DialogDescription>
-          </DialogHeader>
-          <ScrollArea className="max-h-[60vh] pr-4">
-            <div className="space-y-3">
-              {messageHistory.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  저장된 메시지가 없습니다.
-                </div>
-              ) : (
-                messageHistory.map((msg) => {
-                  const purposeLabel = purposeOptions.find(p => p.id === msg.purpose)?.label || msg.purpose;
-                  return (
-                    <div key={msg.id} className="p-4 border rounded-lg space-y-3 hover:bg-muted/50 transition-colors">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 space-y-2">
-                          <div className="flex items-center gap-2">
-                            <Badge variant="outline" className="text-xs">
-                              {purposeLabel}
-                            </Badge>
-                            <span className="text-xs text-muted-foreground">
-                              {new Date(msg.updatedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}
-                            </span>
-                          </div>
-                          <p className="text-sm line-clamp-3">{msg.text}</p>
-                        </div>
-                        <div className="flex gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setCustomText(msg.text);
-                              setSelectedPurpose(msg.purpose);
-                              setIsMessageHistoryOpen(false);
-                              toast({
-                                title: "메시지 불러오기 완료",
-                                description: "메시지가 편집 영역에 로드되었습니다.",
-                              });
-                            }}
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              const updated = messageHistory.filter(m => m.id !== msg.id);
-                              setMessageHistory(updated);
-                              localStorage.setItem(MESSAGE_HISTORY_STORAGE_KEY, JSON.stringify(updated));
-                              toast({
-                                title: "메시지 삭제 완료",
-                                description: "메시지가 삭제되었습니다.",
-                              });
-                            }}
-                          >
-                            <Trash2 className="w-4 h-4 text-destructive" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </ScrollArea>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsMessageHistoryOpen(false)}>
-              닫기
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 
