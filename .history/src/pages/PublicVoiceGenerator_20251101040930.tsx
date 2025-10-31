@@ -3346,10 +3346,10 @@ const PublicVoiceGenerator = () => {
 
       {/* Alert Dialog */}
       <AlertDialog open={alertDialog.open} onOpenChange={(open) => setAlertDialog({ ...alertDialog, open })}>
-        <AlertDialogContent className="dark-dialog bg-gray-900/95 border-gray-700">
+        <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle style={{ color: '#FFFFFF' }}>{alertDialog.title}</AlertDialogTitle>
-            <AlertDialogDescription style={{ color: '#E5E7EB' }}>{alertDialog.message}</AlertDialogDescription>
+            <AlertDialogTitle>{alertDialog.title}</AlertDialogTitle>
+            <AlertDialogDescription>{alertDialog.message}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogAction onClick={() => {
