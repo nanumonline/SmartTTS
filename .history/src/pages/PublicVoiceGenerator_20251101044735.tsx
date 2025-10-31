@@ -2597,12 +2597,7 @@ const PublicVoiceGenerator = () => {
                     )}
                   </div>
                   <div className="flex flex-wrap gap-2 justify-end">
-                    <Button variant="outline" onClick={() => { 
-                      setCustomText(""); 
-                      setSelectedTemplate(""); 
-                      setTemplateVariables({});
-                      setSelectedTemplateObj(null);
-                    }}>
+                    <Button variant="outline" onClick={() => { setCustomText(""); setSelectedTemplate(""); }}>
                       내용 초기화
                     </Button>
                     <Button

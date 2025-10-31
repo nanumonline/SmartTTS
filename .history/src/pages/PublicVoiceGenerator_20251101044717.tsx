@@ -2527,35 +2527,6 @@ const PublicVoiceGenerator = () => {
                     </TabsContent>
                   </Tabs>
 
-                  {/* 템플릿 변수 입력 */}
-                  {selectedTemplate && selectedTemplateObj && Object.keys(templateVariables).length > 0 && (
-                    <div className="space-y-3 p-4 border rounded-lg bg-blue-50/50">
-                      <Label className="text-sm font-semibold">템플릿 변수 입력</Label>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {Object.keys(templateVariables).map((varName) => {
-                          const isRequired = ["기관명", "담당자명", "부서명"].includes(varName);
-                          return (
-                            <div key={varName} className="space-y-1">
-                              <Label htmlFor={`var-${varName}`} className="text-xs">
-                                {varName} {isRequired && <span className="text-red-500">*</span>}
-                              </Label>
-                              <Input
-                                id={`var-${varName}`}
-                                value={templateVariables[varName]}
-                                onChange={(e) => handleVariableChange(varName, e.target.value)}
-                                placeholder={`예: ${varName === "기관명" ? "강원특별자치도청" : varName === "담당자명" ? "김철수" : varName === "이벤트명" ? "신년인사" : ""}`}
-                                className="text-sm"
-                              />
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        💡 변수를 입력하면 자동으로 메시지 내용에 반영됩니다.
-                      </p>
-                    </div>
-                  )}
-
                   <Label htmlFor="text">메시지 내용 *</Label>
                   <Textarea
                     id="text"
@@ -2567,18 +2538,12 @@ const PublicVoiceGenerator = () => {
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
                       <div className="text-xs text-muted-foreground">
-                        {selectedTemplate ? (
-                          <p className="mb-1">템플릿 변수를 입력하면 자동으로 반영됩니다.</p>
-                        ) : (
-                          <>
-                            <p className="mb-1">템플릿의 {"{"}변수명{"}"} 부분을 실제 내용으로 교체해주세요.</p>
-                            <ul className="list-disc list-inside space-y-0.5 text-[11px]">
-                              <li>예: {"{"}기관명{"}"} → 강원특별자치도청</li>
-                              <li>예: {"{"}담당자명{"}"} → 김철수</li>
-                              <li>예: {"{"}이벤트명{"}"} → 신년인사</li>
-                            </ul>
-                          </>
-                        )}
+                        <p className="mb-1">템플릿의 {"{"}변수명{"}"} 부분을 실제 내용으로 교체해주세요.</p>
+                        <ul className="list-disc list-inside space-y-0.5 text-[11px]">
+                          <li>예: {"{"}기관명{"}"} → 강원특별자치도청</li>
+                          <li>예: {"{"}담당자명{"}"} → 김철수</li>
+                          <li>예: {"{"}이벤트명{"}"} → 신년인사</li>
+                        </ul>
                       </div>
                       <p className={`text-xs ${customText.length > 300 ? 'text-red-500' : 'text-muted-foreground'}`}>
                         {customText.length} / 300자 (최대)
@@ -2597,12 +2562,7 @@ const PublicVoiceGenerator = () => {
                     )}
                   </div>
                   <div className="flex flex-wrap gap-2 justify-end">
-                    <Button variant="outline" onClick={() => { 
-                      setCustomText(""); 
-                      setSelectedTemplate(""); 
-                      setTemplateVariables({});
-                      setSelectedTemplateObj(null);
-                    }}>
+                    <Button variant="outline" onClick={() => { setCustomText(""); setSelectedTemplate(""); }}>
                       내용 초기화
                     </Button>
                     <Button

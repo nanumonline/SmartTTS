@@ -1207,32 +1207,11 @@ const PublicVoiceGenerator = () => {
     }
   ];
 
-  // 템플릿에서 변수 추출
-  const extractVariables = (templateText: string): string[] => {
-    const matches = templateText.match(/\{([^}]+)\}/g);
-    if (!matches) return [];
-    return Array.from(new Set(matches.map(m => m.replace(/[{}]/g, '').trim())));
-  };
-
-  // 변수 값으로 템플릿 교체
-  const replaceTemplateWithVariables = (templateText: string, variables: Record<string, string>): string => {
-    return templateText.replace(/\{([^}]+)\}/g, (_, key) => {
-      const k = String(key).trim();
-      return variables[k] || `{${k}}`;
-    });
-  };
-
   const handleTemplateSelect = (template: any) => {
     setSelectedTemplate(template.id);
-    setSelectedTemplateObj(template);
-    
-    // 템플릿에서 변수 추출
-    const variables = extractVariables(template.template);
-    
-    // 기본값 설정
-    const defaultValues: Record<string, string> = {
-      "기관명": user?.organization || "강원특별자치도청",
-      "담당자명": (user as any)?.full_name || (user as any)?.name || (user as any)?.email?.split("@")[0] || "김철수",
+    const context: Record<string, string> = {
+      "기관명": user?.organization || "귀 기관",
+      "담당자명": (user as any)?.full_name || (user as any)?.name || (user as any)?.email?.split("@")[0] || "담당자",
       "부서명": user?.department || "관계 부서",
       "연락처": "",
       "홈페이지": "",
@@ -1244,39 +1223,15 @@ const PublicVoiceGenerator = () => {
       "상황설명": "",
       "대응방안": "",
       "행동지침": "",
-      "일시": new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }),
+      "일시": new Date().toLocaleString(),
       "장소": "",
       "연구분야": "",
-      "서비스명": "",
-      "변경사항": "",
-      "운영시간": "",
-      "행사명": "",
-      "행사내용": "",
     };
-    
-    // 추출된 변수들의 기본값 설정
-    const initialVariables: Record<string, string> = {};
-    variables.forEach(v => {
-      initialVariables[v] = defaultValues[v] || "";
+    const replaced = template.template.replace(/\{([^}]+)\}/g, (_, key) => {
+      const k = String(key).trim();
+      return (context[k] ?? `{${k}}`);
     });
-    
-    setTemplateVariables(initialVariables);
-    
-    // 초기 텍스트 생성
-    const replaced = replaceTemplateWithVariables(template.template, initialVariables);
     setCustomText(replaced);
-  };
-
-  // 변수 값 변경 핸들러
-  const handleVariableChange = (variableName: string, value: string) => {
-    const updated = { ...templateVariables, [variableName]: value };
-    setTemplateVariables(updated);
-    
-    // 템플릿 재생성
-    if (selectedTemplateObj) {
-      const replaced = replaceTemplateWithVariables(selectedTemplateObj.template, updated);
-      setCustomText(replaced);
-    }
   };
 
   // Supertone API에서 음성 목록 가져오기 (Supabase Edge Function 프록시 사용)
@@ -2527,35 +2482,6 @@ const PublicVoiceGenerator = () => {
                     </TabsContent>
                   </Tabs>
 
-                  {/* 템플릿 변수 입력 */}
-                  {selectedTemplate && selectedTemplateObj && Object.keys(templateVariables).length > 0 && (
-                    <div className="space-y-3 p-4 border rounded-lg bg-blue-50/50">
-                      <Label className="text-sm font-semibold">템플릿 변수 입력</Label>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {Object.keys(templateVariables).map((varName) => {
-                          const isRequired = ["기관명", "담당자명", "부서명"].includes(varName);
-                          return (
-                            <div key={varName} className="space-y-1">
-                              <Label htmlFor={`var-${varName}`} className="text-xs">
-                                {varName} {isRequired && <span className="text-red-500">*</span>}
-                              </Label>
-                              <Input
-                                id={`var-${varName}`}
-                                value={templateVariables[varName]}
-                                onChange={(e) => handleVariableChange(varName, e.target.value)}
-                                placeholder={`예: ${varName === "기관명" ? "강원특별자치도청" : varName === "담당자명" ? "김철수" : varName === "이벤트명" ? "신년인사" : ""}`}
-                                className="text-sm"
-                              />
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        💡 변수를 입력하면 자동으로 메시지 내용에 반영됩니다.
-                      </p>
-                    </div>
-                  )}
-
                   <Label htmlFor="text">메시지 내용 *</Label>
                   <Textarea
                     id="text"
@@ -2567,18 +2493,12 @@ const PublicVoiceGenerator = () => {
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
                       <div className="text-xs text-muted-foreground">
-                        {selectedTemplate ? (
-                          <p className="mb-1">템플릿 변수를 입력하면 자동으로 반영됩니다.</p>
-                        ) : (
-                          <>
-                            <p className="mb-1">템플릿의 {"{"}변수명{"}"} 부분을 실제 내용으로 교체해주세요.</p>
-                            <ul className="list-disc list-inside space-y-0.5 text-[11px]">
-                              <li>예: {"{"}기관명{"}"} → 강원특별자치도청</li>
-                              <li>예: {"{"}담당자명{"}"} → 김철수</li>
-                              <li>예: {"{"}이벤트명{"}"} → 신년인사</li>
-                            </ul>
-                          </>
-                        )}
+                        <p className="mb-1">템플릿의 {"{"}변수명{"}"} 부분을 실제 내용으로 교체해주세요.</p>
+                        <ul className="list-disc list-inside space-y-0.5 text-[11px]">
+                          <li>예: {"{"}기관명{"}"} → 강원특별자치도청</li>
+                          <li>예: {"{"}담당자명{"}"} → 김철수</li>
+                          <li>예: {"{"}이벤트명{"}"} → 신년인사</li>
+                        </ul>
                       </div>
                       <p className={`text-xs ${customText.length > 300 ? 'text-red-500' : 'text-muted-foreground'}`}>
                         {customText.length} / 300자 (최대)
@@ -2597,12 +2517,7 @@ const PublicVoiceGenerator = () => {
                     )}
                   </div>
                   <div className="flex flex-wrap gap-2 justify-end">
-                    <Button variant="outline" onClick={() => { 
-                      setCustomText(""); 
-                      setSelectedTemplate(""); 
-                      setTemplateVariables({});
-                      setSelectedTemplateObj(null);
-                    }}>
+                    <Button variant="outline" onClick={() => { setCustomText(""); setSelectedTemplate(""); }}>
                       내용 초기화
                     </Button>
                     <Button
