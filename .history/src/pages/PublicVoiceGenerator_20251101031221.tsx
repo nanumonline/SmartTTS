@@ -853,7 +853,7 @@ const PublicVoiceGenerator = () => {
         const parsed = JSON.parse(cloneRaw);
         if (Array.isArray(parsed)) {
           const normalized: CloneRequest[] = parsed.map((item: any, index: number) => {
-            const id = item.id || generateUniqueId() + index;
+            const id = item.id || Date.now() + index;
             const baseId = item.baseVoiceId || item.base_voice_id || "";
             const baseName = item.baseVoiceName || item.base_voice_name || getVoiceDisplayName(baseId);
             const status = item.status === "processing" ? "processing" : "completed";

@@ -567,7 +567,7 @@ const PublicVoiceGenerator = () => {
 
     const base = getVoiceMeta(cloneForm.baseVoiceId);
     const sampleName = cloneForm.sampleFile?.name || cloneForm.sampleName || "sample.wav";
-    const id = generateUniqueId();
+    const id = Date.now();
     const voiceId = `clone_${id}`;
     const voiceName = `${cloneForm.targetName.trim()} (클론)`;
     const newClone: CloneRequest = {
@@ -822,7 +822,7 @@ const PublicVoiceGenerator = () => {
             const purposeId = item.purpose || "announcement";
             const meta = getPurposeMeta(purposeId);
             return {
-              id: item.id || generateUniqueId() + index,
+              id: item.id || Date.now() + index,
               purpose: purposeId,
               purposeLabel: item.purposeLabel || meta.label,
               voiceId: item.voiceId || item.voice_id || "",
@@ -853,7 +853,7 @@ const PublicVoiceGenerator = () => {
         const parsed = JSON.parse(cloneRaw);
         if (Array.isArray(parsed)) {
           const normalized: CloneRequest[] = parsed.map((item: any, index: number) => {
-            const id = item.id || generateUniqueId() + index;
+            const id = item.id || Date.now() + index;
             const baseId = item.baseVoiceId || item.base_voice_id || "";
             const baseName = item.baseVoiceName || item.base_voice_name || getVoiceDisplayName(baseId);
             const status = item.status === "processing" ? "processing" : "completed";

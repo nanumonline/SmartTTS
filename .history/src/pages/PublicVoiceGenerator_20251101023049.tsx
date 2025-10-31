@@ -510,17 +510,58 @@ const PublicVoiceGenerator = () => {
     }
   };
 
-  const handleCloneSubmit = () => {
+  // 데이터 검증 헬퍼 함수
+  const validateText = (text: string): { valid: boolean; error?: string } => {
+    if (!text || !text.trim()) return { valid: false, error: "텍스트를 입력해주세요" };
+    if (text.length > 5000) return { valid: false, error: "텍스트는 5000자 이내여야 합니다" };
+    if (text.length < 2) return { valid: false, error: "최소 2자 이상 입력해주세요" };
+    return { valid: true };
+  };
+
+  const validateFile = (file: File | null): { valid: boolean; error?: string } => {
+    if (!file) return { valid: false, error: "파일을 선택해주세요" };
+    const maxSize = 50 * 1024 * 1024; // 50MB
+    if (file.size > maxSize) return { valid: false, error: "파일 크기는 50MB 이하여야 합니다" };
+    if (!["audio/wav", "audio/mpeg", "audio/mp3", "audio/ogg"].includes(file.type)) {
+      return { valid: false, error: "WAV, MP3, OGG 파일만 지원됩니다" };
+    }
+    return { valid: true };
+  };
+
+  const validateCloneForm = (): { valid: boolean; error?: string } => {
     if (!cloneForm.targetName.trim()) {
-      toast({ title: "대상 이름을 입력해주세요", variant: "destructive" });
-      return;
+      return { valid: false, error: "클론 대상 이름을 입력해주세요 (2~100자)" };
+    }
+    if (cloneForm.targetName.length < 2 || cloneForm.targetName.length > 100) {
+      return { valid: false, error: "이름은 2~100자 사이여야 합니다" };
     }
     if (!cloneForm.baseVoiceId) {
-      toast({ title: "기준 음성을 선택해주세요", variant: "destructive" });
-      return;
+      return { valid: false, error: "기준 음성을 선택해주세요" };
     }
     if (!cloneForm.sampleFile && !cloneForm.sampleName) {
-      toast({ title: "샘플 음성을 업로드해주세요", variant: "destructive" });
+      return { valid: false, error: "샘플 음성 파일을 업로드해주세요" };
+    }
+    if (cloneForm.sampleFile) {
+      const fileCheck = validateFile(cloneForm.sampleFile);
+      if (!fileCheck.valid) return fileCheck;
+    }
+    return { valid: true };
+  };
+
+  const validateScheduleForm = (form: any): { valid: boolean; error?: string } => {
+    if (!form.channel) return { valid: false, error: "전송 채널을 선택해주세요" };
+    if (!form.scheduledTime) return { valid: false, error: "전송 시간을 설정해주세요" };
+    const scheduled = new Date(form.scheduledTime);
+    const now = new Date();
+    if (scheduled < now) return { valid: false, error: "현재보다 미래 시간을 선택해주세요" };
+    return { valid: true };
+  };
+
+  const handleCloneSubmit = () => {
+    const validation = validateCloneForm();
+    if (!validation.valid) {
+      toast({ title: "입력 오류", description: validation.error, variant: "destructive" });
+      addOperationLog("warning", `클론 요청 실패: ${validation.error}`);
       return;
     }
 
@@ -548,7 +589,8 @@ const PublicVoiceGenerator = () => {
     setIsCloneModalOpen(false);
     setCloneForm(createCloneForm({ language: cloneForm.language }));
 
-    toast({ title: "클로닝 요청 접수", description: "샘플을 분석 중입니다." });
+    toast({ title: "클로닝 요청 접수", description: `${voiceName}를 분석 중입니다.` });
+    addOperationLog("info", `클론 생성 시작: ${voiceName}`);
 
     const timer = window.setTimeout(() => {
       const completionTime = new Date().toISOString();
@@ -556,10 +598,12 @@ const PublicVoiceGenerator = () => {
       setCloneRequests((prev) => prev.map((cl) => (cl.id === newClone.id ? completedClone : cl)));
       registerCloneVoice(completedClone);
       toast({ title: "클로닝 완료", description: `${completedClone.voiceName} 음성이 추가되었습니다.` });
+      addOperationLog("success", `클론 생성 완료: ${voiceName}`);
     }, 1500);
 
     cloneTimeoutsRef.current.push(timer);
   };
+
 
   const purposeMeta = getPurposeMeta(selectedPurpose);
 
@@ -1446,7 +1490,7 @@ const PublicVoiceGenerator = () => {
     }
 
     if (trimmedText.length > 300) {
-      alert(`텍스트가 너무 깁니다. 최대 300자까지 입력 가능합니다. (현재: ${trimmedText.length}자)`);
+      toast({ title: "길이 초과", description: `텍스트는 300자 이내여야 합니다. (현재: ${trimmedText.length}자)`, variant: "destructive" }); addOperationLog("warning", "텍스트 길이 초과"); return;
       return;
     }
 
