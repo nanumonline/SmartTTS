@@ -583,18 +583,6 @@ const PublicVoiceGenerator = () => {
           backgroundTrackVolume: 50,
           effectTrackVolume: 70,
           selectedVoiceTrack: generation, // 기본으로 현재 생성 기록 선택
-          masterGain: DEFAULT_MIXING_SETTINGS.masterGain,
-          fadeIn: DEFAULT_MIXING_SETTINGS.fadeIn,
-          fadeOut: DEFAULT_MIXING_SETTINGS.fadeOut,
-          lowShelf: DEFAULT_MIXING_SETTINGS.lowShelf,
-          midPeaking: DEFAULT_MIXING_SETTINGS.midPeaking,
-          highShelf: DEFAULT_MIXING_SETTINGS.highShelf,
-          duckingEnabled: DEFAULT_MIXING_SETTINGS.duckingEnabled,
-          duckDb: DEFAULT_MIXING_SETTINGS.duckDb,
-          duckThreshold: DEFAULT_MIXING_SETTINGS.duckThreshold,
-          duckRelease: DEFAULT_MIXING_SETTINGS.duckRelease,
-          bgmOffset: DEFAULT_MIXING_SETTINGS.bgmOffset,
-          ttsOffset: DEFAULT_MIXING_SETTINGS.ttsOffset,
         })
       );
     } else if (!existing.selectedVoiceTrack) {
