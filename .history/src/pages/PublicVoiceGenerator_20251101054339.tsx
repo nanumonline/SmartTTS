@@ -582,16 +582,9 @@ const PublicVoiceGenerator = () => {
       backgroundTrackVolume: 50,
       effectTrackVolume: 70,
     };
-    const selectedVoice = mixingState.selectedVoiceTrack || selectedGenerationForMixing;
-    const updated = { 
-      ...mixingState, 
-      selectedVoiceTrack: selectedVoice,
-      selectedBackground: bg, 
-      selectedEffect: ef 
-    };
+    const updated = { ...mixingState, selectedBackground: bg, selectedEffect: ef };
     setMixingStates((prev) => new Map(prev).set(genId, updated));
     setIsMixingModalOpen(false);
-    setPreviewMixedAudio(null);
     toast({ title: "믹싱 설정 저장", description: "음원이 믹싱되었습니다." });
   };
 
