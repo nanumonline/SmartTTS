@@ -2170,15 +2170,38 @@ const PublicVoiceGenerator = () => {
       // 이름 저장 다이얼로그 표시
       setPendingGeneration({
         id: generateUniqueId(),
-        cacheKey,
         purpose: selectedPurpose,
-        purposeLabel: purposeMeta.label,
+        purposeLabel: purposeOptions.find(p => p.id === selectedPurpose)?.label || "",
         voiceId: selectedVoice || "",
         voiceName: getVoiceDisplayName(selectedVoice || ""),
         createdAt: new Date().toISOString(),
-        duration: roundedDuration,
-        status: usedMock ? "mock" : "ready",
-        hasAudio: !usedMock,
+        duration: audioResult.duration,
+        status: "ready",
+        hasAudio: true,
+        language: advancedSettings.language || "ko",
+        textPreview: customText || processedText,
+        cacheKey: buildGenerationKey({
+          text: processedText,
+          voiceId: selectedVoice || "",
+          language: advancedSettings.language || "ko",
+          model: advancedSettings.model || "standard",
+          style: getEmotionValue(),
+          speed: getSpeedMultiplier(),
+          pitchShift: voiceSettings.pitch || 0,
+        }),
+        audioUrl: audioResult.audioUrl,
+      });
+      setIsSaveNameDialogOpen(true);
+
+      // 캐시에 저장 및 이력 기록
+      cacheRef.current.set(cacheKey, audioResult);
+      pushHistory({
+        id: generateUniqueId(),
+        cacheKey,
+        purpose: selectedPurpose,
+        purposeLabel: purposeMeta.label,
+        voiceId: selectedVoice,
+        voiceName: getVoiceDisplayName(selectedVoice),
         language: chosenLanguage,
         model: chosenModel,
         style: styleValue,
@@ -2186,13 +2209,11 @@ const PublicVoiceGenerator = () => {
         pitchShift,
         textPreview: trimmedText.slice(0, 120),
         textLength: trimmedText.length,
-        audioUrl: audioResult.audioUrl,
+        duration: roundedDuration,
+        createdAt: new Date().toISOString(),
+        status: usedMock ? "mock" : "ready",
+        hasAudio: !usedMock,
       });
-      setIsSaveNameDialogOpen(true);
-
-      // 캐시에 저장
-      cacheRef.current.set(cacheKey, audioResult);
-      // pushHistory는 이름 저장 다이얼로그에서 처리
     } catch (error: any) {
       console.error("음성 생성 오류:", error);
       const errorMessage = error?.message || "음성 생성 중 오류가 발생했습니다.";
@@ -4179,6 +4200,26 @@ const PublicVoiceGenerator = () => {
                     </div>
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
+                        <Label style={{ color: '#E5E7EB' }} className="text-sm">효과음 음량</Label>
+                        <span className="text-xs text-gray-400">{mixingStates.get(selectedGenerationForMixing?.id)?.effectTrackVolume ?? 70}%</span>
+                      </div>
+                      <Slider
+                        value={[mixingStates.get(selectedGenerationForMixing?.id)?.effectTrackVolume ?? 70]}
+                        onValueChange={(values) => {
+                          const genId = selectedGenerationForMixing?.id;
+                          if (genId) {
+                            const state = mixingStates.get(genId) || { voiceTrackVolume: 100, backgroundTrackVolume: 50, effectTrackVolume: 70 };
+                            setMixingStates((prev) => new Map(prev).set(genId, { ...state, effectTrackVolume: values[0] }));
+                          }
+                        }}
+                        min={0}
+                        max={200}
+                        step={1}
+                        className="w-full"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
                         <Label style={{ color: '#E5E7EB' }} className="text-sm">마스터 음량</Label>
                         <span className="text-xs text-gray-400">{Math.round((mixingStates.get(selectedGenerationForMixing?.id)?.masterGain ?? DEFAULT_MIXING_SETTINGS.masterGain) * 100)}%</span>
                       </div>
@@ -4498,82 +4539,6 @@ const PublicVoiceGenerator = () => {
               }}
             >
               완료
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* 이름 저장 다이얼로그 */}
-      <Dialog open={isSaveNameDialogOpen} onOpenChange={setIsSaveNameDialogOpen}>
-        <DialogContent className="sm:max-w-lg dark-dialog bg-gray-900/95 border-gray-700">
-          <DialogHeader>
-            <DialogTitle style={{ color: '#FFFFFF' }}>음원 저장</DialogTitle>
-            <DialogDescription style={{ color: '#E5E7EB' }}>
-              생성된 음원에 이름을 지정하여 저장하세요. 이름을 지정하지 않으면 생성 날짜가 표시됩니다.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label style={{ color: '#E5E7EB' }}>저장 이름 (선택사항)</Label>
-              <Input
-                value={saveNameInput}
-                onChange={(e) => setSaveNameInput(e.target.value)}
-                placeholder="예: 신년인사 메시지"
-                className="bg-gray-800/50 border-gray-600 text-white"
-                style={{ color: '#FFFFFF' }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    const savedName = saveNameInput.trim() || null;
-                    if (pendingGeneration) {
-                      pushHistory({
-                        ...pendingGeneration,
-                        savedName,
-                      });
-                    }
-                    setIsSaveNameDialogOpen(false);
-                    setSaveNameInput("");
-                    setPendingGeneration(null);
-                  }
-                }}
-              />
-              <p className="text-xs text-gray-400">
-                이름을 입력하지 않으면 생성 날짜({pendingGeneration ? formatDateTime(pendingGeneration.createdAt) : ""})가 표시됩니다.
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              className="border-gray-600 hover:bg-gray-800 hover:text-white"
-              style={{ color: '#E5E7EB' }}
-              onClick={() => {
-                setIsSaveNameDialogOpen(false);
-                setSaveNameInput("");
-                setPendingGeneration(null);
-              }}
-            >
-              취소
-            </Button>
-            <Button
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-              onClick={() => {
-                const savedName = saveNameInput.trim() || null;
-                if (pendingGeneration) {
-                  pushHistory({
-                    ...pendingGeneration,
-                    savedName,
-                  });
-                  toast({
-                    title: "음원 저장 완료",
-                    description: savedName ? `"${savedName}"으로 저장되었습니다.` : "생성 날짜로 저장되었습니다.",
-                  });
-                }
-                setIsSaveNameDialogOpen(false);
-                setSaveNameInput("");
-                setPendingGeneration(null);
-              }}
-            >
-              저장
             </Button>
           </DialogFooter>
         </DialogContent>

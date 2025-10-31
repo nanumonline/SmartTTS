@@ -644,11 +644,16 @@ const PublicVoiceGenerator = () => {
         bgmBuffer = await decodeUrlToBuffer(ctx, state.selectedBackground.url);
       }
 
+      // 효과음 디코딩 (URL이 있는 경우만)
+      if (state.selectedEffect?.url) {
+        effectBuffer = await decodeUrlToBuffer(ctx, state.selectedEffect.url);
+      }
+
       // MixingSettings 구성
       const settings: MixingSettings = {
         ttsGain: (state.voiceTrackVolume || 100) / 100,
         bgmGain: (state.backgroundTrackVolume || 50) / 100,
-        effectGain: 0, // 효과음 제거
+        effectGain: (state.effectTrackVolume || 70) / 100,
         masterGain: (state.masterGain !== undefined ? state.masterGain : DEFAULT_MIXING_SETTINGS.masterGain),
         fadeIn: state.fadeIn !== undefined ? state.fadeIn : DEFAULT_MIXING_SETTINGS.fadeIn,
         fadeOut: state.fadeOut !== undefined ? state.fadeOut : DEFAULT_MIXING_SETTINGS.fadeOut,
@@ -665,7 +670,7 @@ const PublicVoiceGenerator = () => {
       };
 
       // WAV로 내보내기
-      const wavBlob = await exportMixToWav(ttsBuffer, bgmBuffer, null, settings);
+      const wavBlob = await exportMixToWav(ttsBuffer, bgmBuffer, effectBuffer, settings);
       const mixedUrl = URL.createObjectURL(wavBlob);
       
       setPreviewMixedAudio(mixedUrl);
@@ -700,10 +705,11 @@ const PublicVoiceGenerator = () => {
     }
   };
 
-  const handleMixingSubmit = (form: { background?: string }) => {
+  const handleMixingSubmit = (form: { background?: string; effect?: string }) => {
     if (!selectedGenerationForMixing?.id) return;
     const genId = selectedGenerationForMixing.id;
     const bg = form.background ? mixingAssetLibrary.find((x) => x.id === form.background) : undefined;
+    const ef = form.effect ? mixingAssetLibrary.find((x) => x.id === form.effect) : undefined;
     const mixingState = mixingStates.get(genId) || {
       voiceTrackVolume: 100,
       backgroundTrackVolume: 50,
@@ -713,7 +719,8 @@ const PublicVoiceGenerator = () => {
     const updated = { 
       ...mixingState, 
       selectedVoiceTrack: selectedVoice,
-      selectedBackground: bg || mixingStates.get(genId)?.selectedBackground,
+      selectedBackground: bg, 
+      selectedEffect: ef,
       // 기본값 설정
       masterGain: mixingState.masterGain ?? DEFAULT_MIXING_SETTINGS.masterGain,
       fadeIn: mixingState.fadeIn ?? DEFAULT_MIXING_SETTINGS.fadeIn,
@@ -1240,7 +1247,6 @@ const PublicVoiceGenerator = () => {
               language: item.language || "",
               textPreview: item.textPreview || item.text || "",
               cacheKey: item.cacheKey || item.key || "",
-              savedName: item.savedName || null,
             };
           });
           setGenerationHistory(normalized);
@@ -2170,15 +2176,38 @@ const PublicVoiceGenerator = () => {
       // 이름 저장 다이얼로그 표시
       setPendingGeneration({
         id: generateUniqueId(),
-        cacheKey,
         purpose: selectedPurpose,
-        purposeLabel: purposeMeta.label,
+        purposeLabel: purposeOptions.find(p => p.id === selectedPurpose)?.label || "",
         voiceId: selectedVoice || "",
         voiceName: getVoiceDisplayName(selectedVoice || ""),
         createdAt: new Date().toISOString(),
-        duration: roundedDuration,
-        status: usedMock ? "mock" : "ready",
-        hasAudio: !usedMock,
+        duration: audioResult.duration,
+        status: "ready",
+        hasAudio: true,
+        language: advancedSettings.language || "ko",
+        textPreview: customText || processedText,
+        cacheKey: buildGenerationKey({
+          text: processedText,
+          voiceId: selectedVoice || "",
+          language: advancedSettings.language || "ko",
+          model: advancedSettings.model || "standard",
+          style: getEmotionValue(),
+          speed: getSpeedMultiplier(),
+          pitchShift: voiceSettings.pitch || 0,
+        }),
+        audioUrl: audioResult.audioUrl,
+      });
+      setIsSaveNameDialogOpen(true);
+
+      // 캐시에 저장 및 이력 기록
+      cacheRef.current.set(cacheKey, audioResult);
+      pushHistory({
+        id: generateUniqueId(),
+        cacheKey,
+        purpose: selectedPurpose,
+        purposeLabel: purposeMeta.label,
+        voiceId: selectedVoice,
+        voiceName: getVoiceDisplayName(selectedVoice),
         language: chosenLanguage,
         model: chosenModel,
         style: styleValue,
@@ -2186,13 +2215,11 @@ const PublicVoiceGenerator = () => {
         pitchShift,
         textPreview: trimmedText.slice(0, 120),
         textLength: trimmedText.length,
-        audioUrl: audioResult.audioUrl,
+        duration: roundedDuration,
+        createdAt: new Date().toISOString(),
+        status: usedMock ? "mock" : "ready",
+        hasAudio: !usedMock,
       });
-      setIsSaveNameDialogOpen(true);
-
-      // 캐시에 저장
-      cacheRef.current.set(cacheKey, audioResult);
-      // pushHistory는 이름 저장 다이얼로그에서 처리
     } catch (error: any) {
       console.error("음성 생성 오류:", error);
       const errorMessage = error?.message || "음성 생성 중 오류가 발생했습니다.";
@@ -4035,7 +4062,7 @@ const PublicVoiceGenerator = () => {
                       value={gen.id.toString()} 
                       className="text-white focus:bg-gray-700"
                     >
-                      {gen.savedName || formatDateTime(gen.createdAt)}
+                      {gen.textPreview?.slice(0, 30) || gen.voiceName || `음원 #${gen.id}`}
                       {gen.duration && ` (${gen.duration.toFixed(1)}초)`}
                     </SelectItem>
                   ))}
@@ -4053,80 +4080,65 @@ const PublicVoiceGenerator = () => {
             </div>
             <div className="space-y-2">
               <Label style={{ color: '#E5E7EB' }}>배경음 선택</Label>
-              <div className="space-y-2">
-                <input
-                  type="file"
-                  accept="audio/mpeg,audio/mp3,audio/*"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file && selectedGenerationForMixing?.id) {
-                      setUploadedBgmFile(file);
-                      const bgmUrl = URL.createObjectURL(file);
-                      const asset: MixingAsset = {
-                        id: `uploaded_bgm_${Date.now()}`,
-                        name: file.name,
-                        type: "background",
-                        url: bgmUrl,
-                      };
-                      const state = mixingStates.get(selectedGenerationForMixing.id) || { 
-                        voiceTrackVolume: 100, 
-                        backgroundTrackVolume: 50, 
-                        effectTrackVolume: 70 
-                      };
-                      setMixingStates((prev) => new Map(prev).set(selectedGenerationForMixing.id, { 
-                        ...state, 
-                        selectedBackground: asset 
-                      }));
-                      toast({
-                        title: "배경음 업로드 완료",
-                        description: `${file.name}이 업로드되었습니다.`,
-                      });
-                    }
-                  }}
-                  className="hidden"
-                  id="bgm-upload-input"
-                />
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="border-gray-600 hover:bg-gray-800 hover:text-white flex-1"
-                    style={{ color: '#E5E7EB' }}
-                    onClick={() => document.getElementById('bgm-upload-input')?.click()}
-                  >
-                    <Upload className="w-4 h-4 mr-2" />
-                    MP3 파일 업로드
-                  </Button>
-                  {mixingStates.get(selectedGenerationForMixing?.id)?.selectedBackground && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="border-gray-600 hover:bg-gray-800 hover:text-white"
-                      style={{ color: '#E5E7EB' }}
-                      onClick={() => {
-                        const genId = selectedGenerationForMixing?.id;
-                        if (genId) {
-                          const state = mixingStates.get(genId) || { voiceTrackVolume: 100, backgroundTrackVolume: 50, effectTrackVolume: 70 };
-                          setMixingStates((prev) => new Map(prev).set(genId, { ...state, selectedBackground: undefined }));
-                          if (uploadedBgmFile) {
-                            URL.revokeObjectURL(state.selectedBackground?.url || "");
-                            setUploadedBgmFile(null);
-                          }
-                        }
-                      }}
-                    >
-                      <X className="w-4 h-4" />
-                    </Button>
-                  )}
-                </div>
-                {mixingStates.get(selectedGenerationForMixing?.id)?.selectedBackground && (
-                  <div className="p-2 bg-gray-800/50 rounded border border-gray-700">
-                    <div className="text-sm text-gray-300">
-                      선택된 파일: {mixingStates.get(selectedGenerationForMixing?.id)?.selectedBackground?.name}
-                    </div>
-                  </div>
-                )}
-              </div>
+              <Select 
+                value={mixingStates.get(selectedGenerationForMixing?.id)?.selectedBackground?.id}
+                onValueChange={(value) => {
+                  const asset = mixingAssetLibrary.find((x) => x.id === value);
+                  if (selectedGenerationForMixing?.id && asset) {
+                    const state = mixingStates.get(selectedGenerationForMixing.id) || { 
+                      voiceTrackVolume: 100, 
+                      backgroundTrackVolume: 50, 
+                      effectTrackVolume: 70 
+                    };
+                    setMixingStates((prev) => new Map(prev).set(selectedGenerationForMixing.id, { 
+                      ...state, 
+                      selectedBackground: asset 
+                    }));
+                  }
+                }}
+              >
+                <SelectTrigger className="bg-gray-800/50 border-gray-600 text-white">
+                  <SelectValue placeholder="배경음을 선택하세요" />
+                </SelectTrigger>
+                <SelectContent className="bg-gray-800 border-gray-600">
+                  {mixingAssetLibrary.filter((x) => x.type === "background").map((asset) => (
+                    <SelectItem key={asset.id} value={asset.id} className="text-white focus:bg-gray-700">
+                      {asset.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label style={{ color: '#E5E7EB' }}>효과음 선택</Label>
+              <Select 
+                value={mixingStates.get(selectedGenerationForMixing?.id)?.selectedEffect?.id}
+                onValueChange={(value) => {
+                  const asset = mixingAssetLibrary.find((x) => x.id === value);
+                  if (selectedGenerationForMixing?.id && asset) {
+                    const state = mixingStates.get(selectedGenerationForMixing.id) || { 
+                      voiceTrackVolume: 100, 
+                      backgroundTrackVolume: 50, 
+                      effectTrackVolume: 70 
+                    };
+                    setMixingStates((prev) => new Map(prev).set(selectedGenerationForMixing.id, { 
+                      ...state, 
+                      selectedEffect: asset 
+                    }));
+                  }
+                }}
+              >
+                <SelectTrigger className="bg-gray-800/50 border-gray-600 text-white">
+                  <SelectValue placeholder="효과음을 선택하세요" />
+                </SelectTrigger>
+                <SelectContent className="bg-gray-800 border-gray-600">
+                  {mixingAssetLibrary.filter((x) => x.type === "effect").map((asset) => (
+                    <SelectItem key={asset.id} value={asset.id} className="text-white focus:bg-gray-700">
+                      {asset.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* 고급 설정: 음량 조절 */}
@@ -4169,6 +4181,26 @@ const PublicVoiceGenerator = () => {
                           if (genId) {
                             const state = mixingStates.get(genId) || { voiceTrackVolume: 100, backgroundTrackVolume: 50, effectTrackVolume: 70 };
                             setMixingStates((prev) => new Map(prev).set(genId, { ...state, backgroundTrackVolume: values[0] }));
+                          }
+                        }}
+                        min={0}
+                        max={200}
+                        step={1}
+                        className="w-full"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label style={{ color: '#E5E7EB' }} className="text-sm">효과음 음량</Label>
+                        <span className="text-xs text-gray-400">{mixingStates.get(selectedGenerationForMixing?.id)?.effectTrackVolume ?? 70}%</span>
+                      </div>
+                      <Slider
+                        value={[mixingStates.get(selectedGenerationForMixing?.id)?.effectTrackVolume ?? 70]}
+                        onValueChange={(values) => {
+                          const genId = selectedGenerationForMixing?.id;
+                          if (genId) {
+                            const state = mixingStates.get(genId) || { voiceTrackVolume: 100, backgroundTrackVolume: 50, effectTrackVolume: 70 };
+                            setMixingStates((prev) => new Map(prev).set(genId, { ...state, effectTrackVolume: values[0] }));
                           }
                         }}
                         min={0}
@@ -4493,87 +4525,12 @@ const PublicVoiceGenerator = () => {
                   return;
                 }
                 handleMixingSubmit({ 
-                  background: state.selectedBackground?.id
+                  background: state.selectedBackground?.id, 
+                  effect: state.selectedEffect?.id 
                 });
               }}
             >
               완료
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* 이름 저장 다이얼로그 */}
-      <Dialog open={isSaveNameDialogOpen} onOpenChange={setIsSaveNameDialogOpen}>
-        <DialogContent className="sm:max-w-lg dark-dialog bg-gray-900/95 border-gray-700">
-          <DialogHeader>
-            <DialogTitle style={{ color: '#FFFFFF' }}>음원 저장</DialogTitle>
-            <DialogDescription style={{ color: '#E5E7EB' }}>
-              생성된 음원에 이름을 지정하여 저장하세요. 이름을 지정하지 않으면 생성 날짜가 표시됩니다.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label style={{ color: '#E5E7EB' }}>저장 이름 (선택사항)</Label>
-              <Input
-                value={saveNameInput}
-                onChange={(e) => setSaveNameInput(e.target.value)}
-                placeholder="예: 신년인사 메시지"
-                className="bg-gray-800/50 border-gray-600 text-white"
-                style={{ color: '#FFFFFF' }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    const savedName = saveNameInput.trim() || null;
-                    if (pendingGeneration) {
-                      pushHistory({
-                        ...pendingGeneration,
-                        savedName,
-                      });
-                    }
-                    setIsSaveNameDialogOpen(false);
-                    setSaveNameInput("");
-                    setPendingGeneration(null);
-                  }
-                }}
-              />
-              <p className="text-xs text-gray-400">
-                이름을 입력하지 않으면 생성 날짜({pendingGeneration ? formatDateTime(pendingGeneration.createdAt) : ""})가 표시됩니다.
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              className="border-gray-600 hover:bg-gray-800 hover:text-white"
-              style={{ color: '#E5E7EB' }}
-              onClick={() => {
-                setIsSaveNameDialogOpen(false);
-                setSaveNameInput("");
-                setPendingGeneration(null);
-              }}
-            >
-              취소
-            </Button>
-            <Button
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-              onClick={() => {
-                const savedName = saveNameInput.trim() || null;
-                if (pendingGeneration) {
-                  pushHistory({
-                    ...pendingGeneration,
-                    savedName,
-                  });
-                  toast({
-                    title: "음원 저장 완료",
-                    description: savedName ? `"${savedName}"으로 저장되었습니다.` : "생성 날짜로 저장되었습니다.",
-                  });
-                }
-                setIsSaveNameDialogOpen(false);
-                setSaveNameInput("");
-                setPendingGeneration(null);
-              }}
-            >
-              저장
             </Button>
           </DialogFooter>
         </DialogContent>
