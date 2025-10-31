@@ -277,7 +277,7 @@ const PublicVoiceGenerator = () => {
     { value: "child_male", label: "남아" },
     { value: "child_female", label: "여아" },
   ];
-  const allUseCaseOptions = [
+  const useCaseOptions = [
     { value: "announcement", label: "공지" },
     { value: "public-service", label: "공공서비스" },
     { value: "broadcast", label: "방송" },
@@ -291,30 +291,6 @@ const PublicVoiceGenerator = () => {
     { value: "advertisement", label: "광고" },
     { value: "telephone", label: "전화" },
   ];
-
-  // 실제 음성 목록에서 사용되는 용도만 추출
-  const getAvailableUseCases = useCallback(() => {
-    if (allVoices.length === 0) return [];
-    
-    const normalizeUseCase = (val: string) => (val || "").toLowerCase().replace(/_/g, "-").replace(/\s+/g, "-");
-    const foundUseCases = new Set<string>();
-    
-    allVoices.forEach((v: any) => {
-      const raw = v.use_case ?? v.useCase ?? v.usecases ?? v.useCases ?? "";
-      if (Array.isArray(raw)) {
-        raw.forEach((uc: any) => {
-          const normalized = normalizeUseCase(String(uc));
-          if (normalized) foundUseCases.add(normalized);
-        });
-      } else if (typeof raw === "string" && raw) {
-        const normalized = normalizeUseCase(raw);
-        if (normalized) foundUseCases.add(normalized);
-      }
-    });
-    
-    // 실제 존재하는 용도만 필터링
-    return allUseCaseOptions.filter(opt => foundUseCases.has(opt.value));
-  }, [allVoices]);
 
   const purposeOptions = [
     {
