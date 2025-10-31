@@ -3175,12 +3175,12 @@ const PublicVoiceGenerator = () => {
                     onChange={(e) => setCloneForm((prev) => ({ ...prev, youtubeUrl: e.target.value }))}
                   />
                   {cloneForm.youtubeUrl && (
-                    <div className="flex items-center gap-2 text-xs" style={{ color: '#4B5563' }}>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <Youtube className="w-3 h-3" />
                       <span>유튜브 링크가 입력되었습니다.</span>
                     </div>
                   )}
-                  <p className="text-xs" style={{ color: '#6B7280' }}>
+                  <p className="text-xs text-muted-foreground">
                     유튜브 영상에서 오디오가 자동으로 추출됩니다.
                   </p>
                 </TabsContent>
@@ -3190,7 +3190,6 @@ const PublicVoiceGenerator = () => {
           <DialogFooter>
             <Button
               variant="outline"
-              className="landio-button"
               onClick={() => {
                 setIsCloneModalOpen(false);
                 setCloneForm(createCloneForm({ language: cloneForm.language }));
@@ -3198,7 +3197,7 @@ const PublicVoiceGenerator = () => {
             >
               취소
             </Button>
-            <Button className="landio-button" onClick={handleCloneSubmit}>클로닝 요청</Button>
+            <Button onClick={handleCloneSubmit}>클로닝 요청</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

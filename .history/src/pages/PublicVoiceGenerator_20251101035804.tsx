@@ -3190,7 +3190,6 @@ const PublicVoiceGenerator = () => {
           <DialogFooter>
             <Button
               variant="outline"
-              className="landio-button"
               onClick={() => {
                 setIsCloneModalOpen(false);
                 setCloneForm(createCloneForm({ language: cloneForm.language }));
@@ -3198,7 +3197,7 @@ const PublicVoiceGenerator = () => {
             >
               취소
             </Button>
-            <Button className="landio-button" onClick={handleCloneSubmit}>클로닝 요청</Button>
+            <Button onClick={handleCloneSubmit}>클로닝 요청</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

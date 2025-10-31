@@ -594,20 +594,8 @@ const PublicVoiceGenerator = () => {
     }
 
     const base = getVoiceMeta(cloneForm.baseVoiceId);
-    // 유튜브 비디오 ID 추출
-    const extractYoutubeVideoId = (url: string): string => {
-      const patterns = [
-        /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([^&\n?#]+)/,
-        /youtube\.com\/watch\?.*v=([^&\n?#]+)/
-      ];
-      for (const pattern of patterns) {
-        const match = url.match(pattern);
-        if (match && match[1]) return match[1];
-      }
-      return 'video';
-    };
     const sampleName = cloneForm.sampleType === "youtube" 
-      ? `youtube_${cloneForm.youtubeUrl ? extractYoutubeVideoId(cloneForm.youtubeUrl) : 'video'}.mp3`
+      ? `youtube_${cloneForm.youtubeUrl?.match(/[\w-]{11}/)?.[0] || 'video'}.mp3`
       : (cloneForm.sampleFile?.name || cloneForm.sampleName || "sample.wav");
     const id = generateUniqueId();
     const voiceId = `clone_${id}`;
@@ -3064,13 +3052,13 @@ const PublicVoiceGenerator = () => {
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>새 클론 음성 생성</DialogTitle>
-            <DialogDescription style={{ color: '#374151' }}>
+            <DialogDescription>
               기준 음성과 샘플 음성을 업로드하면, 동일한 톤의 클론 음성을 만들어 음성 목록에 추가합니다.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="clone-target" style={{ color: '#1F2937', fontWeight: 500 }}>대상 이름 *</Label>
+              <Label htmlFor="clone-target">대상 이름 *</Label>
               <Input
                 id="clone-target"
                 placeholder="예: 시장님 공식 음성"
@@ -3079,7 +3067,7 @@ const PublicVoiceGenerator = () => {
               />
             </div>
             <div className="space-y-2">
-              <Label style={{ color: '#1F2937', fontWeight: 500 }}>기준 음성 *</Label>
+              <Label>기준 음성 *</Label>
               <Select
                 value={cloneForm.baseVoiceId || undefined}
                 onValueChange={(value) => {
@@ -3103,7 +3091,7 @@ const PublicVoiceGenerator = () => {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label style={{ color: '#1F2937', fontWeight: 500 }}>주요 언어 *</Label>
+              <Label>주요 언어 *</Label>
               <Select
                 value={cloneForm.language}
                 onValueChange={(value) => setCloneForm((prev) => ({ ...prev, language: value }))}
@@ -3119,7 +3107,7 @@ const PublicVoiceGenerator = () => {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="clone-memo" style={{ color: '#1F2937', fontWeight: 500 }}>메모</Label>
+              <Label htmlFor="clone-memo">메모</Label>
               <Textarea
                 id="clone-memo"
                 placeholder="예: 시장님 축사톤으로 30초 분량"
@@ -3128,69 +3116,24 @@ const PublicVoiceGenerator = () => {
               />
             </div>
             <div className="space-y-2">
-              <Label style={{ color: '#1F2937', fontWeight: 500 }}>샘플 업로드 *</Label>
-              <Tabs 
-                value={cloneForm.sampleType || "file"} 
-                onValueChange={(value) => setCloneForm((prev) => ({ 
-                  ...prev, 
-                  sampleType: value as "file" | "youtube",
-                  sampleFile: value === "file" ? prev.sampleFile : null,
-                  youtubeUrl: value === "youtube" ? prev.youtubeUrl : undefined,
-                  sampleName: value === "file" ? prev.sampleName : undefined,
-                }))}
-              >
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="file" className="flex items-center gap-2">
-                    <Upload className="w-4 h-4" />
-                    파일 업로드
-                  </TabsTrigger>
-                  <TabsTrigger value="youtube" className="flex items-center gap-2">
-                    <Youtube className="w-4 h-4" />
-                    유튜브 링크
-                  </TabsTrigger>
-                </TabsList>
-                <TabsContent value="file" className="space-y-2 mt-4">
-                  <Input
-                    id="clone-sample"
-                    type="file"
-                    accept="audio/*"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0] || null;
-                      setCloneForm((prev) => ({ ...prev, sampleFile: file, sampleName: file?.name }));
-                    }}
-                  />
-                  {cloneForm.sampleName && (
-                    <p className="text-xs" style={{ color: '#4B5563' }}>선택된 파일: {cloneForm.sampleName}</p>
-                  )}
-                  <p className="text-xs" style={{ color: '#6B7280' }}>
-                    지원 형식: WAV, MP3, OGG (최대 50MB)
-                  </p>
-                </TabsContent>
-                <TabsContent value="youtube" className="space-y-2 mt-4">
-                  <Input
-                    id="clone-youtube"
-                    type="url"
-                    placeholder="https://www.youtube.com/watch?v=... 또는 https://youtu.be/..."
-                    value={cloneForm.youtubeUrl || ""}
-                    onChange={(e) => setCloneForm((prev) => ({ ...prev, youtubeUrl: e.target.value }))}
-                  />
-                  {cloneForm.youtubeUrl && (
-                    <div className="flex items-center gap-2 text-xs" style={{ color: '#4B5563' }}>
-                      <Youtube className="w-3 h-3" />
-                      <span>유튜브 링크가 입력되었습니다.</span>
-                    </div>
-                  )}
-                  <p className="text-xs" style={{ color: '#6B7280' }}>
-                    유튜브 영상에서 오디오가 자동으로 추출됩니다.
-                  </p>
-                </TabsContent>
-              </Tabs>
+              <Label htmlFor="clone-sample">샘플 업로드 *</Label>
+              <Input
+                id="clone-sample"
+                type="file"
+                accept="audio/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0] || null;
+                  setCloneForm((prev) => ({ ...prev, sampleFile: file, sampleName: file?.name }));
+                }}
+              />
+              {cloneForm.sampleName && (
+                <p className="text-xs text-muted-foreground">선택된 파일: {cloneForm.sampleName}</p>
+              )}
             </div>
           </div>
           <DialogFooter>
             <Button
               variant="outline"
-              className="landio-button"
               onClick={() => {
                 setIsCloneModalOpen(false);
                 setCloneForm(createCloneForm({ language: cloneForm.language }));
@@ -3198,7 +3141,7 @@ const PublicVoiceGenerator = () => {
             >
               취소
             </Button>
-            <Button className="landio-button" onClick={handleCloneSubmit}>클로닝 요청</Button>
+            <Button onClick={handleCloneSubmit}>클로닝 요청</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
