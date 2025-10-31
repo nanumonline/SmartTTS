@@ -2350,8 +2350,8 @@ const PublicVoiceGenerator = () => {
                           {/* 최적 프롬프트 제안 */}
                           {purposeMeta && purposeMeta.optimizedPrompt && (
                             <AccordionItem value="prompt" className="border border-green-200 rounded-lg bg-green-50 border-b-0">
-                              <AccordionTrigger className="px-3 py-2 hover:no-underline">
-                                <Label className="text-sm font-semibold text-green-900 flex-1">최적 프롬프트 가이드</Label>
+                              <AccordionTrigger className="px-3 py-2 hover:no-underline flex items-center justify-between">
+                                <Label className="text-sm font-semibold text-green-900">최적 프롬프트 가이드</Label>
                               </AccordionTrigger>
                               <AccordionContent className="px-3 pb-3">
                                 <p className="text-xs text-green-800 mb-2">{purposeMeta.optimizedPrompt}</p>

@@ -2312,12 +2312,12 @@ const PublicVoiceGenerator = () => {
                   )}
                 </div>
 
-                {/* 텍스트 입력 및 OpenAI 작성 */}
+                {/* 텍스트 입력 및 OpenAI 보조 */}
                 <div className="space-y-4">
                   <Tabs defaultValue="manual" className="w-full">
                     <TabsList className="grid w-full grid-cols-2">
                       <TabsTrigger value="manual">직접 작성</TabsTrigger>
-                      <TabsTrigger value="ai-assist">OpenAI 작성</TabsTrigger>
+                      <TabsTrigger value="ai-assist">OpenAI 보조</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="manual" className="mt-3 text-xs text-muted-foreground">
@@ -2332,7 +2332,7 @@ const PublicVoiceGenerator = () => {
                           {purposeMeta && purposeMeta.checklist && (
                             <AccordionItem value="checklist" className="border border-blue-200 rounded-lg bg-blue-50 border-b-0">
                               <AccordionTrigger className="px-3 py-2 hover:no-underline">
-                                <Label className="text-sm font-semibold text-blue-900 flex-1">검수 체크리스트</Label>
+                                <Label className="text-sm font-semibold text-blue-900">검수 체크리스트</Label>
                               </AccordionTrigger>
                               <AccordionContent className="px-3 pb-3">
                                 <ul className="space-y-1 text-xs text-blue-800">
@@ -2351,7 +2351,7 @@ const PublicVoiceGenerator = () => {
                           {purposeMeta && purposeMeta.optimizedPrompt && (
                             <AccordionItem value="prompt" className="border border-green-200 rounded-lg bg-green-50 border-b-0">
                               <AccordionTrigger className="px-3 py-2 hover:no-underline">
-                                <Label className="text-sm font-semibold text-green-900 flex-1">최적 프롬프트 가이드</Label>
+                                <Label className="text-sm font-semibold text-green-900">최적 프롬프트 가이드</Label>
                               </AccordionTrigger>
                               <AccordionContent className="px-3 pb-3">
                                 <p className="text-xs text-green-800 mb-2">{purposeMeta.optimizedPrompt}</p>
