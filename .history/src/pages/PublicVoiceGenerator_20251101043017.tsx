@@ -2264,54 +2264,41 @@ const PublicVoiceGenerator = () => {
                     </TabsContent>
 
                     <TabsContent value="ai-assist" className="space-y-4 mt-3">
-                      {/* 검수 체크리스트 및 최적 프롬프트 아코디언 */}
-                      {(purposeMeta?.checklist || purposeMeta?.optimizedPrompt) && (
-                        <Accordion type="multiple" defaultValue={["checklist", "prompt"]} className="space-y-2">
-                          {/* 검수 체크리스트 */}
-                          {purposeMeta && purposeMeta.checklist && (
-                            <AccordionItem value="checklist" className="border border-blue-200 rounded-lg bg-blue-50 border-b-0">
-                              <AccordionTrigger className="px-3 py-2 hover:no-underline">
-                                <Label className="text-sm font-semibold text-blue-900">검수 체크리스트</Label>
-                              </AccordionTrigger>
-                              <AccordionContent className="px-3 pb-3">
-                                <ul className="space-y-1 text-xs text-blue-800">
-                                  {purposeMeta.checklist.map((item, idx) => (
-                                    <li key={idx} className="flex items-start gap-2">
-                                      <span className="text-blue-500 mt-0.5">•</span>
-                                      <span>{item}</span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              </AccordionContent>
-                            </AccordionItem>
-                          )}
+                      {/* 검수 체크리스트 표시 */}
+                      {purposeMeta && purposeMeta.checklist && (
+                        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                          <Label className="text-sm font-semibold text-blue-900 mb-2 block">검수 체크리스트</Label>
+                          <ul className="space-y-1 text-xs text-blue-800">
+                            {purposeMeta.checklist.map((item, idx) => (
+                              <li key={idx} className="flex items-start gap-2">
+                                <span className="text-blue-500 mt-0.5">•</span>
+                                <span>{item}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
 
-                          {/* 최적 프롬프트 제안 */}
-                          {purposeMeta && purposeMeta.optimizedPrompt && (
-                            <AccordionItem value="prompt" className="border border-green-200 rounded-lg bg-green-50 border-b-0">
-                              <AccordionTrigger className="px-3 py-2 hover:no-underline">
-                                <Label className="text-sm font-semibold text-green-900">최적 프롬프트 가이드</Label>
-                              </AccordionTrigger>
-                              <AccordionContent className="px-3 pb-3">
-                                <p className="text-xs text-green-800 mb-2">{purposeMeta.optimizedPrompt}</p>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="text-xs h-7"
-                                  onClick={() => {
-                                    if (aiMode === "generate") {
-                                      setOpenAIPrompt(purposeMeta.optimizedPrompt);
-                                    } else {
-                                      setOpenAIInstruction(purposeMeta.optimizedPrompt);
-                                    }
-                                  }}
-                                >
-                                  프롬프트로 적용
-                                </Button>
-                              </AccordionContent>
-                            </AccordionItem>
-                          )}
-                        </Accordion>
+                      {/* 최적 프롬프트 제안 */}
+                      {purposeMeta && purposeMeta.optimizedPrompt && (
+                        <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                          <Label className="text-sm font-semibold text-green-900 mb-2 block">최적 프롬프트 가이드</Label>
+                          <p className="text-xs text-green-800">{purposeMeta.optimizedPrompt}</p>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="mt-2 text-xs h-7"
+                            onClick={() => {
+                              if (aiMode === "generate") {
+                                setOpenAIPrompt(purposeMeta.optimizedPrompt);
+                              } else {
+                                setOpenAIInstruction(purposeMeta.optimizedPrompt);
+                              }
+                            }}
+                          >
+                            프롬프트로 적용
+                          </Button>
+                        </div>
                       )}
 
                       {/* 모드 선택 */}

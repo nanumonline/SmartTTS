@@ -2269,7 +2269,7 @@ const PublicVoiceGenerator = () => {
                         <Accordion type="multiple" defaultValue={["checklist", "prompt"]} className="space-y-2">
                           {/* 검수 체크리스트 */}
                           {purposeMeta && purposeMeta.checklist && (
-                            <AccordionItem value="checklist" className="border border-blue-200 rounded-lg bg-blue-50 border-b-0">
+                            <AccordionItem value="checklist" className="border border-blue-200 rounded-lg bg-blue-50">
                               <AccordionTrigger className="px-3 py-2 hover:no-underline">
                                 <Label className="text-sm font-semibold text-blue-900">검수 체크리스트</Label>
                               </AccordionTrigger>
@@ -2288,7 +2288,7 @@ const PublicVoiceGenerator = () => {
 
                           {/* 최적 프롬프트 제안 */}
                           {purposeMeta && purposeMeta.optimizedPrompt && (
-                            <AccordionItem value="prompt" className="border border-green-200 rounded-lg bg-green-50 border-b-0">
+                            <AccordionItem value="prompt" className="border border-green-200 rounded-lg bg-green-50">
                               <AccordionTrigger className="px-3 py-2 hover:no-underline">
                                 <Label className="text-sm font-semibold text-green-900">최적 프롬프트 가이드</Label>
                               </AccordionTrigger>
