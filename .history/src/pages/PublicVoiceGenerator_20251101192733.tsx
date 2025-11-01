@@ -4039,36 +4039,16 @@ const PublicVoiceGenerator = () => {
                                   // 메시지 이력 업데이트 또는 새로 저장
                                   const existing = messageHistory.find(m => m.text === customText);
                                   if (existing) {
-                                    // DB에서 업데이트
-                                    if (user?.id && existing.id) {
-                                      await dbService.updateMessage(user.id, existing.id, out);
-                                    }
-                                    
-                                    // 로컬 상태 업데이트
                                     const updated = messageHistory.map(m => 
                                       m.id === existing.id 
                                         ? { ...m, text: out, updatedAt: new Date().toISOString() }
                                         : m
                                     );
                                     setMessageHistory(updated);
-                                    
-                                    // localStorage도 업데이트 (폴백)
-                                    try {
-                                      localStorage.setItem(MESSAGE_HISTORY_STORAGE_KEY, JSON.stringify(updated));
-                                    } catch {}
+                                    localStorage.setItem(MESSAGE_HISTORY_STORAGE_KEY, JSON.stringify(updated));
                                   } else {
-                                    // DB에 새 메시지 저장
-                                    let messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                                    if (user?.id) {
-                                      const dbId = await dbService.saveMessage(user.id, {
-                                        text: out,
-                                        purpose: selectedPurpose,
-                                      });
-                                      if (dbId) messageId = dbId;
-                                    }
-                                    
                                     const newMessage = {
-                                      id: messageId,
+                                      id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                                       text: out,
                                       purpose: selectedPurpose,
                                       createdAt: new Date().toISOString(),
@@ -6318,21 +6298,10 @@ const PublicVoiceGenerator = () => {
                             variant="ghost"
                             size="sm"
                             className="hover:bg-gray-800"
-                            onClick={async () => {
-                              // DB에서 삭제
-                              if (user?.id && msg.id) {
-                                await dbService.deleteMessage(user.id, msg.id);
-                              }
-                              
-                              // 로컬 상태 업데이트
+                            onClick={() => {
                               const updated = messageHistory.filter(m => m.id !== msg.id);
                               setMessageHistory(updated);
-                              
-                              // localStorage도 업데이트 (폴백)
-                              try {
-                                localStorage.setItem(MESSAGE_HISTORY_STORAGE_KEY, JSON.stringify(updated));
-                              } catch {}
-                              
+                              localStorage.setItem(MESSAGE_HISTORY_STORAGE_KEY, JSON.stringify(updated));
                               toast({
                                 title: "메시지 삭제 완료",
                                 description: "메시지가 삭제되었습니다.",

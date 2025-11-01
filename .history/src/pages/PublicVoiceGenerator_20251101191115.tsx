@@ -46,7 +46,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import AudioPlayer from "@/components/AudioPlayer";
-import * as dbService from "@/services/dbService";
 import {
   exportMixToWav,
   decodeUrlToBuffer,
@@ -1403,9 +1402,6 @@ const PublicVoiceGenerator = () => {
     };
   };
 
-  // localStorage 마이그레이션 플래그 (한 번만 실행)
-  const [hasMigratedLocalStorage, setHasMigratedLocalStorage] = useState(false);
-
   const HISTORY_STORAGE_KEY = "tts_generation_history_v1";
   const FAV_STORAGE_KEY = "tts_favorite_voice_ids_v1";
   const PURPOSE_STORAGE_KEY = "tts_selected_purpose_v1";
@@ -1414,263 +1410,6 @@ const PublicVoiceGenerator = () => {
   const SCHEDULE_STORAGE_KEY = "tts_schedule_requests_v1";
   const REVIEW_STORAGE_KEY = "tts_review_states_v1";
   const MESSAGE_HISTORY_STORAGE_KEY = "tts_message_history_v1";
-  const MIGRATION_FLAG_KEY = "tts_db_migration_completed_v1";
-
-  // 데이터베이스에서 데이터 로드
-  const loadDataFromDB = useCallback(async () => {
-    if (!user?.id) return;
-
-    try {
-      // 생성 이력
-      const dbHistory = await dbService.loadGenerations(user.id, 100);
-      if (dbHistory.length > 0) {
-        const normalized = dbHistory.map((item: any) => {
-          // Blob URL 복원
-          let audioUrl: string | null = null;
-          if (item.audioBlob) {
-            const blob = dbService.arrayBufferToBlob(item.audioBlob);
-            audioUrl = URL.createObjectURL(blob);
-            // cacheRef에도 저장
-            if (item.cacheKey) {
-              cacheRef.current.set(item.cacheKey, { blob, _audioUrl: audioUrl });
-            }
-          } else if (item.audioUrl) {
-            audioUrl = item.audioUrl;
-          }
-
-          return {
-            id: item.id || generateUniqueId(),
-            purpose: item.purpose || "announcement",
-            purposeLabel: item.purposeLabel || getPurposeMeta(item.purpose || "announcement").label,
-            voiceId: item.voiceId || "",
-            voiceName: item.voiceName || getVoiceDisplayName(item.voiceId || ""),
-            createdAt: item.createdAt || new Date().toISOString(),
-            duration: item.duration,
-            status: item.status || "ready",
-            hasAudio: item.hasAudio !== false,
-            language: item.language || "",
-            textPreview: item.textPreview || "",
-            cacheKey: item.cacheKey || "",
-            savedName: item.savedName || null,
-            audioUrl,
-          };
-        });
-        setGenerationHistory(normalized);
-      }
-
-      // 즐겨찾기
-      const favorites = await dbService.loadFavorites(user.id);
-      if (favorites.length > 0) {
-        setFavoriteVoiceIds(new Set(favorites));
-      }
-
-      // 사용자 설정
-      const settings = await dbService.loadUserSettings(user.id);
-      if (settings) {
-        if (settings.selectedPurpose) {
-          setSelectedPurpose(settings.selectedPurpose);
-        }
-        // voiceSettings는 나중에 적용
-      }
-
-      // 클론 요청
-      const clones = await dbService.loadCloneRequests(user.id);
-      if (clones.length > 0) {
-        const normalized: CloneRequest[] = clones.map((item: any) => ({
-          id: parseInt(item.id?.replace(/-/g, "").substring(0, 10) || `${Date.now()}`),
-          targetName: item.targetName,
-          baseVoiceId: item.baseVoiceId,
-          baseVoiceName: item.baseVoiceName,
-          language: item.language || "ko",
-          status: item.status === "processing" ? "processing" : "completed",
-          createdAt: item.createdAt || new Date().toISOString(),
-          completedAt: item.completedAt,
-          memo: item.memo || "",
-          sampleName: item.sampleName || "",
-          voiceId: item.voiceId || `clone_${item.id}`,
-          voiceName: item.voiceName || `${item.baseVoiceName} 클론`,
-          gender: item.gender,
-        }));
-        setCloneRequests(normalized);
-        normalized
-          .filter((clone) => clone.status === "completed")
-          .forEach((clone) => registerCloneVoice({ ...clone, status: "completed" }));
-      }
-
-      // 믹싱 상태
-      const mixingMap = await dbService.loadMixingStates(user.id);
-      if (mixingMap.size > 0) {
-        const convertedMap = new Map<number, MixingState>();
-        mixingMap.forEach((value, key) => {
-          const genId = parseInt(key.replace(/-/g, "").substring(0, 10) || `${Date.now()}`);
-          convertedMap.set(genId, value.settings);
-        });
-        setMixingStates(convertedMap);
-      }
-
-      // 예약 요청
-      const schedules = await dbService.loadScheduleRequests(user.id);
-      if (schedules.length > 0) {
-        const normalized: ScheduleRequest[] = schedules.map((item: any) => ({
-          id: parseInt(item.id?.replace(/-/g, "").substring(0, 10) || `${Date.now()}`),
-          generationId: parseInt(item.generationId?.replace(/-/g, "").substring(0, 10) || `${Date.now()}`),
-          targetChannel: item.targetChannel,
-          targetName: item.targetName,
-          scheduledTime: item.scheduledTime,
-          repeatOption: item.repeatOption || "once",
-          status: item.status || "scheduled",
-          createdAt: item.createdAt || new Date().toISOString(),
-          sentAt: item.sentAt,
-          failReason: item.failReason,
-          mixingState: item.mixingState,
-        }));
-        setScheduleRequests(normalized);
-      }
-
-      // 검수 상태
-      const reviewMap = await dbService.loadReviewStates(user.id);
-      if (reviewMap.size > 0) {
-        const convertedMap = new Map<number, ReviewState>();
-        reviewMap.forEach((value, key) => {
-          const genId = parseInt(key.replace(/-/g, "").substring(0, 10) || `${Date.now()}`);
-          convertedMap.set(genId, {
-            generationId: genId,
-            status: value.status,
-            comments: value.comments || "",
-            updatedAt: value.updatedAt || new Date().toISOString(),
-          });
-        });
-        setReviewStates(convertedMap);
-      }
-
-      // 메시지 이력
-      const messages = await dbService.loadMessages(user.id);
-      if (messages.length > 0) {
-        setMessageHistory(messages.sort((a, b) => new Date(b.updatedAt || b.createdAt || "").getTime() - new Date(a.updatedAt || a.createdAt || "").getTime()));
-      }
-    } catch (error: any) {
-      console.error("DB에서 데이터 로드 실패:", error);
-    }
-  }, [user?.id]);
-
-  // localStorage에서 DB로 마이그레이션
-  const migrateLocalStorageToDB = useCallback(async () => {
-    if (!user?.id || hasMigratedLocalStorage) return;
-
-    try {
-      const migrationFlag = localStorage.getItem(MIGRATION_FLAG_KEY);
-      if (migrationFlag === "true") {
-        setHasMigratedLocalStorage(true);
-        return;
-      }
-
-      console.log("LocalStorage에서 DB로 데이터 마이그레이션 시작...");
-
-      // 생성 이력 마이그레이션
-      const historyRaw = localStorage.getItem(HISTORY_STORAGE_KEY);
-      if (historyRaw) {
-        const parsed = JSON.parse(historyRaw);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          for (const item of parsed) {
-            const entry: dbService.GenerationEntry = {
-              purpose: item.purpose || "announcement",
-              purposeLabel: item.purposeLabel || getPurposeMeta(item.purpose || "announcement").label,
-              voiceId: item.voiceId || item.voice_id || "",
-              voiceName: item.voiceName || getVoiceDisplayName(item.voiceId || item.voice_id || ""),
-              savedName: item.savedName || null,
-              textPreview: item.textPreview || item.text || "",
-              textLength: item.textPreview?.length || item.text?.length || 0,
-              duration: item.duration || null,
-              language: item.language || "ko",
-              cacheKey: item.cacheKey || item.key || "",
-              audioUrl: item.audioUrl || null,
-              status: item.status || (item.hasAudio === false ? "mock" : "ready"),
-              hasAudio: typeof item.hasAudio === "boolean" ? item.hasAudio : true,
-            };
-
-            // audioBlob 복원 시도
-            if (item.cacheKey || item.key) {
-              const cached = cacheRef.current.get(item.cacheKey || item.key || "");
-              if (cached?.blob) {
-                entry.audioBlob = await cached.blob.arrayBuffer();
-              }
-            }
-
-            await dbService.saveGeneration(user.id, entry, cached?.blob);
-          }
-        }
-      }
-
-      // 즐겨찾기 마이그레이션
-      const favRaw = localStorage.getItem(FAV_STORAGE_KEY);
-      if (favRaw) {
-        const ids: string[] = JSON.parse(favRaw);
-        if (Array.isArray(ids)) {
-          for (const voiceId of ids) {
-            await dbService.addFavorite(user.id, voiceId);
-          }
-        }
-      }
-
-      // 사용자 설정 마이그레이션
-      const purposeRaw = localStorage.getItem(PURPOSE_STORAGE_KEY);
-      if (purposeRaw) {
-        await dbService.saveUserSettings(user.id, { selectedPurpose: purposeRaw });
-      }
-
-      // 클론 요청 마이그레이션
-      const cloneRaw = localStorage.getItem(CLONE_STORAGE_KEY);
-      if (cloneRaw) {
-        const parsed = JSON.parse(cloneRaw);
-        if (Array.isArray(parsed)) {
-          for (const item of parsed) {
-            const entry: dbService.CloneRequestEntry = {
-              targetName: item.targetName || item.target_name || "",
-              baseVoiceId: item.baseVoiceId || item.base_voice_id || "",
-              baseVoiceName: item.baseVoiceName || item.base_voice_name || "",
-              language: item.language || "ko",
-              memo: item.memo || "",
-              sampleName: item.sampleName || item.sample_name || "",
-              voiceId: item.voiceId || item.voice_id || "",
-              voiceName: item.voiceName || item.voice_name || "",
-              gender: item.gender,
-              status: item.status || "processing",
-              completedAt: item.completedAt || item.completed_at,
-            };
-            await dbService.saveCloneRequest(user.id, entry);
-          }
-        }
-      }
-
-      // 메시지 이력 마이그레이션
-      const messageRaw = localStorage.getItem(MESSAGE_HISTORY_STORAGE_KEY);
-      if (messageRaw) {
-        const parsed = JSON.parse(messageRaw);
-        if (Array.isArray(parsed)) {
-          for (const item of parsed) {
-            await dbService.saveMessage(user.id, {
-              text: item.text || "",
-              purpose: item.purpose || "announcement",
-            });
-          }
-        }
-      }
-
-      // 마이그레이션 완료 플래그 설정
-      localStorage.setItem(MIGRATION_FLAG_KEY, "true");
-      setHasMigratedLocalStorage(true);
-      console.log("LocalStorage 마이그레이션 완료");
-      
-      toast({
-        title: "데이터베이스 마이그레이션 완료",
-        description: "모든 데이터가 안전하게 저장되었습니다.",
-      });
-    } catch (error: any) {
-      console.error("마이그레이션 실패:", error);
-    }
-  }, [user?.id, hasMigratedLocalStorage]);
-
-  // 초기 로드: DB에서 데이터 가져오기 또는 localStorage에서 로드
   useEffect(() => {
     try {
       const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
@@ -1762,17 +1501,12 @@ const PublicVoiceGenerator = () => {
   }, []);
 
   useEffect(() => {
-    if (user?.id && selectedPurpose) {
-      // DB에 저장
-      dbService.saveUserSettings(user.id, { selectedPurpose }).catch(err => console.error("설정 저장 실패:", err));
-    }
-    // localStorage도 업데이트 (폴백)
     try {
       if (selectedPurpose) {
         localStorage.setItem(PURPOSE_STORAGE_KEY, selectedPurpose);
       }
     } catch {}
-  }, [selectedPurpose, user?.id]);
+  }, [selectedPurpose]);
 
   useEffect(() => {
     try {
@@ -1822,73 +1556,22 @@ const PublicVoiceGenerator = () => {
     } catch {}
   }, [mixingStates, scheduleRequests, reviewStates]);
 
-  const pushHistory = async (entry: any) => {
-    if (!user?.id) {
-      // 로그인하지 않은 경우 localStorage에만 저장 (임시)
-      try {
-        const next = [entry, ...generationHistory].slice(0, 100);
-        setGenerationHistory(next);
-        localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(next));
-      } catch {}
-      return;
-    }
-
+  const pushHistory = (entry: any) => {
     try {
-      // DB에 저장
-      const audioBlob = entry.cacheKey ? cacheRef.current.get(entry.cacheKey)?.blob : null;
-      const dbEntry: dbService.GenerationEntry = {
-        purpose: entry.purpose || "announcement",
-        purposeLabel: entry.purposeLabel,
-        voiceId: entry.voiceId || "",
-        voiceName: entry.voiceName,
-        savedName: entry.savedName || null,
-        textPreview: entry.textPreview || "",
-        textLength: entry.textPreview?.length || 0,
-        duration: entry.duration || null,
-        language: entry.language || "ko",
-        cacheKey: entry.cacheKey || "",
-        audioUrl: entry.audioUrl || null,
-        status: entry.status || "ready",
-        hasAudio: entry.hasAudio !== false,
-      };
-      const dbId = await dbService.saveGeneration(user.id, dbEntry, audioBlob);
-      
-      // 로컬 상태 업데이트
-      const next = [{ ...entry, id: dbId || entry.id }, ...generationHistory].slice(0, 100);
+      const next = [entry, ...generationHistory].slice(0, 100);
       setGenerationHistory(next);
-    } catch (error: any) {
-      console.error("생성 이력 저장 실패:", error);
-      // 실패 시 localStorage에 저장 (폴백)
-      try {
-        const next = [entry, ...generationHistory].slice(0, 100);
-        setGenerationHistory(next);
-        localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(next));
-      } catch {}
-    }
+      localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(next));
+    } catch {}
   };
 
   // 음원 삭제 확인
   const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{ open: boolean; id: number | null }>({ open: false, id: null });
 
   // 음원 삭제
-  const deleteGeneration = async (id: number) => {
-    if (user?.id) {
-      // DB에서 삭제
-      const entry = generationHistory.find((g) => g.id === id);
-      if (entry && typeof entry.id === "string") {
-        await dbService.deleteGeneration(user.id, entry.id);
-      }
-    }
-
-    // 로컬 상태 업데이트
+  const deleteGeneration = (id: number) => {
     const updated = generationHistory.filter((g) => g.id !== id);
     setGenerationHistory(updated);
-    
-    // localStorage도 업데이트 (폴백)
-    try {
-      localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(updated));
-    } catch {}
-    
+    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(updated));
     setDeleteConfirmDialog({ open: false, id: null });
     toast({
       title: "음원 삭제 완료",
@@ -1897,26 +1580,12 @@ const PublicVoiceGenerator = () => {
   };
 
   // 음원 이름 편집
-  const editGenerationName = async (id: number, newName: string | null) => {
-    if (user?.id) {
-      // DB에서 업데이트
-      const entry = generationHistory.find((g) => g.id === id);
-      if (entry && typeof entry.id === "string") {
-        await dbService.updateGeneration(user.id, entry.id, { savedName: newName });
-      }
-    }
-
-    // 로컬 상태 업데이트
+  const editGenerationName = (id: number, newName: string | null) => {
     const updated = generationHistory.map((g) =>
       g.id === id ? { ...g, savedName: newName } : g
     );
     setGenerationHistory(updated);
-    
-    // localStorage도 업데이트 (폴백)
-    try {
-      localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(updated));
-    } catch {}
-    
+    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(updated));
     setEditingGenerationId(null);
     setEditNameInput("");
     toast({
@@ -1992,26 +1661,10 @@ const PublicVoiceGenerator = () => {
     return [voiceId, language, model, style, speed.toFixed(2), pitchShift, text].join("::");
   };
 
-  const toggleFavorite = async (voiceId: string) => {
+  const toggleFavorite = (voiceId: string) => {
     setFavoriteVoiceIds(prev => {
       const next = new Set(prev);
-      const isFavorite = next.has(voiceId);
-      
-      if (isFavorite) {
-        next.delete(voiceId);
-        // DB에서 제거
-        if (user?.id) {
-          dbService.removeFavorite(user.id, voiceId).catch(err => console.error("즐겨찾기 제거 실패:", err));
-        }
-      } else {
-        next.add(voiceId);
-        // DB에 추가
-        if (user?.id) {
-          dbService.addFavorite(user.id, voiceId).catch(err => console.error("즐겨찾기 추가 실패:", err));
-        }
-      }
-      
-      // localStorage도 업데이트 (폴백)
+      if (next.has(voiceId)) next.delete(voiceId); else next.add(voiceId);
       try { localStorage.setItem(FAV_STORAGE_KEY, JSON.stringify(Array.from(next))); } catch {}
       return next;
     });
@@ -2323,11 +1976,6 @@ const PublicVoiceGenerator = () => {
             });
           }
         }
-        
-        // 음성 카탈로그 동기화 (일별, 백그라운드)
-        dbService.syncVoiceCatalog(allVoices.length > 0 ? allVoices : voices).catch(err => 
-          console.error("음성 카탈로그 동기화 실패:", err)
-        );
       } else if (response) {
         console.warn("음성 목록 로드 실패(프록시):", await response.text());
         setVoiceLoadingProgress(0);
@@ -2512,11 +2160,6 @@ const PublicVoiceGenerator = () => {
             loadFavoriteVoices();
           }, 500);
         }
-        
-        // 음성 카탈로그 동기화 (모든 음성 로드 완료 후)
-        dbService.syncVoiceCatalog(allVoices).catch(err => 
-          console.error("음성 카탈로그 동기화 실패:", err)
-        );
       } else if (showToast && token) {
         // maxPages에 도달했지만 아직 더 있음
         const currentCount = allVoices.length;
@@ -2734,18 +2377,11 @@ const PublicVoiceGenerator = () => {
     }
   }, [favoriteVoiceIds, fetchWithSupabaseProxy, allVoices, availableVoices]);
 
-  // 컴포넌트 마운트 시 데이터 로드 및 마이그레이션
+  // 컴포넌트 마운트 시 음성 목록 로드
   useEffect(() => {
-    if (user?.id) {
-      // DB에서 데이터 로드
-      loadDataFromDB().then(() => {
-        // 마이그레이션 실행
-        migrateLocalStorageToDB();
-      });
-    }
     fetchVoices();
     startUsagePolling();
-  }, [user?.id, loadDataFromDB, migrateLocalStorageToDB]);
+  }, []);
 
   // allVoices 변경 시 진행률 업데이트 (자동 로드 중일 때)
   useEffect(() => {
@@ -4039,36 +3675,16 @@ const PublicVoiceGenerator = () => {
                                   // 메시지 이력 업데이트 또는 새로 저장
                                   const existing = messageHistory.find(m => m.text === customText);
                                   if (existing) {
-                                    // DB에서 업데이트
-                                    if (user?.id && existing.id) {
-                                      await dbService.updateMessage(user.id, existing.id, out);
-                                    }
-                                    
-                                    // 로컬 상태 업데이트
                                     const updated = messageHistory.map(m => 
                                       m.id === existing.id 
                                         ? { ...m, text: out, updatedAt: new Date().toISOString() }
                                         : m
                                     );
                                     setMessageHistory(updated);
-                                    
-                                    // localStorage도 업데이트 (폴백)
-                                    try {
-                                      localStorage.setItem(MESSAGE_HISTORY_STORAGE_KEY, JSON.stringify(updated));
-                                    } catch {}
+                                    localStorage.setItem(MESSAGE_HISTORY_STORAGE_KEY, JSON.stringify(updated));
                                   } else {
-                                    // DB에 새 메시지 저장
-                                    let messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                                    if (user?.id) {
-                                      const dbId = await dbService.saveMessage(user.id, {
-                                        text: out,
-                                        purpose: selectedPurpose,
-                                      });
-                                      if (dbId) messageId = dbId;
-                                    }
-                                    
                                     const newMessage = {
-                                      id: messageId,
+                                      id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                                       text: out,
                                       purpose: selectedPurpose,
                                       createdAt: new Date().toISOString(),
@@ -6318,21 +5934,10 @@ const PublicVoiceGenerator = () => {
                             variant="ghost"
                             size="sm"
                             className="hover:bg-gray-800"
-                            onClick={async () => {
-                              // DB에서 삭제
-                              if (user?.id && msg.id) {
-                                await dbService.deleteMessage(user.id, msg.id);
-                              }
-                              
-                              // 로컬 상태 업데이트
+                            onClick={() => {
                               const updated = messageHistory.filter(m => m.id !== msg.id);
                               setMessageHistory(updated);
-                              
-                              // localStorage도 업데이트 (폴백)
-                              try {
-                                localStorage.setItem(MESSAGE_HISTORY_STORAGE_KEY, JSON.stringify(updated));
-                              } catch {}
-                              
+                              localStorage.setItem(MESSAGE_HISTORY_STORAGE_KEY, JSON.stringify(updated));
                               toast({
                                 title: "메시지 삭제 완료",
                                 description: "메시지가 삭제되었습니다.",

@@ -1762,17 +1762,12 @@ const PublicVoiceGenerator = () => {
   }, []);
 
   useEffect(() => {
-    if (user?.id && selectedPurpose) {
-      // DB에 저장
-      dbService.saveUserSettings(user.id, { selectedPurpose }).catch(err => console.error("설정 저장 실패:", err));
-    }
-    // localStorage도 업데이트 (폴백)
     try {
       if (selectedPurpose) {
         localStorage.setItem(PURPOSE_STORAGE_KEY, selectedPurpose);
       }
     } catch {}
-  }, [selectedPurpose, user?.id]);
+  }, [selectedPurpose]);
 
   useEffect(() => {
     try {
@@ -1897,26 +1892,12 @@ const PublicVoiceGenerator = () => {
   };
 
   // 음원 이름 편집
-  const editGenerationName = async (id: number, newName: string | null) => {
-    if (user?.id) {
-      // DB에서 업데이트
-      const entry = generationHistory.find((g) => g.id === id);
-      if (entry && typeof entry.id === "string") {
-        await dbService.updateGeneration(user.id, entry.id, { savedName: newName });
-      }
-    }
-
-    // 로컬 상태 업데이트
+  const editGenerationName = (id: number, newName: string | null) => {
     const updated = generationHistory.map((g) =>
       g.id === id ? { ...g, savedName: newName } : g
     );
     setGenerationHistory(updated);
-    
-    // localStorage도 업데이트 (폴백)
-    try {
-      localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(updated));
-    } catch {}
-    
+    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(updated));
     setEditingGenerationId(null);
     setEditNameInput("");
     toast({
@@ -1992,26 +1973,10 @@ const PublicVoiceGenerator = () => {
     return [voiceId, language, model, style, speed.toFixed(2), pitchShift, text].join("::");
   };
 
-  const toggleFavorite = async (voiceId: string) => {
+  const toggleFavorite = (voiceId: string) => {
     setFavoriteVoiceIds(prev => {
       const next = new Set(prev);
-      const isFavorite = next.has(voiceId);
-      
-      if (isFavorite) {
-        next.delete(voiceId);
-        // DB에서 제거
-        if (user?.id) {
-          dbService.removeFavorite(user.id, voiceId).catch(err => console.error("즐겨찾기 제거 실패:", err));
-        }
-      } else {
-        next.add(voiceId);
-        // DB에 추가
-        if (user?.id) {
-          dbService.addFavorite(user.id, voiceId).catch(err => console.error("즐겨찾기 추가 실패:", err));
-        }
-      }
-      
-      // localStorage도 업데이트 (폴백)
+      if (next.has(voiceId)) next.delete(voiceId); else next.add(voiceId);
       try { localStorage.setItem(FAV_STORAGE_KEY, JSON.stringify(Array.from(next))); } catch {}
       return next;
     });
@@ -2323,11 +2288,6 @@ const PublicVoiceGenerator = () => {
             });
           }
         }
-        
-        // 음성 카탈로그 동기화 (일별, 백그라운드)
-        dbService.syncVoiceCatalog(allVoices.length > 0 ? allVoices : voices).catch(err => 
-          console.error("음성 카탈로그 동기화 실패:", err)
-        );
       } else if (response) {
         console.warn("음성 목록 로드 실패(프록시):", await response.text());
         setVoiceLoadingProgress(0);
@@ -2512,11 +2472,6 @@ const PublicVoiceGenerator = () => {
             loadFavoriteVoices();
           }, 500);
         }
-        
-        // 음성 카탈로그 동기화 (모든 음성 로드 완료 후)
-        dbService.syncVoiceCatalog(allVoices).catch(err => 
-          console.error("음성 카탈로그 동기화 실패:", err)
-        );
       } else if (showToast && token) {
         // maxPages에 도달했지만 아직 더 있음
         const currentCount = allVoices.length;
@@ -4039,36 +3994,16 @@ const PublicVoiceGenerator = () => {
                                   // 메시지 이력 업데이트 또는 새로 저장
                                   const existing = messageHistory.find(m => m.text === customText);
                                   if (existing) {
-                                    // DB에서 업데이트
-                                    if (user?.id && existing.id) {
-                                      await dbService.updateMessage(user.id, existing.id, out);
-                                    }
-                                    
-                                    // 로컬 상태 업데이트
                                     const updated = messageHistory.map(m => 
                                       m.id === existing.id 
                                         ? { ...m, text: out, updatedAt: new Date().toISOString() }
                                         : m
                                     );
                                     setMessageHistory(updated);
-                                    
-                                    // localStorage도 업데이트 (폴백)
-                                    try {
-                                      localStorage.setItem(MESSAGE_HISTORY_STORAGE_KEY, JSON.stringify(updated));
-                                    } catch {}
+                                    localStorage.setItem(MESSAGE_HISTORY_STORAGE_KEY, JSON.stringify(updated));
                                   } else {
-                                    // DB에 새 메시지 저장
-                                    let messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                                    if (user?.id) {
-                                      const dbId = await dbService.saveMessage(user.id, {
-                                        text: out,
-                                        purpose: selectedPurpose,
-                                      });
-                                      if (dbId) messageId = dbId;
-                                    }
-                                    
                                     const newMessage = {
-                                      id: messageId,
+                                      id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                                       text: out,
                                       purpose: selectedPurpose,
                                       createdAt: new Date().toISOString(),
@@ -6318,21 +6253,10 @@ const PublicVoiceGenerator = () => {
                             variant="ghost"
                             size="sm"
                             className="hover:bg-gray-800"
-                            onClick={async () => {
-                              // DB에서 삭제
-                              if (user?.id && msg.id) {
-                                await dbService.deleteMessage(user.id, msg.id);
-                              }
-                              
-                              // 로컬 상태 업데이트
+                            onClick={() => {
                               const updated = messageHistory.filter(m => m.id !== msg.id);
                               setMessageHistory(updated);
-                              
-                              // localStorage도 업데이트 (폴백)
-                              try {
-                                localStorage.setItem(MESSAGE_HISTORY_STORAGE_KEY, JSON.stringify(updated));
-                              } catch {}
-                              
+                              localStorage.setItem(MESSAGE_HISTORY_STORAGE_KEY, JSON.stringify(updated));
                               toast({
                                 title: "메시지 삭제 완료",
                                 description: "메시지가 삭제되었습니다.",
