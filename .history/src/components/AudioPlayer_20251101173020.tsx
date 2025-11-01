@@ -32,26 +32,19 @@ const AudioPlayer = ({
     const audio = audioRef.current;
     if (!audio) return;
 
-    // audioUrl이 변경되면 src 업데이트
-    if (audio.src !== audioUrl) {
-      audio.src = audioUrl || '';
-      audio.load(); // 새 소스 로드
-    }
-
     const updateTime = () => setCurrentTime(audio.currentTime);
     const handleEnded = () => setIsPlaying(false);
     const handleLoadStart = () => setIsLoading(true);
     const handleCanPlay = () => setIsLoading(false);
     const handleError = (e: any) => {
-      console.warn('Audio loading/playing error:', e);
+      console.warn('Audio loading error:', e);
       setIsLoading(false);
-      setIsPlaying(false);
       // blob URL이 만료되었을 수 있음
       if (audioUrl.startsWith('blob:')) {
         console.warn('Blob URL may have expired:', audioUrl);
         // onError 콜백이 있으면 호출 (부모에서 복원 시도)
         if (onError) {
-          setTimeout(() => onError(), 100); // 약간의 딜레이로 복원 시도
+          onError();
         }
       }
     };
@@ -69,7 +62,7 @@ const AudioPlayer = ({
       audio.removeEventListener('canplay', handleCanPlay);
       audio.removeEventListener('error', handleError);
     };
-  }, [audioUrl, onError]);
+  }, [audioUrl]);
 
   const togglePlayPause = async () => {
     const audio = audioRef.current;

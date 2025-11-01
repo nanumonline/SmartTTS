@@ -4008,39 +4008,6 @@ const PublicVoiceGenerator = () => {
                                   audioUrl={audioUrl}
                                   title={entry.savedName || formatDateTime(entry.createdAt)}
                                   duration={entry.duration || 0}
-                                  cacheKey={entry.cacheKey}
-                                  onError={async () => {
-                                    // blob URL이 만료된 경우 복원 시도
-                                    if (entry.cacheKey) {
-                                      const cached = cacheRef.current.get(entry.cacheKey);
-                                      if (cached?.blob) {
-                                        // blob 데이터가 있으면 새 URL 생성
-                                        const newUrl = URL.createObjectURL(cached.blob);
-                                        setGenerationHistory((prev) => 
-                                          prev.map((g) => 
-                                            g.id === entry.id ? { ...g, audioUrl: newUrl } : g
-                                          )
-                                        );
-                                        toast({
-                                          title: "음원 복원 완료",
-                                          description: "만료된 음원을 복원했습니다.",
-                                        });
-                                      } else {
-                                        // cacheRef에 blob 데이터가 없는 경우 - 복원 불가능
-                                        toast({
-                                          title: "음원 복원 불가",
-                                          description: "음원 데이터를 찾을 수 없습니다. 페이지를 새로고침하여 다시 시도해주세요.",
-                                          variant: "destructive",
-                                        });
-                                      }
-                                    } else {
-                                      toast({
-                                        title: "음원 복원 불가",
-                                        description: "음원을 복원할 수 없습니다. 다시 생성해주세요.",
-                                        variant: "destructive",
-                                      });
-                                    }
-                                  }}
                                 />
                               </div>
                             ) : (
