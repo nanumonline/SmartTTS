@@ -3011,9 +3011,9 @@ const PublicVoiceGenerator = () => {
   }, []);
 
 
-  // 클론 음성 미리듣기 생성 함수 (기준 음성을 사용)
+  // 클론 음성 미리듣기 생성 함수
   const handleClonePreview = async (clone: CloneRequest) => {
-    if (clone.status !== "completed") {
+    if (!clone.voiceId || clone.status !== "completed") {
       toast({
         title: "미리듣기 불가",
         description: "완료된 클론 음성만 미리듣기가 가능합니다.",
@@ -3032,17 +3032,6 @@ const PublicVoiceGenerator = () => {
       return;
     }
 
-    // 클론 음성은 기준 음성을 사용 (클론 voice_id는 가짜이므로)
-    const baseVoiceId = clone.baseVoiceId;
-    if (!baseVoiceId) {
-      toast({
-        title: "기준 음성 없음",
-        description: "기준 음성 정보가 없어 미리듣기를 생성할 수 없습니다.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     setIsGeneratingClonePreview(prev => ({ ...prev, [clone.id]: true }));
 
     try {
@@ -3051,7 +3040,7 @@ const PublicVoiceGenerator = () => {
         URL.revokeObjectURL(clonePreviewAudio[clone.id]!);
       }
 
-      // 기준 음성으로 TTS 생성 (클론 음성은 기준 음성을 사용)
+      // 클론 음성으로 TTS 생성
       const requestBody = {
         text: previewText,
         language: clone.language || "ko",
@@ -3064,22 +3053,13 @@ const PublicVoiceGenerator = () => {
         },
       };
 
-      const proxyResponse = await fetchWithSupabaseProxy(`/text-to-speech/${baseVoiceId}?output_format=mp3`, {
+      const proxyResponse = await fetchWithSupabaseProxy(`/text-to-speech/${clone.voiceId}?output_format=mp3`, {
         method: "POST",
-        body: JSON.stringify({ ...requestBody, voice_id: baseVoiceId }),
+        body: JSON.stringify({ ...requestBody, voice_id: clone.voiceId }),
       });
 
       if (!proxyResponse?.ok) {
-        let errorMsg = `TTS 생성 실패 (${proxyResponse?.status || 'unknown'})`;
-        try {
-          const errorJson = await proxyResponse.clone().json();
-          const detail = errorJson?.error?.message || errorJson?.error || errorJson?.message || errorJson?.detail;
-          if (detail) errorMsg += `: ${formatErrorDetail(detail)}`;
-        } catch {
-          const text = await proxyResponse.text();
-          if (text) errorMsg += `: ${text}`;
-        }
-        throw new Error(errorMsg);
+        throw new Error(`TTS 생성 실패 (${proxyResponse?.status || 'unknown'})`);
       }
 
       const audioResult = await parseSupertoneResponse(proxyResponse);
@@ -5256,32 +5236,33 @@ const PublicVoiceGenerator = () => {
                     const isFavorite = favoriteVoiceIds.has(clone.voiceId);
                     const languageLabel = languageCodeToKo(clone.language);
                     return (
-                      <div key={clone.id} className="rounded-xl border border-border bg-muted/20 p-4 grid gap-4 md:grid-cols-[200px_1fr_250px] items-start transition-all hover:shadow-md" style={{ borderRadius: '12px' }}>
-                        {/* 왼쪽: 상태 및 기본 정보 */}
-                        <div className="space-y-2">
-                          <Badge variant={clone.status === "completed" ? "default" : "outline"} className="w-fit">
-                            {clone.status === "completed" ? "완료" : "진행중"}
-                          </Badge>
+                      <div key={clone.id} className="rounded-xl border border-border bg-muted/20 p-3 grid gap-3 md:grid-cols-[150px_minmax(0,1fr)_180px_180px] items-center transition-all hover:shadow-md" style={{ borderRadius: '12px' }}>
+                        <div className="space-y-1">
+                          <Badge variant={clone.status === "completed" ? "default" : "outline"}>{clone.status === "completed" ? "완료" : "진행중"}</Badge>
                           <div className="text-xs text-muted-foreground">{formatDateTime(clone.createdAt)}</div>
                         </div>
-                        
-                        {/* 중앙: 음성 이름, 기준 음성, 언어, 미리듣기 입력 */}
-                        <div className="space-y-3">
-                          <div className="space-y-1">
-                            <div className="text-sm font-medium text-white">{clone.voiceName}</div>
-                            <div className="text-xs text-muted-foreground">기준 음성: {clone.baseVoiceName || "-"}</div>
-                            <div className="text-xs text-muted-foreground">언어: {languageLabel}</div>
-                          </div>
-                          
+                        <div className="space-y-1">
+                          <div className="text-sm font-medium">{clone.voiceName}</div>
+                          <div className="text-xs text-muted-foreground">기준 음성: {clone.baseVoiceName || "-"}</div>
+                          <div className="text-xs text-muted-foreground">언어: {languageLabel}</div>
+                        </div>
+                        <div className="space-y-1 text-xs text-muted-foreground">
+                          <div>샘플: {clone.sampleName || "-"}</div>
+                          <div>메모: {clone.memo || "-"}</div>
+                          {clone.completedAt && (
+                            <div>완료: {formatDateTime(clone.completedAt)}</div>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-2 justify-end">
                           {/* 클론 음성 미리듣기 (완료된 경우에만) */}
                           {clone.status === "completed" && (
-                            <div className="space-y-2">
+                            <div className="flex flex-col gap-2 w-full md:w-auto">
                               <Input
                                 type="text"
                                 placeholder="미리듣기 텍스트 입력..."
                                 value={clonePreviewText[clone.id] || ""}
                                 onChange={(e) => setClonePreviewText(prev => ({ ...prev, [clone.id]: e.target.value }))}
-                                className="h-10 text-sm"
+                                className="h-8 text-xs"
                                 onKeyDown={(e) => {
                                   if (e.key === "Enter" && !e.shiftKey) {
                                     e.preventDefault();
@@ -5289,78 +5270,79 @@ const PublicVoiceGenerator = () => {
                                   }
                                 }}
                               />
-                              {clonePreviewAudio[clone.id] && (
-                                <AudioPlayer
-                                  audioUrl={clonePreviewAudio[clone.id]!}
-                                  title={`${clone.voiceName} 미리듣기`}
-                                  duration={0}
-                                />
-                              )}
-                            </div>
-                          )}
-                        </div>
-                        
-                        {/* 오른쪽: 샘플 정보 및 액션 버튼 */}
-                        <div className="space-y-3">
-                          <div className="space-y-1 text-xs text-muted-foreground">
-                            <div>샘플: {clone.sampleName || "-"}</div>
-                            <div>메모: {clone.memo || "-"}</div>
-                            {clone.completedAt && (
-                              <div>완료: {formatDateTime(clone.completedAt)}</div>
-                            )}
-                          </div>
-                          
-                          <div className="flex flex-col gap-2">
-                            {/* 미리듣기 버튼 (완료된 경우에만) */}
-                            {clone.status === "completed" && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="landio-button w-full justify-start"
-                                disabled={!clonePreviewText[clone.id]?.trim() || isGeneratingClonePreview[clone.id]}
-                                onClick={() => handleClonePreview(clone)}
-                              >
-                                {isGeneratingClonePreview[clone.id] ? (
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="landio-button text-xs"
+                                  disabled={!clonePreviewText[clone.id]?.trim() || isGeneratingClonePreview[clone.id]}
+                                  onClick={() => handleClonePreview(clone)}
+                                >
+                                  {isGeneratingClonePreview[clone.id] ? (
+                                    <>
+                                      <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-current mr-1"></div>
+                                      생성 중...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Play className="w-3 h-3 mr-1" />
+                                      미리듣기
+                                    </>
+                                  )}
+                                </Button>
+                                {clonePreviewAudio[clone.id] && (
                                   <>
-                                    <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-current mr-2"></div>
-                                    생성 중...
-                                  </>
-                                ) : (
-                                  <>
-                                    <Play className="w-3 h-3 mr-2" />
-                                    미리듣기
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="text-xs h-7"
+                                      onClick={() => {
+                                        setClonePreviewAudio(prev => {
+                                          const newState = { ...prev };
+                                          if (newState[clone.id]) {
+                                            URL.revokeObjectURL(newState[clone.id]!);
+                                            delete newState[clone.id];
+                                          }
+                                          return newState;
+                                        });
+                                      }}
+                                    >
+                                      ✕
+                                    </Button>
+                                    <AudioPlayer
+                                      audioUrl={clonePreviewAudio[clone.id]!}
+                                      title={`${clone.voiceName} 미리듣기`}
+                                      duration={0}
+                                      className="flex-1"
+                                    />
                                   </>
                                 )}
-                              </Button>
-                            )}
-                            
-                            {/* 즐겨찾기 및 사용하기 버튼 */}
-                            <div className="flex gap-2">
-                              <Button
-                                size="sm"
-                                variant={isFavorite ? "default" : "outline"}
-                                className="landio-button flex-1"
-                                onClick={() => toggleFavorite(clone.voiceId)}
-                              >
-                                {isFavorite ? "즐겨찾기 해제" : "즐겨찾기"}
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="landio-button flex-1"
-                                disabled={clone.status !== "completed"}
-                                onClick={() => {
-                                  if (clone.status !== "completed") return;
-                                  setSelectedVoice(clone.voiceId);
-                                  const meta = getVoiceMeta(clone.voiceId);
-                                  setSelectedVoiceInfo(meta || null);
-                                  toast({ title: "클론 음성 선택", description: `${clone.voiceName} 음성을 선택했습니다.` });
-                                }}
-                              >
-                                사용하기
-                              </Button>
+                              </div>
                             </div>
-                          </div>
+                          )}
+                          <Button
+                            size="sm"
+                            variant={isFavorite ? "default" : "outline"}
+                            className="landio-button"
+                            onClick={() => toggleFavorite(clone.voiceId)}
+                          >
+                            {isFavorite ? "즐겨찾기 해제" : "즐겨찾기"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="landio-button"
+                            disabled={clone.status !== "completed"}
+                            onClick={() => {
+                              if (clone.status !== "completed") return;
+                              setSelectedVoice(clone.voiceId);
+                              const meta = getVoiceMeta(clone.voiceId);
+                              setSelectedVoiceInfo(meta || null);
+                              toast({ title: "클론 음성 선택", description: `${clone.voiceName} 음성을 선택했습니다.` });
+                            }}
+                          >
+                            사용하기
+                          </Button>
                         </div>
                       </div>
                     );
