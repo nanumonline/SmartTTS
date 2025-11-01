@@ -3000,7 +3000,7 @@ const PublicVoiceGenerator = () => {
 
                   {/* 템플릿 변수 입력 */}
                   {selectedTemplate && selectedTemplateObj && Object.keys(templateVariables).length > 0 && (
-                    <div id="template-variable-input" className="space-y-3 p-4 border rounded-lg bg-blue-50/50" tabIndex={-1}>
+                    <div className="space-y-3 p-4 border rounded-lg bg-blue-50/50">
                       <Label className="text-sm font-semibold">템플릿 변수 입력</Label>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {Object.keys(templateVariables).map((varName) => {

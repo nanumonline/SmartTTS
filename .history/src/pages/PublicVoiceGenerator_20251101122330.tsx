@@ -2067,9 +2067,24 @@ const PublicVoiceGenerator = () => {
     return data.text;
   }
 
-  // 실제 음원 생성 로직 (템플릿 변수 검증 제외)
-  const proceedWithGeneration = async (textToUse: string) => {
-    const trimmedText = textToUse.trim();
+  const handleGenerateVoice = async () => {
+    const trimmedText = customText.trim();
+    if (!trimmedText) {
+      setAlertDialog({ open: true, title: "입력 필요", message: "텍스트를 입력해주세요." });
+      return;
+    }
+
+    // 템플릿 변수가 남아있는지 확인
+    const remainingVariables = trimmedText.match(/\{([^}]+)\}/g);
+    if (remainingVariables && remainingVariables.length > 0) {
+      const variableNames = remainingVariables.map(v => v.replace(/[{}]/g, '')).join(', ');
+      setAlertDialog({ 
+        open: true, 
+        title: "템플릿 변수 미교체", 
+        message: `다음 변수를 실제 내용으로 교체해주세요: ${variableNames}\n\n예시:\n• {기관명} → 강원특별자치도청\n• {담당자명} → 김철수\n• {이벤트명} → 신년인사` 
+      });
+      return;
+    }
 
     if (!selectedVoice) {
       setAlertDialog({ open: true, title: "선택 필요", message: "음성 스타일을 선택해주세요." });
@@ -3000,7 +3015,7 @@ const PublicVoiceGenerator = () => {
 
                   {/* 템플릿 변수 입력 */}
                   {selectedTemplate && selectedTemplateObj && Object.keys(templateVariables).length > 0 && (
-                    <div id="template-variable-input" className="space-y-3 p-4 border rounded-lg bg-blue-50/50" tabIndex={-1}>
+                    <div className="space-y-3 p-4 border rounded-lg bg-blue-50/50">
                       <Label className="text-sm font-semibold">템플릿 변수 입력</Label>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {Object.keys(templateVariables).map((varName) => {
