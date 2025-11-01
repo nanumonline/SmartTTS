@@ -2082,10 +2082,12 @@ const PublicVoiceGenerator = () => {
       try { data = await response.json(); } catch {}
       const results = data.items || (Array.isArray(data) ? data : (data.voices || data.data || []));
       if (results?.length) {
+        let addedCount = 0;
         setAllVoices(prev => {
           // 중복 제거
           const existingIds = new Set(prev.map((v: any) => v.voice_id));
           const newVoices = results.filter((v: any) => !existingIds.has(v.voice_id));
+          addedCount = newVoices.length;
           return [...prev, ...newVoices];
         });
         setAvailableVoices(prev => {
@@ -2100,6 +2102,18 @@ const PublicVoiceGenerator = () => {
           const newResults = filtered.filter((v: any) => !existingIds.has(v.voice_id));
           return [...prev, ...newResults];
         });
+        
+        // 진행률 업데이트 (loadMoreVoices 호출 시)
+        if (isAutoLoadingRef.current) {
+          const total = voiceTotalCount;
+          setAllVoices((prev) => {
+            if (total && total > 0) {
+              const progress = Math.min(100, Math.round((prev.length / total) * 100));
+              setVoiceLoadingProgress(progress);
+            }
+            return prev;
+          });
+        }
       }
       const nextToken = data.nextPageToken || data.next_page_token || data.next_token || null;
       setVoiceNextToken(nextToken || null);
@@ -2122,60 +2136,50 @@ const PublicVoiceGenerator = () => {
       const total = voiceTotalCount;
       
       while (token && pages < maxPages) {
+        const beforeCount = allVoices.length;
         const { nextToken } = await loadMoreVoices(token);
         token = nextToken;
         pages++;
         
-        // 진행률 업데이트 (상태가 업데이트된 후 계산)
-        // setTimeout을 사용하여 상태 업데이트 후 진행률 계산
-        setTimeout(() => {
-          const currentCount = allVoices.length;
-          if (total && total > 0) {
-            const progress = Math.min(100, Math.round((currentCount / total) * 100));
-            setVoiceLoadingProgress(progress);
-          } else {
-            // total이 없으면 페이지 수 기반으로 대략적인 진행률 계산
-            const estimatedProgress = Math.min(95, 10 + (pages / maxPages) * 85);
-            setVoiceLoadingProgress(estimatedProgress);
-          }
-        }, 50);
+        // 진행률 업데이트
+        const afterCount = allVoices.length;
+        if (total && total > 0) {
+          const progress = Math.min(100, Math.round((afterCount / total) * 100));
+          setVoiceLoadingProgress(progress);
+        } else {
+          // total이 없으면 페이지 수 기반으로 대략적인 진행률 계산
+          const estimatedProgress = Math.min(95, 10 + (pages / maxPages) * 85);
+          setVoiceLoadingProgress(estimatedProgress);
+        }
         
         if (!token) break;
         await sleep(delayMs);
       }
       
       // 모든 음성 로드 완료 시 토스트 표시 및 진행률 100% 설정
-      // 상태 업데이트 후 최종 진행률 계산
-      setTimeout(() => {
-        if (!token) {
-          setVoiceLoadingProgress(100);
-          if (showToast) {
-            const finalCount = allVoices.length;
-            toast({
-              title: "모든 음성 로드 완료",
-              description: `총 ${finalCount}개의 음성을 모두 불러왔습니다.`,
-            });
-          }
-          // 즐겨찾기 음성 자동 로드
-          if (favoriteVoiceIds.size > 0) {
-            setTimeout(() => {
-              loadFavoriteVoices();
-            }, 500);
-          }
-        } else if (showToast && token) {
-          // maxPages에 도달했지만 아직 더 있음
-          const currentCount = allVoices.length;
-          const total = voiceTotalCount;
-          if (total && total > 0) {
-            const progress = Math.min(95, Math.round((currentCount / total) * 100));
-            setVoiceLoadingProgress(progress);
-          }
+      if (!token) {
+        setVoiceLoadingProgress(100);
+        if (showToast) {
+          const finalCount = allVoices.length;
           toast({
-            title: "음성 로드 진행 중",
-            description: `${currentCount}개의 음성을 불러왔습니다. (최대 ${maxPages * 100}개까지 로드)`,
+            title: "모든 음성 로드 완료",
+            description: `총 ${finalCount}개의 음성을 모두 불러왔습니다.`,
           });
         }
-      }, 100);
+        // 즐겨찾기 음성 자동 로드
+        if (favoriteVoiceIds.size > 0) {
+          setTimeout(() => {
+            loadFavoriteVoices();
+          }, 500);
+        }
+      } else if (showToast && token) {
+        // maxPages에 도달했지만 아직 더 있음
+        const currentCount = allVoices.length;
+        toast({
+          title: "음성 로드 진행 중",
+          description: `${currentCount}개의 음성을 불러왔습니다. (최대 ${maxPages * 100}개까지 로드)`,
+        });
+      }
     } finally {
       isAutoLoadingRef.current = false;
     }
