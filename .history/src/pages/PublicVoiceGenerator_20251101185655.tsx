@@ -2079,35 +2079,18 @@ const PublicVoiceGenerator = () => {
 
   const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
 
-  const autoLoadVoicesThrottled = async (maxPages = 5, delayMs = 300, showToast = false) => {
+  const autoLoadVoicesThrottled = async (maxPages = 5, delayMs = 300) => {
     if (isAutoLoadingRef.current) return;
     isAutoLoadingRef.current = true;
     try {
       let pages = 0;
       let token: string | null = voiceNextToken;
-      let totalLoaded = allVoices.length;
       while (token && pages < maxPages) {
         const { nextToken } = await loadMoreVoices(token);
         token = nextToken;
         pages++;
-        totalLoaded = allVoices.length;
         if (!token) break;
         await sleep(delayMs);
-      }
-      // 모든 음성 로드 완료 시 토스트 표시
-      if (showToast && !token) {
-        const finalCount = allVoices.length;
-        toast({
-          title: "모든 음성 로드 완료",
-          description: `총 ${finalCount}개의 음성을 모두 불러왔습니다.`,
-        });
-      } else if (showToast && token) {
-        // maxPages에 도달했지만 아직 더 있음
-        const currentCount = allVoices.length;
-        toast({
-          title: "음성 로드 진행 중",
-          description: `${currentCount}개의 음성을 불러왔습니다. (최대 ${maxPages * 100}개까지 로드)`,
-        });
       }
     } finally {
       isAutoLoadingRef.current = false;
