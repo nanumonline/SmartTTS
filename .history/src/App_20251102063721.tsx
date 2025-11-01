@@ -290,7 +290,10 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <AppShell>
-                    <ReportsSendsPage />
+                    <div className="space-y-4">
+                      <h1 className="text-2xl font-semibold">전송 리포트</h1>
+                      <p className="text-muted-foreground">전송 통계를 확인합니다.</p>
+                    </div>
                   </AppShell>
                 </ProtectedRoute>
               } 

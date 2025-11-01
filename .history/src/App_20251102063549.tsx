@@ -22,8 +22,6 @@ import AudioHistoryPage from "./pages/AudioHistoryPage";
 import MixBoardPage from "./pages/MixBoardPage";
 import SendSetupPage from "./pages/SendSetupPage";
 import ScheduleManagerPage from "./pages/ScheduleManagerPage";
-import ManageAssetsPage from "./pages/ManageAssetsPage";
-import ReportsSendsPage from "./pages/ReportsSendsPage";
 
 const queryClient = new QueryClient();
 
@@ -229,7 +227,10 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <AppShell>
-                    <ManageAssetsPage />
+                    <div className="space-y-4">
+                      <h1 className="text-2xl font-semibold">자산 관리</h1>
+                      <p className="text-muted-foreground">파일 자산을 관리합니다.</p>
+                    </div>
                   </AppShell>
                 </ProtectedRoute>
               } 
@@ -290,7 +291,10 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <AppShell>
-                    <ReportsSendsPage />
+                    <div className="space-y-4">
+                      <h1 className="text-2xl font-semibold">전송 리포트</h1>
+                      <p className="text-muted-foreground">전송 통계를 확인합니다.</p>
+                    </div>
                   </AppShell>
                 </ProtectedRoute>
               } 
