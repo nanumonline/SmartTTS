@@ -1535,10 +1535,9 @@ const PublicVoiceGenerator = () => {
         const convertedMap = new Map<number, ReviewState>();
         reviewMap.forEach((value, key) => {
           const genId = parseInt(key.replace(/-/g, "").substring(0, 10) || `${Date.now()}`);
-          const statusValue = value.status as "draft" | "review" | "approved" | "rejected";
           convertedMap.set(genId, {
             generationId: genId,
-            status: statusValue || "draft",
+            status: value.status,
             comments: value.comments || "",
             updatedAt: value.updatedAt || new Date().toISOString(),
           });
@@ -1549,14 +1548,7 @@ const PublicVoiceGenerator = () => {
       // 메시지 이력
       const messages = await dbService.loadMessages(user.id);
       if (messages.length > 0) {
-        const normalized = messages.map(msg => ({
-          id: msg.id || generateUniqueId(),
-          text: msg.text,
-          purpose: msg.purpose,
-          createdAt: msg.createdAt || new Date().toISOString(),
-          updatedAt: msg.updatedAt || msg.createdAt || new Date().toISOString(),
-        }));
-        setMessageHistory(normalized.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()));
+        setMessageHistory(messages.sort((a, b) => new Date(b.updatedAt || b.createdAt || "").getTime() - new Date(a.updatedAt || a.createdAt || "").getTime()));
       }
     } catch (error: any) {
       console.error("DB에서 데이터 로드 실패:", error);
