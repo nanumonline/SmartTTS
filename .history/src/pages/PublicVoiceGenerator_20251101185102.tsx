@@ -765,12 +765,7 @@ const PublicVoiceGenerator = () => {
 
       setIsMixingPreviewPlaying(true);
 
-      // 재생 완료 시 정리 (TTS 종료 시간 또는 BGM 종료 시간 중 큰 값)
-      const ttsEndTimeCalc = ctx.currentTime + settings.ttsOffset + ttsBuffer.duration;
-      const bgmEndTimeCalc = settings.trimEndSec ? 
-        ctx.currentTime + settings.trimEndSec : 
-        (bgmBuffer ? (ctx.currentTime + Math.max(0, -settings.bgmOffset) + bgmBuffer.duration) : ttsEndTimeCalc);
-      const totalEndTime = Math.max(ttsEndTimeCalc, bgmEndTimeCalc);
+      // 재생 완료 시 정리
       const endTime = totalEndTime - ctx.currentTime;
       setTimeout(() => {
         setIsMixingPreviewPlaying(false);
