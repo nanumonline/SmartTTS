@@ -616,8 +616,6 @@ const PublicVoiceGenerator = () => {
           masterGain: DEFAULT_MIXING_SETTINGS.masterGain,
           fadeIn: DEFAULT_MIXING_SETTINGS.fadeIn,
           fadeOut: DEFAULT_MIXING_SETTINGS.fadeOut,
-          fadeInRatio: 50, // 기본값 50% (중앙 = 기본 볼륨)
-          fadeOutRatio: 50, // 기본값 50% (중앙 = 기본 볼륨)
           lowShelf: DEFAULT_MIXING_SETTINGS.lowShelf,
           midPeaking: DEFAULT_MIXING_SETTINGS.midPeaking,
           highShelf: DEFAULT_MIXING_SETTINGS.highShelf,
@@ -626,7 +624,6 @@ const PublicVoiceGenerator = () => {
           duckThreshold: DEFAULT_MIXING_SETTINGS.duckThreshold,
           duckRelease: DEFAULT_MIXING_SETTINGS.duckRelease,
           bgmOffset: DEFAULT_MIXING_SETTINGS.bgmOffset,
-          bgmOffsetAfterTts: 0, // 기본값 0초
           ttsOffset: DEFAULT_MIXING_SETTINGS.ttsOffset,
         })
       );
@@ -690,8 +687,6 @@ const PublicVoiceGenerator = () => {
         masterGain: (state.masterGain !== undefined ? state.masterGain : DEFAULT_MIXING_SETTINGS.masterGain),
         fadeIn: state.fadeIn !== undefined ? state.fadeIn : DEFAULT_MIXING_SETTINGS.fadeIn,
         fadeOut: state.fadeOut !== undefined ? state.fadeOut : DEFAULT_MIXING_SETTINGS.fadeOut,
-        fadeInRatio: state.fadeInRatio !== undefined ? state.fadeInRatio : 50, // 기본값 50% (중앙)
-        fadeOutRatio: state.fadeOutRatio !== undefined ? state.fadeOutRatio : 50, // 기본값 50% (중앙)
         lowShelf: state.lowShelf !== undefined ? state.lowShelf : DEFAULT_MIXING_SETTINGS.lowShelf,
         midPeaking: state.midPeaking !== undefined ? state.midPeaking : DEFAULT_MIXING_SETTINGS.midPeaking,
         highShelf: state.highShelf !== undefined ? state.highShelf : DEFAULT_MIXING_SETTINGS.highShelf,
@@ -700,7 +695,6 @@ const PublicVoiceGenerator = () => {
         duckThreshold: state.duckThreshold !== undefined ? state.duckThreshold : DEFAULT_MIXING_SETTINGS.duckThreshold,
         duckRelease: state.duckRelease !== undefined ? state.duckRelease : DEFAULT_MIXING_SETTINGS.duckRelease,
         bgmOffset: state.bgmOffset !== undefined ? state.bgmOffset : DEFAULT_MIXING_SETTINGS.bgmOffset,
-        bgmOffsetAfterTts: state.bgmOffsetAfterTts !== undefined ? state.bgmOffsetAfterTts : 0,
         ttsOffset: state.ttsOffset !== undefined ? state.ttsOffset : DEFAULT_MIXING_SETTINGS.ttsOffset,
         trimEndSec: state.trimEndSec !== undefined ? state.trimEndSec : DEFAULT_MIXING_SETTINGS.trimEndSec,
       };
@@ -6156,30 +6150,6 @@ const PublicVoiceGenerator = () => {
                     if (genId) {
                       const state = mixingStates.get(genId) || { voiceTrackVolume: 100, backgroundTrackVolume: 50, effectTrackVolume: 70 };
                       setMixingStates((prev) => new Map(prev).set(genId, { ...state, bgmOffsetAfterTts: Math.abs(offset) }));
-                      // 실시간 미리듣기 업데이트
-                      if (isMixingPreviewPlaying && mixingPreviewAudio) {
-                        startRealtimePreview();
-                      }
-                    }
-                  }}
-                  fadeInRatio={mixingStates.get(selectedGenerationForMixing?.id)?.fadeInRatio ?? 50}
-                  fadeOutRatio={mixingStates.get(selectedGenerationForMixing?.id)?.fadeOutRatio ?? 50}
-                  onFadeInRatioChange={(ratio) => {
-                    const genId = selectedGenerationForMixing?.id;
-                    if (genId) {
-                      const state = mixingStates.get(genId) || { voiceTrackVolume: 100, backgroundTrackVolume: 50, effectTrackVolume: 70 };
-                      setMixingStates((prev) => new Map(prev).set(genId, { ...state, fadeInRatio: ratio }));
-                      // 실시간 미리듣기 업데이트
-                      if (isMixingPreviewPlaying && mixingPreviewAudio) {
-                        startRealtimePreview();
-                      }
-                    }
-                  }}
-                  onFadeOutRatioChange={(ratio) => {
-                    const genId = selectedGenerationForMixing?.id;
-                    if (genId) {
-                      const state = mixingStates.get(genId) || { voiceTrackVolume: 100, backgroundTrackVolume: 50, effectTrackVolume: 70 };
-                      setMixingStates((prev) => new Map(prev).set(genId, { ...state, fadeOutRatio: ratio }));
                       // 실시간 미리듣기 업데이트
                       if (isMixingPreviewPlaying && mixingPreviewAudio) {
                         startRealtimePreview();

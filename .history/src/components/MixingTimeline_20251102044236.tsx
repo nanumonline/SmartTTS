@@ -165,7 +165,7 @@ const MixingTimeline: React.FC<MixingTimelineProps> = ({
                 className="w-full"
                 disabled={!onFadeInRatioChange}
               />
-              <p className="text-[10px] text-gray-500">페이드인 목표 음량 비율 (50% = 기본 볼륨, 0% = 감소, 100% = 증가)</p>
+              <p className="text-[10px] text-gray-500">페이드인 목표 음량 비율 (0% → 설정값%)</p>
             </div>
           </div>
         </div>

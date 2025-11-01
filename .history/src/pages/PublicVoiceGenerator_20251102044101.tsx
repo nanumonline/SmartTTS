@@ -616,8 +616,6 @@ const PublicVoiceGenerator = () => {
           masterGain: DEFAULT_MIXING_SETTINGS.masterGain,
           fadeIn: DEFAULT_MIXING_SETTINGS.fadeIn,
           fadeOut: DEFAULT_MIXING_SETTINGS.fadeOut,
-          fadeInRatio: 50, // 기본값 50% (중앙 = 기본 볼륨)
-          fadeOutRatio: 50, // 기본값 50% (중앙 = 기본 볼륨)
           lowShelf: DEFAULT_MIXING_SETTINGS.lowShelf,
           midPeaking: DEFAULT_MIXING_SETTINGS.midPeaking,
           highShelf: DEFAULT_MIXING_SETTINGS.highShelf,
@@ -626,7 +624,6 @@ const PublicVoiceGenerator = () => {
           duckThreshold: DEFAULT_MIXING_SETTINGS.duckThreshold,
           duckRelease: DEFAULT_MIXING_SETTINGS.duckRelease,
           bgmOffset: DEFAULT_MIXING_SETTINGS.bgmOffset,
-          bgmOffsetAfterTts: 0, // 기본값 0초
           ttsOffset: DEFAULT_MIXING_SETTINGS.ttsOffset,
         })
       );
@@ -690,8 +687,6 @@ const PublicVoiceGenerator = () => {
         masterGain: (state.masterGain !== undefined ? state.masterGain : DEFAULT_MIXING_SETTINGS.masterGain),
         fadeIn: state.fadeIn !== undefined ? state.fadeIn : DEFAULT_MIXING_SETTINGS.fadeIn,
         fadeOut: state.fadeOut !== undefined ? state.fadeOut : DEFAULT_MIXING_SETTINGS.fadeOut,
-        fadeInRatio: state.fadeInRatio !== undefined ? state.fadeInRatio : 50, // 기본값 50% (중앙)
-        fadeOutRatio: state.fadeOutRatio !== undefined ? state.fadeOutRatio : 50, // 기본값 50% (중앙)
         lowShelf: state.lowShelf !== undefined ? state.lowShelf : DEFAULT_MIXING_SETTINGS.lowShelf,
         midPeaking: state.midPeaking !== undefined ? state.midPeaking : DEFAULT_MIXING_SETTINGS.midPeaking,
         highShelf: state.highShelf !== undefined ? state.highShelf : DEFAULT_MIXING_SETTINGS.highShelf,
@@ -700,7 +695,6 @@ const PublicVoiceGenerator = () => {
         duckThreshold: state.duckThreshold !== undefined ? state.duckThreshold : DEFAULT_MIXING_SETTINGS.duckThreshold,
         duckRelease: state.duckRelease !== undefined ? state.duckRelease : DEFAULT_MIXING_SETTINGS.duckRelease,
         bgmOffset: state.bgmOffset !== undefined ? state.bgmOffset : DEFAULT_MIXING_SETTINGS.bgmOffset,
-        bgmOffsetAfterTts: state.bgmOffsetAfterTts !== undefined ? state.bgmOffsetAfterTts : 0,
         ttsOffset: state.ttsOffset !== undefined ? state.ttsOffset : DEFAULT_MIXING_SETTINGS.ttsOffset,
         trimEndSec: state.trimEndSec !== undefined ? state.trimEndSec : DEFAULT_MIXING_SETTINGS.trimEndSec,
       };
@@ -775,11 +769,10 @@ const PublicVoiceGenerator = () => {
         let bgmFadeOutGain: GainNode | null = null;
         if (settings.fadeOut > 0) {
           bgmFadeOutGain = ctx.createGain();
-          // 페이드아웃 시작 시간: BGM 종료 시간에서 fadeOut 시간 빼기
+          // 페이드아웃 시작 시간: TTS 종료 + bgmOffsetAfterTts 후
           const fadeOutStartTime = bgmEndTime - settings.fadeOut;
-          const fadeOutRatio = (settings.fadeOutRatio ?? 50) / 100; // 0-100을 0-1로 변환 (50%가 중앙 = 기본 볼륨)
-          // 50% = 기본 볼륨 (bgmGain * 1.0), 0% = 0 볼륨, 100% = bgmGain * 2.0
-          const fadeOutStartGain = settings.bgmGain * (fadeOutRatio * 2); // 중앙 기준 증감
+          const fadeOutRatio = (settings.fadeOutRatio ?? 100) / 100; // 0-100을 0-1로 변환
+          const fadeOutStartGain = settings.bgmGain * fadeOutRatio;
           bgmFadeOutGain.gain.setValueAtTime(fadeOutStartGain, ctx.currentTime + fadeOutStartTime);
           bgmFadeOutGain.gain.exponentialRampToValueAtTime(0.0001, bgmEndTime);
         }
@@ -811,20 +804,25 @@ const PublicVoiceGenerator = () => {
         const bgmNeededDuration = bgmTotalDuration;
         const bgmOriginalDuration = bgmBuffer.duration;
         
-        // BGM은 항상 0초부터 시작
         if (bgmNeededDuration > bgmOriginalDuration) {
           // BGM이 더 길 필요가 있으면 루프 설정
           bgmSource.loop = true;
           bgmSource.loopEnd = bgmOriginalDuration;
-          // 정확한 종료 시간에 정지 (bgmTotalDuration 후)
-          bgmSource.start(ctx.currentTime + bgmStartTime, 0);
-          bgmSource.stop(ctx.currentTime + bgmStartTime + bgmTotalDuration);
-        } else {
-          // BGM이 짧으면 루프 없이 한 번만 재생
-          bgmSource.loop = false;
-          bgmSource.start(ctx.currentTime + bgmStartTime);
-          // 원래 길이보다 짧게 재생하려면 stop 호출 필요 없음 (자동 종료)
+          // 필요한 시간만큼 재생 후 정지 (timeout은 별도로 관리)
+          const timeoutId = window.setTimeout(() => {
+            try {
+              if (mixingAudioSourcesRef.current.bgmSource === bgmSource) {
+                bgmSource.stop();
+              }
+            } catch (e) {
+              // 이미 정지되었으면 무시
+            }
+          }, bgmTotalDuration * 1000);
+          // timeout ID는 별도로 추적하지 않음 (정지 시 bgmSource.stop()으로 처리)
         }
+        
+        // BGM은 항상 0초부터 시작
+        bgmSource.start(ctx.currentTime + bgmStartTime);
       }
 
       // TTS 시작: fadeIn + bgmOffset 위치 (페이드 없이)
@@ -838,26 +836,24 @@ const PublicVoiceGenerator = () => {
       setIsMixingPreviewPlaying(true);
 
       // 재생 완료 시 정리 (BGM이 항상 더 길거나 같음)
+      const ttsEndTimeCalc = ctx.currentTime + settings.fadeIn + settings.bgmOffset + ttsBuffer.duration;
+      
       // BGM 전체 길이 계산 (위에서 계산한 것과 동일)
-      let bgmTotalDurationCalc = 0;
+      let bgmTotalDuration = 0;
       if (bgmBuffer) {
         if (settings.trimEndSec != null && settings.trimEndSec > 0) {
-          bgmTotalDurationCalc = settings.trimEndSec;
+          bgmTotalDuration = settings.trimEndSec;
         } else {
-          bgmTotalDurationCalc = settings.fadeIn + settings.bgmOffset + ttsBuffer.duration + (settings.bgmOffsetAfterTts || 0) + settings.fadeOut;
+          bgmTotalDuration = settings.fadeIn + settings.bgmOffset + ttsBuffer.duration + (settings.bgmOffsetAfterTts || 0) + settings.fadeOut;
           const minBgmDuration = ttsBuffer.duration + settings.fadeIn + settings.fadeOut;
-          bgmTotalDurationCalc = Math.max(bgmTotalDurationCalc, minBgmDuration);
+          bgmTotalDuration = Math.max(bgmTotalDuration, minBgmDuration);
         }
-      } else {
-        // BGM이 없으면 TTS 길이만 사용
-        bgmTotalDurationCalc = settings.fadeIn + settings.bgmOffset + ttsBuffer.duration;
       }
       
-      // BGM 종료 시간 = 시작 시간 + 총 길이
-      const bgmEndTimeCalc = ctx.currentTime + bgmStartTime + bgmTotalDurationCalc;
+      const bgmEndTimeCalc = bgmBuffer ? (ctx.currentTime + bgmTotalDuration) : ttsEndTimeCalc;
+      // BGM이 항상 더 길거나 같으므로 BGM 종료 시간 사용
       const totalEndTime = bgmEndTimeCalc;
       const endTime = totalEndTime - ctx.currentTime;
-      
       setTimeout(() => {
         setIsMixingPreviewPlaying(false);
         setMixingPreviewProgress(0);
@@ -6156,30 +6152,6 @@ const PublicVoiceGenerator = () => {
                     if (genId) {
                       const state = mixingStates.get(genId) || { voiceTrackVolume: 100, backgroundTrackVolume: 50, effectTrackVolume: 70 };
                       setMixingStates((prev) => new Map(prev).set(genId, { ...state, bgmOffsetAfterTts: Math.abs(offset) }));
-                      // 실시간 미리듣기 업데이트
-                      if (isMixingPreviewPlaying && mixingPreviewAudio) {
-                        startRealtimePreview();
-                      }
-                    }
-                  }}
-                  fadeInRatio={mixingStates.get(selectedGenerationForMixing?.id)?.fadeInRatio ?? 50}
-                  fadeOutRatio={mixingStates.get(selectedGenerationForMixing?.id)?.fadeOutRatio ?? 50}
-                  onFadeInRatioChange={(ratio) => {
-                    const genId = selectedGenerationForMixing?.id;
-                    if (genId) {
-                      const state = mixingStates.get(genId) || { voiceTrackVolume: 100, backgroundTrackVolume: 50, effectTrackVolume: 70 };
-                      setMixingStates((prev) => new Map(prev).set(genId, { ...state, fadeInRatio: ratio }));
-                      // 실시간 미리듣기 업데이트
-                      if (isMixingPreviewPlaying && mixingPreviewAudio) {
-                        startRealtimePreview();
-                      }
-                    }
-                  }}
-                  onFadeOutRatioChange={(ratio) => {
-                    const genId = selectedGenerationForMixing?.id;
-                    if (genId) {
-                      const state = mixingStates.get(genId) || { voiceTrackVolume: 100, backgroundTrackVolume: 50, effectTrackVolume: 70 };
-                      setMixingStates((prev) => new Map(prev).set(genId, { ...state, fadeOutRatio: ratio }));
                       // 실시간 미리듣기 업데이트
                       if (isMixingPreviewPlaying && mixingPreviewAudio) {
                         startRealtimePreview();
