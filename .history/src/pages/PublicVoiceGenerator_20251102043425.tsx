@@ -6082,7 +6082,6 @@ const PublicVoiceGenerator = () => {
               {mixingStates.get(selectedGenerationForMixing?.id)?.selectedVoiceTrack && (
                 <div className="mt-2 p-2 bg-gray-800/50 rounded border border-gray-700">
                   <AudioPlayer
-                    key={`mixing_selected_${selectedGenerationForMixing?.id}_${mixingStates.get(selectedGenerationForMixing?.id)?.selectedVoiceTrack?.audioUrl || ''}`}
                     audioUrl={mixingStates.get(selectedGenerationForMixing?.id)?.selectedVoiceTrack?.audioUrl}
                     title="선택된 음원"
                     duration={mixingStates.get(selectedGenerationForMixing?.id)?.selectedVoiceTrack?.duration || 0}

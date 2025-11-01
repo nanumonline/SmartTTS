@@ -5979,17 +5979,7 @@ const PublicVoiceGenerator = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isMixingModalOpen} onOpenChange={(open) => {
-        setIsMixingModalOpen(open);
-        // 모달이 닫힐 때 모든 오디오 중지
-        if (!open) {
-          stopRealtimePreview();
-          // 선택된 음원의 AudioPlayer도 정지 (있는 경우)
-          if (mixingStates.get(selectedGenerationForMixing?.id)?.selectedVoiceTrack?.audioUrl) {
-            // AudioPlayer는 자체적으로 관리되지만, 명시적으로 정리할 수도 있음
-          }
-        }
-      }}>
+      <Dialog open={isMixingModalOpen} onOpenChange={setIsMixingModalOpen}>
         <DialogContent className="sm:max-w-2xl dark-dialog bg-gray-900/95 border-gray-700">
           <DialogHeader>
             <DialogTitle style={{ color: '#FFFFFF' }}>음원 믹싱 설정</DialogTitle>
@@ -6082,7 +6072,6 @@ const PublicVoiceGenerator = () => {
               {mixingStates.get(selectedGenerationForMixing?.id)?.selectedVoiceTrack && (
                 <div className="mt-2 p-2 bg-gray-800/50 rounded border border-gray-700">
                   <AudioPlayer
-                    key={`mixing_selected_${selectedGenerationForMixing?.id}_${mixingStates.get(selectedGenerationForMixing?.id)?.selectedVoiceTrack?.audioUrl || ''}`}
                     audioUrl={mixingStates.get(selectedGenerationForMixing?.id)?.selectedVoiceTrack?.audioUrl}
                     title="선택된 음원"
                     duration={mixingStates.get(selectedGenerationForMixing?.id)?.selectedVoiceTrack?.duration || 0}

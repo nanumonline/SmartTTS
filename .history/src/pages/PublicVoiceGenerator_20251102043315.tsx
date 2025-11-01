@@ -795,9 +795,6 @@ const PublicVoiceGenerator = () => {
         bgmSource.buffer = bgmBuffer;
         bgmSource.connect(lowShelf);
         
-        // 소스 추적을 위해 ref에 저장
-        mixingAudioSourcesRef.current.bgmSource = bgmSource;
-        
         // BGM이 필요한 길이만큼 재생되도록 루프 설정
         const bgmNeededDuration = bgmTotalDuration;
         const bgmOriginalDuration = bgmBuffer.duration;
@@ -807,16 +804,13 @@ const PublicVoiceGenerator = () => {
           bgmSource.loop = true;
           bgmSource.loopEnd = bgmOriginalDuration;
           // 필요한 시간만큼 재생 후 정지
-          const timeoutId = window.setTimeout(() => {
+          setTimeout(() => {
             try {
-              if (mixingAudioSourcesRef.current.bgmSource === bgmSource) {
-                bgmSource.stop();
-              }
+              bgmSource.stop();
             } catch (e) {
               // 이미 정지되었으면 무시
             }
           }, bgmTotalDuration * 1000);
-          mixingAudioSourcesRef.current.intervalId = timeoutId;
         }
         
         // BGM은 항상 0초부터 시작
@@ -867,12 +861,6 @@ const PublicVoiceGenerator = () => {
           clearInterval(progressInterval);
         }
       }, 50);
-      
-      // interval ID도 추적 (정지 시 정리)
-      if (mixingAudioSourcesRef.current.intervalId) {
-        clearInterval(mixingAudioSourcesRef.current.intervalId);
-      }
-      mixingAudioSourcesRef.current.intervalId = progressInterval;
 
     } catch (error: any) {
       console.error("실시간 미리듣기 오류:", error);
@@ -885,50 +873,13 @@ const PublicVoiceGenerator = () => {
     }
   };
 
-  // 실시간 미리듣기 중지 (모든 오디오 소스 명시적으로 정지)
+  // 실시간 미리듣기 중지
   const stopRealtimePreview = () => {
-    try {
-      // 모든 AudioBufferSource 명시적으로 정지
-      if (mixingAudioSourcesRef.current.ttsSource) {
-        try {
-          mixingAudioSourcesRef.current.ttsSource.stop();
-        } catch (e) {
-          // 이미 정지되었으면 무시
-        }
-        mixingAudioSourcesRef.current.ttsSource = undefined;
-      }
-      
-      if (mixingAudioSourcesRef.current.bgmSource) {
-        try {
-          mixingAudioSourcesRef.current.bgmSource.stop();
-        } catch (e) {
-          // 이미 정지되었으면 무시
-        }
-        mixingAudioSourcesRef.current.bgmSource = undefined;
-      }
-      
-      // 진행률 업데이트 interval 정리
-      if (mixingAudioSourcesRef.current.intervalId) {
-        clearInterval(mixingAudioSourcesRef.current.intervalId);
-        mixingAudioSourcesRef.current.intervalId = undefined;
-      }
-      
-      // AudioContext 일시 중지
-      if (audioContext && audioContext.state !== 'closed') {
-        audioContext.suspend();
-      }
-      
-      // mixingPreviewAudio도 정지 (HTMLAudioElement가 있는 경우)
-      if (mixingPreviewAudio) {
-        mixingPreviewAudio.pause();
-        mixingPreviewAudio.currentTime = 0;
-      }
-    } catch (e) {
-      console.warn("미리듣기 중지 중 오류:", e);
-    } finally {
-      setIsMixingPreviewPlaying(false);
-      setMixingPreviewProgress(0);
+    if (audioContext && audioContext.state !== 'closed') {
+      audioContext.suspend();
     }
+    setIsMixingPreviewPlaying(false);
+    setMixingPreviewProgress(0);
   };
 
   // 실제 믹싱 수행 함수
@@ -5979,17 +5930,7 @@ const PublicVoiceGenerator = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isMixingModalOpen} onOpenChange={(open) => {
-        setIsMixingModalOpen(open);
-        // 모달이 닫힐 때 모든 오디오 중지
-        if (!open) {
-          stopRealtimePreview();
-          // 선택된 음원의 AudioPlayer도 정지 (있는 경우)
-          if (mixingStates.get(selectedGenerationForMixing?.id)?.selectedVoiceTrack?.audioUrl) {
-            // AudioPlayer는 자체적으로 관리되지만, 명시적으로 정리할 수도 있음
-          }
-        }
-      }}>
+      <Dialog open={isMixingModalOpen} onOpenChange={setIsMixingModalOpen}>
         <DialogContent className="sm:max-w-2xl dark-dialog bg-gray-900/95 border-gray-700">
           <DialogHeader>
             <DialogTitle style={{ color: '#FFFFFF' }}>음원 믹싱 설정</DialogTitle>
@@ -6082,7 +6023,6 @@ const PublicVoiceGenerator = () => {
               {mixingStates.get(selectedGenerationForMixing?.id)?.selectedVoiceTrack && (
                 <div className="mt-2 p-2 bg-gray-800/50 rounded border border-gray-700">
                   <AudioPlayer
-                    key={`mixing_selected_${selectedGenerationForMixing?.id}_${mixingStates.get(selectedGenerationForMixing?.id)?.selectedVoiceTrack?.audioUrl || ''}`}
                     audioUrl={mixingStates.get(selectedGenerationForMixing?.id)?.selectedVoiceTrack?.audioUrl}
                     title="선택된 음원"
                     duration={mixingStates.get(selectedGenerationForMixing?.id)?.selectedVoiceTrack?.duration || 0}

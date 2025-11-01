@@ -257,8 +257,6 @@ const PublicVoiceGenerator = () => {
   const [mixingPreviewAudio, setMixingPreviewAudio] = useState<HTMLAudioElement | null>(null);
   const [isMixingPreviewPlaying, setIsMixingPreviewPlaying] = useState(false);
   const [mixingPreviewProgress, setMixingPreviewProgress] = useState(0);
-  // 실시간 미리듣기 오디오 소스 추적 (정지 시 명시적으로 중지하기 위해)
-  const mixingAudioSourcesRef = useRef<{ ttsSource?: AudioBufferSourceNode; bgmSource?: AudioBufferSourceNode; intervalId?: number }>({});
 
   // Phase 4: 사용량 및 크레딧 모니터링
   const [usageStats, setUsageStats] = useState<UsageStats>({
@@ -710,9 +708,6 @@ const PublicVoiceGenerator = () => {
       ttsGainNode.gain.value = settings.ttsGain;
       ttsSource.connect(ttsGainNode);
       ttsGainNode.connect(masterGain);
-      
-      // 소스 추적을 위해 ref에 저장
-      mixingAudioSourcesRef.current.ttsSource = ttsSource;
 
       // BGM 경로 with EQ 및 페이드 (BGM 전용)
       if (bgmBuffer) {
@@ -795,9 +790,6 @@ const PublicVoiceGenerator = () => {
         bgmSource.buffer = bgmBuffer;
         bgmSource.connect(lowShelf);
         
-        // 소스 추적을 위해 ref에 저장
-        mixingAudioSourcesRef.current.bgmSource = bgmSource;
-        
         // BGM이 필요한 길이만큼 재생되도록 루프 설정
         const bgmNeededDuration = bgmTotalDuration;
         const bgmOriginalDuration = bgmBuffer.duration;
@@ -807,16 +799,13 @@ const PublicVoiceGenerator = () => {
           bgmSource.loop = true;
           bgmSource.loopEnd = bgmOriginalDuration;
           // 필요한 시간만큼 재생 후 정지
-          const timeoutId = window.setTimeout(() => {
+          setTimeout(() => {
             try {
-              if (mixingAudioSourcesRef.current.bgmSource === bgmSource) {
-                bgmSource.stop();
-              }
+              bgmSource.stop();
             } catch (e) {
               // 이미 정지되었으면 무시
             }
           }, bgmTotalDuration * 1000);
-          mixingAudioSourcesRef.current.intervalId = timeoutId;
         }
         
         // BGM은 항상 0초부터 시작
@@ -867,12 +856,6 @@ const PublicVoiceGenerator = () => {
           clearInterval(progressInterval);
         }
       }, 50);
-      
-      // interval ID도 추적 (정지 시 정리)
-      if (mixingAudioSourcesRef.current.intervalId) {
-        clearInterval(mixingAudioSourcesRef.current.intervalId);
-      }
-      mixingAudioSourcesRef.current.intervalId = progressInterval;
 
     } catch (error: any) {
       console.error("실시간 미리듣기 오류:", error);
@@ -885,50 +868,13 @@ const PublicVoiceGenerator = () => {
     }
   };
 
-  // 실시간 미리듣기 중지 (모든 오디오 소스 명시적으로 정지)
+  // 실시간 미리듣기 중지
   const stopRealtimePreview = () => {
-    try {
-      // 모든 AudioBufferSource 명시적으로 정지
-      if (mixingAudioSourcesRef.current.ttsSource) {
-        try {
-          mixingAudioSourcesRef.current.ttsSource.stop();
-        } catch (e) {
-          // 이미 정지되었으면 무시
-        }
-        mixingAudioSourcesRef.current.ttsSource = undefined;
-      }
-      
-      if (mixingAudioSourcesRef.current.bgmSource) {
-        try {
-          mixingAudioSourcesRef.current.bgmSource.stop();
-        } catch (e) {
-          // 이미 정지되었으면 무시
-        }
-        mixingAudioSourcesRef.current.bgmSource = undefined;
-      }
-      
-      // 진행률 업데이트 interval 정리
-      if (mixingAudioSourcesRef.current.intervalId) {
-        clearInterval(mixingAudioSourcesRef.current.intervalId);
-        mixingAudioSourcesRef.current.intervalId = undefined;
-      }
-      
-      // AudioContext 일시 중지
-      if (audioContext && audioContext.state !== 'closed') {
-        audioContext.suspend();
-      }
-      
-      // mixingPreviewAudio도 정지 (HTMLAudioElement가 있는 경우)
-      if (mixingPreviewAudio) {
-        mixingPreviewAudio.pause();
-        mixingPreviewAudio.currentTime = 0;
-      }
-    } catch (e) {
-      console.warn("미리듣기 중지 중 오류:", e);
-    } finally {
-      setIsMixingPreviewPlaying(false);
-      setMixingPreviewProgress(0);
+    if (audioContext && audioContext.state !== 'closed') {
+      audioContext.suspend();
     }
+    setIsMixingPreviewPlaying(false);
+    setMixingPreviewProgress(0);
   };
 
   // 실제 믹싱 수행 함수
@@ -2483,7 +2429,7 @@ const PublicVoiceGenerator = () => {
           setAllVoices(dbVoices);
           setAvailableVoices(dbVoices);
           setVoiceLoadingProgress(100);
-        voicesLoaded = true;
+          voicesLoaded = true;
           
           if (showToast) {
             toast({
@@ -2492,7 +2438,7 @@ const PublicVoiceGenerator = () => {
             });
           }
           
-        setIsLoadingVoices(false);
+          setIsLoadingVoices(false);
           return; // DB에서 로드 완료했으면 함수 종료
         }
         
@@ -2512,7 +2458,7 @@ const PublicVoiceGenerator = () => {
       console.log("DB에 음성 카탈로그가 없어 API에서 가져옵니다.");
       const response = await fetchWithSupabaseProxy("/voices?limit=100", { method: "GET" });
       if (response?.ok) {
-            const data = await response.json();
+        const data = await response.json();
         // 응답 형식: { items: [], total: 150, nextPageToken: "..." } 또는 배열/기타 필드
         const voices = data.items || (Array.isArray(data) ? data : (data.voices || data.data || []));
         setAllVoices(voices);
@@ -2522,7 +2468,7 @@ const PublicVoiceGenerator = () => {
         const total = data.total || data.totalCount || null;
         setVoiceTotalCount(total);
         console.log(`✅ 음성 목록 로드 성공(프록시): ${voices.length}개`);
-            voicesLoaded = true;
+        voicesLoaded = true;
         
         // 진행률 계산 (초기 로드 완료)
         if (total && total > 0) {
@@ -2696,7 +2642,7 @@ const PublicVoiceGenerator = () => {
       }
     } catch (error: any) {
       if (error?.name !== "AbortError") {
-      console.warn("음성 검색 예외(프록시):", error.message);
+        console.warn("음성 검색 예외(프록시):", error.message);
         // 에러 발생 시에도 allVoices 전체에서 필터링 시도
         setAllVoices((currentAllVoices) => {
           if (currentAllVoices.length > 0) {
@@ -3195,7 +3141,7 @@ const PublicVoiceGenerator = () => {
           if (customText.length <= 300) {
             // 300자 이하: 단일 예측
             const duration = await predictDuration(customText, selectedVoice, chosenLanguage, styleValue);
-          setPredictedDuration(duration);
+            setPredictedDuration(duration);
             setPredictedCredit(duration ? Math.ceil(duration) : null);
           } else {
             // 300자 초과: 전체 예측 (분할된 청크 전체)
@@ -3545,13 +3491,13 @@ const PublicVoiceGenerator = () => {
         };
 
         let audioResult: { blob: Blob; duration: number | null; mimeType?: string } | null = null;
-      let source = "프록시";
+        let source = "프록시";
 
-      // 1. Supabase Edge Function 프록시 시도
-      const proxyResponse = await fetchWithSupabaseProxy(`/text-to-speech/${selectedVoice}?output_format=mp3`, {
-        method: "POST",
+        // 1. Supabase Edge Function 프록시 시도
+        const proxyResponse = await fetchWithSupabaseProxy(`/text-to-speech/${selectedVoice}?output_format=mp3`, {
+          method: "POST",
           body: JSON.stringify({ ...requestBody, voice_id: selectedVoice }),
-      });
+        });
 
       if (proxyResponse?.ok) {
         audioResult = await parseSupertoneResponse(proxyResponse);
@@ -5979,17 +5925,7 @@ const PublicVoiceGenerator = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isMixingModalOpen} onOpenChange={(open) => {
-        setIsMixingModalOpen(open);
-        // 모달이 닫힐 때 모든 오디오 중지
-        if (!open) {
-          stopRealtimePreview();
-          // 선택된 음원의 AudioPlayer도 정지 (있는 경우)
-          if (mixingStates.get(selectedGenerationForMixing?.id)?.selectedVoiceTrack?.audioUrl) {
-            // AudioPlayer는 자체적으로 관리되지만, 명시적으로 정리할 수도 있음
-          }
-        }
-      }}>
+      <Dialog open={isMixingModalOpen} onOpenChange={setIsMixingModalOpen}>
         <DialogContent className="sm:max-w-2xl dark-dialog bg-gray-900/95 border-gray-700">
           <DialogHeader>
             <DialogTitle style={{ color: '#FFFFFF' }}>음원 믹싱 설정</DialogTitle>
@@ -6082,7 +6018,6 @@ const PublicVoiceGenerator = () => {
               {mixingStates.get(selectedGenerationForMixing?.id)?.selectedVoiceTrack && (
                 <div className="mt-2 p-2 bg-gray-800/50 rounded border border-gray-700">
                   <AudioPlayer
-                    key={`mixing_selected_${selectedGenerationForMixing?.id}_${mixingStates.get(selectedGenerationForMixing?.id)?.selectedVoiceTrack?.audioUrl || ''}`}
                     audioUrl={mixingStates.get(selectedGenerationForMixing?.id)?.selectedVoiceTrack?.audioUrl}
                     title="선택된 음원"
                     duration={mixingStates.get(selectedGenerationForMixing?.id)?.selectedVoiceTrack?.duration || 0}
