@@ -5051,120 +5051,11 @@ const PublicVoiceGenerator = () => {
 
           <Card className="landio-card landio-fade-up">
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <FileText className="w-5 h-5" />
-                    생성 기록 & 작업 관리
-                  </CardTitle>
-                  <CardDescription>최근 생성한 음성을 목적별로 관리하고, 향후 클로닝·믹싱·예약 작업을 연결합니다.</CardDescription>
-                </div>
-                {/* 로컬 음원 업로드 버튼 */}
-                {user?.id && (
-                  <div className="flex gap-2">
-                    <input
-                      type="file"
-                      accept="audio/*,.mp3,.wav,.m4a,.aac"
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        
-                        if (!["audio/mpeg", "audio/wav", "audio/mp3", "audio/m4a", "audio/aac", "audio/ogg"].includes(file.type)) {
-                          toast({
-                            title: "지원하지 않는 파일 형식",
-                            description: "MP3, WAV, M4A, AAC, OGG 형식만 지원됩니다.",
-                            variant: "destructive",
-                          });
-                          return;
-                        }
-                        
-                        try {
-                          // 파일을 Blob으로 변환하여 저장
-                          const audioBlob = file;
-                          const audioUrl = URL.createObjectURL(audioBlob);
-                          
-                          // 오디오 메타데이터 읽기
-                          const audio = new Audio(audioUrl);
-                          let duration: number | null = null;
-                          await new Promise<void>((resolve) => {
-                            audio.addEventListener('loadedmetadata', () => {
-                              duration = audio.duration;
-                              resolve();
-                            });
-                            audio.addEventListener('error', () => resolve());
-                            setTimeout(() => resolve(), 2000); // 타임아웃
-                          });
-                          
-                          const cacheKey = `uploaded_${Date.now()}_${file.name}`;
-                          cacheRef.current.set(cacheKey, {
-                            blob: audioBlob,
-                            duration,
-                            mimeType: file.type,
-                            _audioUrl: audioUrl,
-                          });
-                          
-                          // DB에 저장
-                          const dbEntry: dbService.GenerationEntry = {
-                            purpose: "announcement",
-                            purposeLabel: "안내",
-                            voiceId: "uploaded",
-                            voiceName: "업로드된 음원",
-                            savedName: file.name.replace(/\.[^/.]+$/, ""), // 확장자 제거
-                            textPreview: `업로드된 파일: ${file.name}`,
-                            textLength: 0,
-                            duration,
-                            language: "ko",
-                            cacheKey,
-                            audioUrl,
-                            status: "ready",
-                            hasAudio: true,
-                          };
-                          
-                          const dbId = await dbService.saveGeneration(user.id, dbEntry, audioBlob);
-                          
-                          // 생성 기록에 추가
-                          const newEntry = {
-                            id: dbId || generateUniqueId(),
-                            ...dbEntry,
-                            createdAt: new Date().toISOString(),
-                          };
-                          
-                          setGenerationHistory((prev) => [newEntry, ...prev].slice(0, 100));
-                          
-                          toast({
-                            title: "음원 업로드 완료",
-                            description: `${file.name}이 업로드되었습니다.`,
-                          });
-                        } catch (error) {
-                          console.error("음원 업로드 실패:", error);
-                          toast({
-                            title: "업로드 실패",
-                            description: "음원 업로드 중 오류가 발생했습니다.",
-                            variant: "destructive",
-                          });
-                        }
-                        
-                        // input 초기화
-                        e.target.value = '';
-                      }}
-                      className="hidden"
-                      id="audio-upload-input"
-                    />
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="landio-button"
-                      onClick={() => {
-                        const input = document.getElementById("audio-upload-input") as HTMLInputElement;
-                        input?.click();
-                      }}
-                    >
-                      <Upload className="w-4 h-4 mr-2" />
-                      로컬 음원 업로드
-                    </Button>
-                  </div>
-                )}
-              </div>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="w-5 h-5" />
+                생성 기록 & 작업 관리
+              </CardTitle>
+              <CardDescription>최근 생성한 음성을 목적별로 관리하고, 향후 클로닝·믹싱·예약 작업을 연결합니다.</CardDescription>
             </CardHeader>
             <CardContent>
               {generationHistory.length === 0 ? (
@@ -5177,30 +5068,37 @@ const PublicVoiceGenerator = () => {
                     const isEditing = editingGenerationId === entry.id;
                     
                     // audioUrl 복원: cacheKey가 있으면 cacheRef에서 blob 데이터로부터 새 blob URL 생성
-                    let audioUrl = entry.audioUrl;
+                    // 상태로 관리하여 복원 시 AudioPlayer가 자동으로 업데이트되도록 함
+                    const [entryAudioUrl, setEntryAudioUrl] = useState<string | null>(entry.audioUrl);
                     
-                    if (entry.cacheKey) {
-                      const cached = cacheRef.current.get(entry.cacheKey);
-                      if (cached?.blob) {
-                        // blob 데이터가 있으면 항상 유효한 blob URL 사용
-                        if (!cached._audioUrl) {
+                    // 초기 로드 시 blob URL 복원
+                    useEffect(() => {
+                      if (entry.cacheKey && !entryAudioUrl) {
+                        const cached = cacheRef.current.get(entry.cacheKey);
+                        if (cached?.blob) {
                           const newUrl = URL.createObjectURL(cached.blob);
                           cacheRef.current.set(entry.cacheKey, { ...cached, _audioUrl: newUrl });
-                          audioUrl = newUrl;
+                          setEntryAudioUrl(newUrl);
                           // generationHistory도 업데이트
                           setGenerationHistory((prev) => 
                             prev.map((g) => 
                               g.id === entry.id ? { ...g, audioUrl: newUrl } : g
                             )
                           );
-                        } else {
-                          audioUrl = cached._audioUrl;
                         }
-                      } else if (cached?._audioUrl) {
-                        // blob 데이터는 없지만 audioUrl이 있는 경우
-                        audioUrl = cached._audioUrl;
+                      } else if (entry.cacheKey && entryAudioUrl && entryAudioUrl.startsWith("blob:")) {
+                        // blob URL이 있으면 유효성 검증
+                        const cached = cacheRef.current.get(entry.cacheKey);
+                        if (cached?.blob && (!cached._audioUrl || cached._audioUrl !== entryAudioUrl)) {
+                          // cacheRef에 blob이 있지만 URL이 다른 경우 새로 생성
+                          const newUrl = URL.createObjectURL(cached.blob);
+                          cacheRef.current.set(entry.cacheKey, { ...cached, _audioUrl: newUrl });
+                          setEntryAudioUrl(newUrl);
+                        }
                       }
-                    }
+                    }, [entry.id, entry.cacheKey]);
+                    
+                    let audioUrl = entryAudioUrl;
                     return (
                       <div key={entry.id} className="rounded-xl border border-border bg-muted/20 p-3 transition-all hover:shadow-md" style={{ borderRadius: '12px' }}>
                         <div className="grid gap-3 md:grid-cols-[160px_minmax(0,1fr)_160px_auto] items-center">
