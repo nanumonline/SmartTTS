@@ -261,10 +261,6 @@ const PublicVoiceGenerator = () => {
   const [mixingPreviewProgress, setMixingPreviewProgress] = useState(0);
   // 실시간 미리듣기 오디오 소스 추적 (정지 시 명시적으로 중지하기 위해)
   const mixingAudioSourcesRef = useRef<{ ttsSource?: AudioBufferSourceNode; bgmSource?: AudioBufferSourceNode; intervalId?: number }>({});
-  // 클론 음성 미리듣기 관련 상태
-  const [clonePreviewText, setClonePreviewText] = useState<Record<number, string>>({}); // clone.id -> preview text
-  const [clonePreviewAudio, setClonePreviewAudio] = useState<Record<number, string | null>>({}); // clone.id -> preview audio URL
-  const [isGeneratingClonePreview, setIsGeneratingClonePreview] = useState<Record<number, boolean>>({}); // clone.id -> is generating
 
   // Phase 4: 사용량 및 크레딧 모니터링
   const [usageStats, setUsageStats] = useState<UsageStats>({
@@ -586,22 +582,8 @@ const PublicVoiceGenerator = () => {
       is_clone: true,
       clone_of: clone.baseVoiceId,
     };
-    setAllVoices((prev) => {
-      const exists = prev.some((v: any) => v.voice_id === clone.voiceId);
-      if (exists) return prev;
-      return [...prev, newVoice];
-    });
-    setAvailableVoices((prev) => {
-      const exists = prev.some((v: any) => v.voice_id === clone.voiceId);
-      if (exists) return prev;
-      return [...prev, newVoice];
-    });
-    
-    // 즐겨찾기에 클론 음성이 있고, allVoices에 추가된 경우 즐겨찾기 드롭다운에 표시되도록 함
-    if (favoriteVoiceIds.has(clone.voiceId)) {
-      // 이미 즐겨찾기에 있으므로 자동으로 표시됨
-      console.log(`클론 음성 즐겨찾기 등록: ${clone.voiceId} (${clone.voiceName})`);
-    }
+    setAllVoices((prev) => (prev.some((v: any) => v.voice_id === clone.voiceId) ? prev : [...prev, newVoice]));
+    setAvailableVoices((prev) => (prev.some((v: any) => v.voice_id === clone.voiceId) ? prev : [...prev, newVoice]));
   };
 
   const openCloneModal = (baseVoiceId?: string) => {
@@ -3011,112 +2993,9 @@ const PublicVoiceGenerator = () => {
   }, []);
 
 
-  // 클론 음성 미리듣기 생성 함수
-  const handleClonePreview = async (clone: CloneRequest) => {
-    if (!clone.voiceId || clone.status !== "completed") {
-      toast({
-        title: "미리듣기 불가",
-        description: "완료된 클론 음성만 미리듣기가 가능합니다.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const previewText = clonePreviewText[clone.id]?.trim();
-    if (!previewText) {
-      toast({
-        title: "텍스트 입력 필요",
-        description: "미리듣기할 텍스트를 입력해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsGeneratingClonePreview(prev => ({ ...prev, [clone.id]: true }));
-
-    try {
-      // 기존 미리듣기 오디오 정리
-      if (clonePreviewAudio[clone.id]) {
-        URL.revokeObjectURL(clonePreviewAudio[clone.id]!);
-      }
-
-      // 클론 음성으로 TTS 생성
-      const requestBody = {
-        text: previewText,
-        language: clone.language || "ko",
-        style: "neutral",
-        model: "sona_speech_1",
-        voice_settings: {
-          speed: 1.0,
-          pitch_shift: 0,
-          pitch_variance: 1,
-        },
-      };
-
-      const proxyResponse = await fetchWithSupabaseProxy(`/text-to-speech/${clone.voiceId}?output_format=mp3`, {
-        method: "POST",
-        body: JSON.stringify({ ...requestBody, voice_id: clone.voiceId }),
-      });
-
-      if (!proxyResponse?.ok) {
-        throw new Error(`TTS 생성 실패 (${proxyResponse?.status || 'unknown'})`);
-      }
-
-      const audioResult = await parseSupertoneResponse(proxyResponse);
-      if (!audioResult?.blob) {
-        throw new Error("오디오 데이터를 받을 수 없습니다.");
-      }
-
-      const audioUrl = URL.createObjectURL(audioResult.blob);
-      setClonePreviewAudio(prev => ({ ...prev, [clone.id]: audioUrl }));
-
-      toast({
-        title: "미리듣기 생성 완료",
-        description: `${clone.voiceName} 음성으로 미리듣기가 생성되었습니다.`,
-      });
-    } catch (error: any) {
-      console.error("클론 음성 미리듣기 오류:", error);
-      toast({
-        title: "미리듣기 생성 실패",
-        description: error?.message || "미리듣기를 생성할 수 없습니다.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsGeneratingClonePreview(prev => ({ ...prev, [clone.id]: false }));
-    }
-  };
-
   // 즐겨찾기된 음성들을 로드하는 함수 (allVoices와 availableVoices를 직접 참조)
   const loadFavoriteVoices = useCallback(async () => {
     if (favoriteVoiceIds.size === 0) return;
-    
-    // 클론 음성도 즐겨찾기에 포함될 수 있으므로 cloneRequests에서 찾기
-    const favoriteCloneVoices = cloneRequests
-      .filter((clone) => clone.status === "completed" && favoriteVoiceIds.has(clone.voiceId))
-      .map((clone) => {
-        // 클론 음성이 아직 allVoices에 등록되지 않았으면 등록
-        const existing = allVoices.find((v: any) => v.voice_id === clone.voiceId);
-        if (!existing) {
-          registerCloneVoice(clone);
-          // registerCloneVoice는 비동기이므로 다시 찾기
-          return null; // 다음 사이클에서 찾을 수 있도록
-        }
-        return existing;
-      })
-      .filter(Boolean);
-
-    // 클론 음성이 있으면 availableVoices에도 추가
-    if (favoriteCloneVoices.length > 0) {
-      setAvailableVoices((prev) => {
-        const existingIds = new Set(prev.map((v: any) => v.voice_id));
-        const newVoices = favoriteCloneVoices.filter((v: any) => v && !existingIds.has(v.voice_id));
-        if (newVoices.length > 0) {
-          console.log(`✅ 클론 음성 즐겨찾기 ${newVoices.length}개를 availableVoices에 추가`);
-          return [...prev, ...newVoices];
-        }
-        return prev;
-      });
-    }
     
     // 현재 상태에서 누락된 즐겨찾기 음성 ID 찾기
     const missingVoiceIds = Array.from(favoriteVoiceIds).filter((vid) => {
@@ -3300,7 +3179,7 @@ const PublicVoiceGenerator = () => {
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [favoriteVoiceIds.size, allVoices.length, loadFavoriteVoices, isLoadingVoices, cloneRequests.length]);
+  }, [favoriteVoiceIds.size, allVoices.length, loadFavoriteVoices, isLoadingVoices]);
 
   // 텍스트 변경 시 예상 오디오 길이 및 크레딧 자동 예측 (300자 초과 지원)
   useEffect(() => {
@@ -5254,72 +5133,6 @@ const PublicVoiceGenerator = () => {
                           )}
                         </div>
                         <div className="flex flex-wrap gap-2 justify-end">
-                          {/* 클론 음성 미리듣기 (완료된 경우에만) */}
-                          {clone.status === "completed" && (
-                            <div className="flex flex-col gap-2 w-full md:w-auto">
-                              <Input
-                                type="text"
-                                placeholder="미리듣기 텍스트 입력..."
-                                value={clonePreviewText[clone.id] || ""}
-                                onChange={(e) => setClonePreviewText(prev => ({ ...prev, [clone.id]: e.target.value }))}
-                                className="h-8 text-xs"
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter" && !e.shiftKey) {
-                                    e.preventDefault();
-                                    handleClonePreview(clone);
-                                  }
-                                }}
-                              />
-                              <div className="flex gap-2">
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="landio-button text-xs"
-                                  disabled={!clonePreviewText[clone.id]?.trim() || isGeneratingClonePreview[clone.id]}
-                                  onClick={() => handleClonePreview(clone)}
-                                >
-                                  {isGeneratingClonePreview[clone.id] ? (
-                                    <>
-                                      <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-current mr-1"></div>
-                                      생성 중...
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Play className="w-3 h-3 mr-1" />
-                                      미리듣기
-                                    </>
-                                  )}
-                                </Button>
-                                {clonePreviewAudio[clone.id] && (
-                                  <>
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      className="text-xs h-7"
-                                      onClick={() => {
-                                        setClonePreviewAudio(prev => {
-                                          const newState = { ...prev };
-                                          if (newState[clone.id]) {
-                                            URL.revokeObjectURL(newState[clone.id]!);
-                                            delete newState[clone.id];
-                                          }
-                                          return newState;
-                                        });
-                                      }}
-                                    >
-                                      ✕
-                                    </Button>
-                                    <AudioPlayer
-                                      audioUrl={clonePreviewAudio[clone.id]!}
-                                      title={`${clone.voiceName} 미리듣기`}
-                                      duration={0}
-                                      className="flex-1"
-                                    />
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          )}
                           <Button
                             size="sm"
                             variant={isFavorite ? "default" : "outline"}

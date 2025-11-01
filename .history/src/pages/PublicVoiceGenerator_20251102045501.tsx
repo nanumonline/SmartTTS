@@ -3300,7 +3300,7 @@ const PublicVoiceGenerator = () => {
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [favoriteVoiceIds.size, allVoices.length, loadFavoriteVoices, isLoadingVoices, cloneRequests.length]);
+  }, [favoriteVoiceIds.size, allVoices.length, loadFavoriteVoices, isLoadingVoices]);
 
   // 텍스트 변경 시 예상 오디오 길이 및 크레딧 자동 예측 (300자 초과 지원)
   useEffect(() => {
