@@ -2371,7 +2371,7 @@ const PublicVoiceGenerator = () => {
     try {
       cleanupGeneratedAudioUrl(generatedAudio);
 
-      let audioResult: { blob: Blob; duration: number | null; mimeType?: string } | null = null;
+      let audioResult: { audioUrl: string; duration: number | null; mimeType?: string } | null = null;
       let source = "프록시";
 
       // 1. Supabase Edge Function 프록시 시도

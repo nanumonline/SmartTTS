@@ -1581,7 +1581,7 @@ const PublicVoiceGenerator = () => {
         }
       }
 
-      if (!blob && !audioUrl) {
+      if (!audioUrl) {
         toast({
           title: "다운로드 불가",
           description: "오디오 파일을 찾을 수 없습니다.",
@@ -1590,17 +1590,9 @@ const PublicVoiceGenerator = () => {
         return;
       }
 
-      const downloadBlob = blob || (audioUrl ? await fetch(audioUrl).then(r => r.blob()) : null);
-      if (!downloadBlob) {
-        toast({
-          title: "다운로드 실패",
-          description: "오디오 파일을 다운로드할 수 없습니다.",
-          variant: "destructive",
-        });
-        return;
-      }
-      
-      const url = URL.createObjectURL(downloadBlob);
+      const response = await fetch(audioUrl);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = `${entry.savedName || formatDateTime(entry.createdAt)}.mp3`;
@@ -2371,7 +2363,7 @@ const PublicVoiceGenerator = () => {
     try {
       cleanupGeneratedAudioUrl(generatedAudio);
 
-      let audioResult: { blob: Blob; duration: number | null; mimeType?: string } | null = null;
+      let audioResult: { audioUrl: string; duration: number | null; mimeType?: string } | null = null;
       let source = "프록시";
 
       // 1. Supabase Edge Function 프록시 시도
@@ -4506,29 +4498,13 @@ const PublicVoiceGenerator = () => {
                 onValueChange={(value) => {
                   const selectedTrack = generationHistory.find((g) => g.id.toString() === value);
                   if (selectedGenerationForMixing?.id && selectedTrack) {
-                    // audioUrl 복원: cacheKey가 있으면 cacheRef에서 blob 데이터로부터 새 blob URL 생성
+                    // audioUrl이 없으면 cacheKey로부터 복원 시도
                     let audioUrl = selectedTrack.audioUrl;
-                    if (selectedTrack.cacheKey) {
+                    if (!audioUrl && selectedTrack.cacheKey) {
                       const cached = cacheRef.current.get(selectedTrack.cacheKey);
-                      if (cached?.blob) {
-                        // blob 데이터가 있으면 새 blob URL 생성
-                        if (!cached._audioUrl) {
-                          const newUrl = URL.createObjectURL(cached.blob);
-                          cacheRef.current.set(selectedTrack.cacheKey, { ...cached, _audioUrl: newUrl });
-                          audioUrl = newUrl;
-                        } else {
-                          audioUrl = cached._audioUrl;
-                        }
+                      if (cached?.audioUrl) {
+                        audioUrl = cached.audioUrl;
                         // generationHistory도 업데이트
-                        setGenerationHistory((prev) => 
-                          prev.map((g) => 
-                            g.id === selectedTrack.id 
-                              ? { ...g, audioUrl }
-                              : g
-                          )
-                        );
-                      } else if (cached?._audioUrl) {
-                        audioUrl = cached._audioUrl;
                         setGenerationHistory((prev) => 
                           prev.map((g) => 
                             g.id === selectedTrack.id 
