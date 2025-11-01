@@ -762,9 +762,7 @@ const PublicVoiceGenerator = () => {
           bgmFadeOutGain = ctx.createGain();
           // 페이드아웃 시작 시간: TTS 종료 + bgmOffsetAfterTts 후
           const fadeOutStartTime = bgmEndTime - settings.fadeOut;
-          const fadeOutRatio = (settings.fadeOutRatio ?? 100) / 100; // 0-100을 0-1로 변환
-          const fadeOutStartGain = settings.bgmGain * fadeOutRatio;
-          bgmFadeOutGain.gain.setValueAtTime(fadeOutStartGain, ctx.currentTime + fadeOutStartTime);
+          bgmFadeOutGain.gain.setValueAtTime(settings.bgmGain, ctx.currentTime + fadeOutStartTime);
           bgmFadeOutGain.gain.exponentialRampToValueAtTime(0.0001, bgmEndTime);
         }
 
@@ -6036,6 +6034,63 @@ const PublicVoiceGenerator = () => {
                     }
                   }}
                 />
+                
+                {/* BGM 오프셋 상세 설정 */}
+                <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-700">
+                  <div className="space-y-2">
+                    <Label style={{ color: '#E5E7EB' }} className="text-xs">BGM 시작: TTS 전</Label>
+                    <div className="flex items-center gap-2">
+                      <Slider
+                        value={[Math.max(0, -((mixingStates.get(selectedGenerationForMixing?.id)?.bgmOffset ?? 0)))]}
+                        onValueChange={(values) => {
+                          const genId = selectedGenerationForMixing?.id;
+                          if (genId) {
+                            const state = mixingStates.get(genId) || { voiceTrackVolume: 100, backgroundTrackVolume: 50, effectTrackVolume: 70 };
+                            setMixingStates((prev) => new Map(prev).set(genId, { ...state, bgmOffset: -values[0] }));
+                            if (isMixingPreviewPlaying) startRealtimePreview();
+                          }
+                        }}
+                        min={0}
+                        max={30}
+                        step={0.1}
+                        className="flex-1"
+                      />
+                      <span className="text-xs text-gray-400 w-12 text-right">
+                        {Math.max(0, -((mixingStates.get(selectedGenerationForMixing?.id)?.bgmOffset ?? 0))).toFixed(1)}초
+                      </span>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label style={{ color: '#E5E7EB' }} className="text-xs">BGM 종료: TTS 후</Label>
+                    <div className="flex items-center gap-2">
+                      <Slider
+                        value={[Math.max(0, (mixingStates.get(selectedGenerationForMixing?.id)?.bgmOffset ?? 0))]}
+                        onValueChange={(values) => {
+                          const genId = selectedGenerationForMixing?.id;
+                          if (genId) {
+                            const state = mixingStates.get(genId) || { voiceTrackVolume: 100, backgroundTrackVolume: 50, effectTrackVolume: 70 };
+                            // TTS 후 BGM 연장 (trimEndSec 조절)
+                            const ttsDuration = mixingStates.get(genId)?.selectedVoiceTrack?.duration || 0;
+                            setMixingStates((prev) => new Map(prev).set(genId, { 
+                              ...state, 
+                              trimEndSec: ttsDuration + values[0]
+                            }));
+                            if (isMixingPreviewPlaying) startRealtimePreview();
+                          }
+                        }}
+                        min={0}
+                        max={30}
+                        step={0.1}
+                        className="flex-1"
+                      />
+                      <span className="text-xs text-gray-400 w-12 text-right">
+                        {Math.max(0, (mixingStates.get(selectedGenerationForMixing?.id)?.trimEndSec ? 
+                          (mixingStates.get(selectedGenerationForMixing?.id)?.selectedVoiceTrack?.duration || 0) - 
+                          (mixingStates.get(selectedGenerationForMixing?.id)?.trimEndSec || 0) : 0)).toFixed(1)}초
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
             

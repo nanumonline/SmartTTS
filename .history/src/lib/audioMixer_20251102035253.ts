@@ -256,13 +256,10 @@ export async function exportMixToWav(
 
   // BGM 종료 시 페이드아웃 적용
   // bgmTotalLen이 이미 계산되어 있음 (위에서 계산)
-  // 음원증감 비율 적용
   const bgmEndTime = bgmTotalLen || renderDur;
   if (bgmBuffer && settings.fadeOut > 0) {
     const bgmFadeOutGain = ctx.createGain();
-    const fadeOutRatio = (settings.fadeOutRatio ?? 100) / 100; // 0-100을 0-1로 변환
-    const fadeOutStartGain = settings.bgmGain * fadeOutRatio;
-    bgmFadeOutGain.gain.setValueAtTime(fadeOutStartGain, bgmEndTime - Math.max(0.01, settings.fadeOut));
+    bgmFadeOutGain.gain.setValueAtTime(settings.bgmGain, bgmEndTime - Math.max(0.01, settings.fadeOut));
     bgmFadeOutGain.gain.exponentialRampToValueAtTime(0.0001, bgmEndTime);
     bgmGain.connect(bgmFadeOutGain);
     bgmFadeOutGain.connect(master);

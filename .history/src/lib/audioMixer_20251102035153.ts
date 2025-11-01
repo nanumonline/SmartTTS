@@ -234,18 +234,15 @@ export async function exportMixToWav(
 
   // BGM에만 페이드 적용 (TTS는 페이드 없음)
   // BGM은 항상 0초부터 시작하므로 페이드인도 0초부터
-  // 음원증감 비율 적용
   if (bgmBuffer && settings.fadeIn > 0) {
     const bgmFadeInGain = ctx.createGain();
-    const fadeInRatio = (settings.fadeInRatio ?? 100) / 100; // 0-100을 0-1로 변환
-    const fadeInTargetGain = settings.bgmGain * fadeInRatio;
     bgmFadeInGain.gain.setValueAtTime(0.0001, bgmStartTime);
-    bgmFadeInGain.gain.exponentialRampToValueAtTime(fadeInTargetGain, bgmStartTime + Math.max(0.01, settings.fadeIn));
+    bgmFadeInGain.gain.exponentialRampToValueAtTime(settings.bgmGain, bgmStartTime + Math.max(0.01, settings.fadeIn));
     lowShelf.connect(midPeaking);
     midPeaking.connect(highShelf);
     highShelf.connect(bgmFadeInGain);
     bgmFadeInGain.connect(bgmGain);
-    bgmGain.gain.value = fadeInTargetGain; // 페이드인 후 유지
+    bgmGain.gain.value = settings.bgmGain; // 페이드인 후 유지
   } else {
     // 페이드인 없이 바로 연결
     lowShelf.connect(midPeaking);
@@ -256,13 +253,10 @@ export async function exportMixToWav(
 
   // BGM 종료 시 페이드아웃 적용
   // bgmTotalLen이 이미 계산되어 있음 (위에서 계산)
-  // 음원증감 비율 적용
   const bgmEndTime = bgmTotalLen || renderDur;
   if (bgmBuffer && settings.fadeOut > 0) {
     const bgmFadeOutGain = ctx.createGain();
-    const fadeOutRatio = (settings.fadeOutRatio ?? 100) / 100; // 0-100을 0-1로 변환
-    const fadeOutStartGain = settings.bgmGain * fadeOutRatio;
-    bgmFadeOutGain.gain.setValueAtTime(fadeOutStartGain, bgmEndTime - Math.max(0.01, settings.fadeOut));
+    bgmFadeOutGain.gain.setValueAtTime(settings.bgmGain, bgmEndTime - Math.max(0.01, settings.fadeOut));
     bgmFadeOutGain.gain.exponentialRampToValueAtTime(0.0001, bgmEndTime);
     bgmGain.connect(bgmFadeOutGain);
     bgmFadeOutGain.connect(master);

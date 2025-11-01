@@ -762,9 +762,7 @@ const PublicVoiceGenerator = () => {
           bgmFadeOutGain = ctx.createGain();
           // 페이드아웃 시작 시간: TTS 종료 + bgmOffsetAfterTts 후
           const fadeOutStartTime = bgmEndTime - settings.fadeOut;
-          const fadeOutRatio = (settings.fadeOutRatio ?? 100) / 100; // 0-100을 0-1로 변환
-          const fadeOutStartGain = settings.bgmGain * fadeOutRatio;
-          bgmFadeOutGain.gain.setValueAtTime(fadeOutStartGain, ctx.currentTime + fadeOutStartTime);
+          bgmFadeOutGain.gain.setValueAtTime(settings.bgmGain, ctx.currentTime + fadeOutStartTime);
           bgmFadeOutGain.gain.exponentialRampToValueAtTime(0.0001, bgmEndTime);
         }
 

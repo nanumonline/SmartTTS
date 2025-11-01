@@ -130,82 +130,37 @@ const MixingTimeline: React.FC<MixingTimelineProps> = ({
         </div>
       </div>
 
-      {/* BGM 페이드인/아웃 슬라이더 (시간 + 음원증감 비율) */}
-      <div className="space-y-4">
-        {/* 페이드인 */}
-        <div className="space-y-3 p-3 bg-gray-800/30 rounded-lg border border-gray-700">
-          <Label style={{ color: '#E5E7EB' }} className="text-xs font-semibold">BGM 페이드 인</Label>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label style={{ color: '#E5E7EB' }} className="text-xs">페이드 인 시간</Label>
-                <span className="text-xs text-gray-400">{fadeIn.toFixed(2)}s</span>
-              </div>
-              <Slider
-                value={[fadeIn * 10]}
-                onValueChange={(values) => onFadeInChange(values[0] / 10)}
-                min={0}
-                max={50}
-                step={0.5}
-                className="w-full"
-              />
-              <p className="text-[10px] text-gray-500">페이드인 지속 시간</p>
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label style={{ color: '#E5E7EB' }} className="text-xs">음원증감 비율</Label>
-                <span className="text-xs text-gray-400">{fadeInRatio.toFixed(0)}%</span>
-              </div>
-              <Slider
-                value={[fadeInRatio]}
-                onValueChange={(values) => onFadeInRatioChange?.(values[0])}
-                min={0}
-                max={100}
-                step={1}
-                className="w-full"
-                disabled={!onFadeInRatioChange}
-              />
-              <p className="text-[10px] text-gray-500">페이드인 목표 음량 비율 (0% → 설정값%)</p>
-            </div>
+      {/* BGM 페이드인/아웃 슬라이더 */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label style={{ color: '#E5E7EB' }} className="text-xs">BGM 페이드 인</Label>
+            <span className="text-xs text-gray-400">{fadeIn.toFixed(2)}s</span>
           </div>
+          <Slider
+            value={[fadeIn * 10]}
+            onValueChange={(values) => onFadeInChange(values[0] / 10)}
+            min={0}
+            max={50}
+            step={0.5}
+            className="w-full"
+          />
+          <p className="text-[10px] text-gray-500">BGM 시작 시 적용</p>
         </div>
-        
-        {/* 페이드아웃 */}
-        <div className="space-y-3 p-3 bg-gray-800/30 rounded-lg border border-gray-700">
-          <Label style={{ color: '#E5E7EB' }} className="text-xs font-semibold">BGM 페이드 아웃</Label>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label style={{ color: '#E5E7EB' }} className="text-xs">페이드 아웃 시간</Label>
-                <span className="text-xs text-gray-400">{fadeOut.toFixed(2)}s</span>
-              </div>
-              <Slider
-                value={[fadeOut * 10]}
-                onValueChange={(values) => onFadeOutChange(values[0] / 10)}
-                min={0}
-                max={50}
-                step={0.5}
-                className="w-full"
-              />
-              <p className="text-[10px] text-gray-500">페이드아웃 지속 시간</p>
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label style={{ color: '#E5E7EB' }} className="text-xs">음원증감 비율</Label>
-                <span className="text-xs text-gray-400">{fadeOutRatio.toFixed(0)}%</span>
-              </div>
-              <Slider
-                value={[fadeOutRatio]}
-                onValueChange={(values) => onFadeOutRatioChange?.(values[0])}
-                min={0}
-                max={100}
-                step={1}
-                className="w-full"
-                disabled={!onFadeOutRatioChange}
-              />
-              <p className="text-[10px] text-gray-500">페이드아웃 시작 음량 비율 (설정값% → 0%)</p>
-            </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label style={{ color: '#E5E7EB' }} className="text-xs">BGM 페이드 아웃</Label>
+            <span className="text-xs text-gray-400">{fadeOut.toFixed(2)}s</span>
           </div>
+          <Slider
+            value={[fadeOut * 10]}
+            onValueChange={(values) => onFadeOutChange(values[0] / 10)}
+            min={0}
+            max={50}
+            step={0.5}
+            className="w-full"
+          />
+          <p className="text-[10px] text-gray-500">TTS 종료 후 BGM 종료 시 적용</p>
         </div>
       </div>
       
