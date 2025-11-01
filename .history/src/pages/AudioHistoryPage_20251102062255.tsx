@@ -8,21 +8,7 @@ import { Search, Download, Trash2, Play, Filter } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import * as dbService from "@/services/dbService";
 import AudioPlayer from "@/components/AudioPlayer";
-
-// formatDateTime 함수 정의 (PublicVoiceGenerator에서 참조)
-const formatDateTime = (dateString: string): string => {
-  try {
-    const date = new Date(dateString);
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    const hours = String(date.getHours()).padStart(2, "0");
-    const minutes = String(date.getMinutes()).padStart(2, "0");
-    return `${year}-${month}-${day} ${hours}:${minutes}`;
-  } catch {
-    return dateString;
-  }
-};
+import { formatDateTime } from "@/lib/utils";
 
 export default function AudioHistoryPage() {
   const { user } = useAuth();
