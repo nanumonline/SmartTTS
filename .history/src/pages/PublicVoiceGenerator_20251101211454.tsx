@@ -1314,7 +1314,6 @@ const PublicVoiceGenerator = () => {
       gaming: "게임",
       advertisement: "광고",
       telephone: "전화",
-      documentary: "다큐멘터리",
       meme: "밈",
     };
     return useCase ? (map[useCase] || useCase) : undefined;
@@ -2283,92 +2282,66 @@ const PublicVoiceGenerator = () => {
     setVoiceLoadingProgress(0);
     let voicesLoaded = false;
     try {
-      // 먼저 DB에서 음성 카탈로그 로드 시도 (샘플 음원 포함)
-      const dbVoices = await dbService.loadVoiceCatalog();
-      if (dbVoices && dbVoices.length > 0) {
-        console.log(`✅ DB에서 음성 카탈로그 로드: ${dbVoices.length}개`);
-        setAllVoices(dbVoices);
-        setAvailableVoices(dbVoices);
-        setVoiceLoadingProgress(50); // DB 로드 완료 50%
+      // 프록시를 통해 GET /v1/voices 호출 (최대 100개 요청)
+      const response = await fetchWithSupabaseProxy("/voices?limit=100", { method: "GET" });
+      if (response?.ok) {
+        const data = await response.json();
+        // 응답 형식: { items: [], total: 150, nextPageToken: "..." } 또는 배열/기타 필드
+        const voices = data.items || (Array.isArray(data) ? data : (data.voices || data.data || []));
+        setAllVoices(voices);
+        setAvailableVoices(voices);
+        const nextToken = data.nextPageToken || data.next_page_token || data.next_token || null;
+        setVoiceNextToken(nextToken || null);
+        const total = data.total || data.totalCount || null;
+        setVoiceTotalCount(total);
+        console.log(`✅ 음성 목록 로드 성공(프록시): ${voices.length}개`);
         voicesLoaded = true;
         
-        // DB에 저장된 음성이 있으면 API 호출 없이 사용
-        // 하지만 최신 데이터 확인을 위해 API로 최신 정보 가져오기 (백그라운드)
-        setVoiceLoadingProgress(100);
-        if (showToast) {
-          toast({
-            title: "음성 목록 로드 완료",
-            description: `DB에서 ${dbVoices.length}개의 음성을 불러왔습니다. (샘플 음원 포함)`,
-          });
+        // 진행률 계산 (초기 로드 완료)
+        if (total && total > 0) {
+          setVoiceLoadingProgress(Math.min(100, Math.round((voices.length / total) * 100)));
+        } else {
+          // total이 없으면 10%로 설정 (초기 로드 완료 표시)
+          setVoiceLoadingProgress(10);
         }
         
-        // 백그라운드에서 최신 음성 목록 동기화 (일별)
-        dbService.syncVoiceCatalog(dbVoices).catch(err => 
-          console.error("음성 카탈로그 동기화 실패:", err)
-        );
-      } else {
-        // DB에 음성이 없으면 API에서 가져오기
-        console.log("DB에 음성 카탈로그가 없어 API에서 가져옵니다.");
-        const response = await fetchWithSupabaseProxy("/voices?limit=100", { method: "GET" });
-        if (response?.ok) {
-          const data = await response.json();
-          // 응답 형식: { items: [], total: 150, nextPageToken: "..." } 또는 배열/기타 필드
-          const voices = data.items || (Array.isArray(data) ? data : (data.voices || data.data || []));
-          setAllVoices(voices);
-          setAvailableVoices(voices);
-          const nextToken = data.nextPageToken || data.next_page_token || data.next_token || null;
-          setVoiceNextToken(nextToken || null);
-          const total = data.total || data.totalCount || null;
-          setVoiceTotalCount(total);
-          console.log(`✅ 음성 목록 로드 성공(프록시): ${voices.length}개`);
-          voicesLoaded = true;
-          
-          // 진행률 계산 (초기 로드 완료)
-          if (total && total > 0) {
-            setVoiceLoadingProgress(Math.min(100, Math.round((voices.length / total) * 100)));
-          } else {
-            // total이 없으면 10%로 설정 (초기 로드 완료 표시)
-            setVoiceLoadingProgress(10);
-          }
-          
-          // 초기 로드시 전체 자동 로드 (더 많은 페이지)
-          if (nextToken) {
-            if (showToast) {
-              toast({
-                title: "전체 음성 로드 중...",
-                description: `초기 ${voices.length}개 로드 완료. 나머지 음성들을 불러오고 있습니다.`,
-              });
-            }
-            await autoLoadVoicesThrottled(100, 150, showToast);
-          } else {
-            // nextToken이 없으면 이미 모든 음성 로드 완료
-            setVoiceLoadingProgress(100);
-            if (showToast) {
-              toast({
-                title: "모든 음성 로드 완료",
-                description: `총 ${voices.length}개의 음성을 불러왔습니다.`,
-              });
-            }
-          }
-          
-          // 음성 카탈로그 동기화 (일별, 백그라운드) - 샘플 음원 포함
-          dbService.syncVoiceCatalog(voices).catch(err => 
-            console.error("음성 카탈로그 동기화 실패:", err)
-          );
-        } else if (response) {
-          console.warn("음성 목록 로드 실패(프록시):", await response.text());
-          setVoiceLoadingProgress(0);
+        // 초기 로드시 전체 자동 로드 (더 많은 페이지)
+        if (nextToken) {
           if (showToast) {
             toast({
-              title: "음성 로드 실패",
-              description: "음성 목록을 불러올 수 없습니다. 다시 시도해주세요.",
-              variant: "destructive",
+              title: "전체 음성 로드 중...",
+              description: `초기 ${voices.length}개 로드 완료. 나머지 음성들을 불러오고 있습니다.`,
+            });
+          }
+          await autoLoadVoicesThrottled(100, 150, showToast);
+        } else {
+          // nextToken이 없으면 이미 모든 음성 로드 완료
+          setVoiceLoadingProgress(100);
+          if (showToast) {
+            toast({
+              title: "모든 음성 로드 완료",
+              description: `총 ${voices.length}개의 음성을 불러왔습니다.`,
             });
           }
         }
+        
+        // 음성 카탈로그 동기화 (일별, 백그라운드)
+        dbService.syncVoiceCatalog(allVoices.length > 0 ? allVoices : voices).catch(err => 
+          console.error("음성 카탈로그 동기화 실패:", err)
+        );
+      } else if (response) {
+        console.warn("음성 목록 로드 실패(프록시):", await response.text());
+        setVoiceLoadingProgress(0);
+        if (showToast) {
+          toast({
+            title: "음성 로드 실패",
+            description: "음성 목록을 불러올 수 없습니다. 다시 시도해주세요.",
+            variant: "destructive",
+          });
+        }
       }
     } catch (e: any) {
-      console.warn("음성 목록 로드 예외:", e.message);
+      console.warn("음성 목록 로드 예외(프록시):", e.message);
       setVoiceLoadingProgress(0);
       if (showToast) {
         toast({
