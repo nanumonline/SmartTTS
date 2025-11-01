@@ -4372,10 +4372,8 @@ const PublicVoiceGenerator = () => {
                 <MixingTimeline
                   ttsDuration={mixingStates.get(selectedGenerationForMixing?.id)?.selectedVoiceTrack?.duration || 0}
                   bgmDuration={(() => {
-                    // BGM 길이 가져오기 (uploadedBgmFile 또는 selectedBackground에서)
-                    const bgmState = mixingStates.get(selectedGenerationForMixing?.id)?.selectedBackground;
-                    // 실제로는 AudioBuffer의 duration을 가져와야 하지만, 여기서는 placeholder
-                    return 30; // 기본값 30초
+                    // BGM 길이는 실제 파일에서 가져와야 하지만, 일단 placeholder
+                    return 0;
                   })()}
                   bgmOffset={mixingStates.get(selectedGenerationForMixing?.id)?.bgmOffset ?? DEFAULT_MIXING_SETTINGS.bgmOffset}
                   fadeIn={mixingStates.get(selectedGenerationForMixing?.id)?.fadeIn ?? DEFAULT_MIXING_SETTINGS.fadeIn}

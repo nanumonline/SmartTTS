@@ -13,7 +13,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import HomeButton from "@/components/HomeButton";
-import MixingTimeline from "@/components/MixingTimeline";
 import { 
   Mic2, 
   Play, 
@@ -247,9 +246,6 @@ const PublicVoiceGenerator = () => {
   const [expandedGenerationId, setExpandedGenerationId] = useState<number | null>(null);
   const [editingGenerationId, setEditingGenerationId] = useState<number | null>(null);
   const [editNameInput, setEditNameInput] = useState("");
-  const [mixingPreviewAudio, setMixingPreviewAudio] = useState<HTMLAudioElement | null>(null);
-  const [isMixingPreviewPlaying, setIsMixingPreviewPlaying] = useState(false);
-  const [mixingPreviewProgress, setMixingPreviewProgress] = useState(0);
 
   // Phase 4: 사용량 및 크레딧 모니터링
   const [usageStats, setUsageStats] = useState<UsageStats>({
@@ -4287,16 +4283,8 @@ const PublicVoiceGenerator = () => {
             <DialogDescription style={{ color: '#E5E7EB' }}>음원을 선택하고 배경음과 효과음을 추가하여 믹싱합니다.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            {/* 생성된 음원 정보 (가장 중요) */}
-            <div className="p-4 bg-blue-900/30 border-2 border-blue-600/50 rounded-lg">
-              <div className="flex items-center justify-between mb-2">
-                <Label style={{ color: '#FFFFFF' }} className="text-base font-bold">🎵 생성된 음원 (주요)</Label>
-                {mixingStates.get(selectedGenerationForMixing?.id)?.selectedVoiceTrack?.duration && (
-                  <span className="text-sm text-blue-300">
-                    {formatTime(mixingStates.get(selectedGenerationForMixing?.id)?.selectedVoiceTrack?.duration || 0)}
-                  </span>
-                )}
-              </div>
+            <div className="space-y-2">
+              <Label style={{ color: '#E5E7EB' }}>음원 선택</Label>
               <Select 
                 value={mixingStates.get(selectedGenerationForMixing?.id)?.selectedVoiceTrack?.id?.toString() || selectedGenerationForMixing?.id?.toString()}
                 onValueChange={(value) => {
@@ -4328,13 +4316,6 @@ const PublicVoiceGenerator = () => {
                       ...state, 
                       selectedVoiceTrack: { ...selectedTrack, audioUrl: audioUrl || selectedTrack.audioUrl }
                     }));
-                    
-                    // 음원 변경 시 실시간 미리듣기 중지
-                    if (mixingPreviewAudio) {
-                      mixingPreviewAudio.pause();
-                      mixingPreviewAudio.currentTime = 0;
-                      setIsMixingPreviewPlaying(false);
-                    }
                   }
                 }}
               >
@@ -4364,109 +4345,6 @@ const PublicVoiceGenerator = () => {
                 </div>
               )}
             </div>
-            
-            {/* 타임라인 시각화 및 BGM 오프셋 조절 */}
-            {mixingStates.get(selectedGenerationForMixing?.id)?.selectedVoiceTrack && (
-              <div className="space-y-3 p-4 bg-gray-800/30 rounded-lg border border-gray-700">
-                <Label style={{ color: '#E5E7EB' }} className="text-sm font-semibold">타임라인 (생성 음원 중심)</Label>
-                <MixingTimeline
-                  ttsDuration={mixingStates.get(selectedGenerationForMixing?.id)?.selectedVoiceTrack?.duration || 0}
-                  bgmDuration={(() => {
-                    // BGM 길이 가져오기 (uploadedBgmFile 또는 selectedBackground에서)
-                    const bgmState = mixingStates.get(selectedGenerationForMixing?.id)?.selectedBackground;
-                    // 실제로는 AudioBuffer의 duration을 가져와야 하지만, 여기서는 placeholder
-                    return 30; // 기본값 30초
-                  })()}
-                  bgmOffset={mixingStates.get(selectedGenerationForMixing?.id)?.bgmOffset ?? DEFAULT_MIXING_SETTINGS.bgmOffset}
-                  fadeIn={mixingStates.get(selectedGenerationForMixing?.id)?.fadeIn ?? DEFAULT_MIXING_SETTINGS.fadeIn}
-                  fadeOut={mixingStates.get(selectedGenerationForMixing?.id)?.fadeOut ?? DEFAULT_MIXING_SETTINGS.fadeOut}
-                  onBgmOffsetChange={(offset) => {
-                    const genId = selectedGenerationForMixing?.id;
-                    if (genId) {
-                      const state = mixingStates.get(genId) || { voiceTrackVolume: 100, backgroundTrackVolume: 50, effectTrackVolume: 70 };
-                      setMixingStates((prev) => new Map(prev).set(genId, { ...state, bgmOffset: offset }));
-                      // 실시간 미리듣기 업데이트
-                      if (isMixingPreviewPlaying && mixingPreviewAudio) {
-                        // 재생 중이면 재시작
-                        startRealtimePreview();
-                      }
-                    }
-                  }}
-                  onFadeInChange={(fade) => {
-                    const genId = selectedGenerationForMixing?.id;
-                    if (genId) {
-                      const state = mixingStates.get(genId) || { voiceTrackVolume: 100, backgroundTrackVolume: 50, effectTrackVolume: 70 };
-                      setMixingStates((prev) => new Map(prev).set(genId, { ...state, fadeIn: fade }));
-                    }
-                  }}
-                  onFadeOutChange={(fade) => {
-                    const genId = selectedGenerationForMixing?.id;
-                    if (genId) {
-                      const state = mixingStates.get(genId) || { voiceTrackVolume: 100, backgroundTrackVolume: 50, effectTrackVolume: 70 };
-                      setMixingStates((prev) => new Map(prev).set(genId, { ...state, fadeOut: fade }));
-                    }
-                  }}
-                />
-                
-                {/* BGM 오프셋 상세 설정 */}
-                <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-700">
-                  <div className="space-y-2">
-                    <Label style={{ color: '#E5E7EB' }} className="text-xs">BGM 시작: TTS 전</Label>
-                    <div className="flex items-center gap-2">
-                      <Slider
-                        value={[Math.max(0, -((mixingStates.get(selectedGenerationForMixing?.id)?.bgmOffset ?? 0)))]}
-                        onValueChange={(values) => {
-                          const genId = selectedGenerationForMixing?.id;
-                          if (genId) {
-                            const state = mixingStates.get(genId) || { voiceTrackVolume: 100, backgroundTrackVolume: 50, effectTrackVolume: 70 };
-                            setMixingStates((prev) => new Map(prev).set(genId, { ...state, bgmOffset: -values[0] }));
-                            if (isMixingPreviewPlaying) startRealtimePreview();
-                          }
-                        }}
-                        min={0}
-                        max={30}
-                        step={0.1}
-                        className="flex-1"
-                      />
-                      <span className="text-xs text-gray-400 w-12 text-right">
-                        {Math.max(0, -((mixingStates.get(selectedGenerationForMixing?.id)?.bgmOffset ?? 0))).toFixed(1)}초
-                      </span>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label style={{ color: '#E5E7EB' }} className="text-xs">BGM 종료: TTS 후</Label>
-                    <div className="flex items-center gap-2">
-                      <Slider
-                        value={[Math.max(0, (mixingStates.get(selectedGenerationForMixing?.id)?.bgmOffset ?? 0))]}
-                        onValueChange={(values) => {
-                          const genId = selectedGenerationForMixing?.id;
-                          if (genId) {
-                            const state = mixingStates.get(genId) || { voiceTrackVolume: 100, backgroundTrackVolume: 50, effectTrackVolume: 70 };
-                            // TTS 후 BGM 연장 (trimEndSec 조절)
-                            const ttsDuration = mixingStates.get(genId)?.selectedVoiceTrack?.duration || 0;
-                            setMixingStates((prev) => new Map(prev).set(genId, { 
-                              ...state, 
-                              trimEndSec: ttsDuration + values[0]
-                            }));
-                            if (isMixingPreviewPlaying) startRealtimePreview();
-                          }
-                        }}
-                        min={0}
-                        max={30}
-                        step={0.1}
-                        className="flex-1"
-                      />
-                      <span className="text-xs text-gray-400 w-12 text-right">
-                        {Math.max(0, (mixingStates.get(selectedGenerationForMixing?.id)?.trimEndSec ? 
-                          (mixingStates.get(selectedGenerationForMixing?.id)?.selectedVoiceTrack?.duration || 0) - 
-                          (mixingStates.get(selectedGenerationForMixing?.id)?.trimEndSec || 0) : 0)).toFixed(1)}초
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-            
             <div className="space-y-2">
               <Label style={{ color: '#E5E7EB' }}>배경음 선택</Label>
               <div className="space-y-2">
@@ -4830,78 +4708,39 @@ const PublicVoiceGenerator = () => {
               </AccordionItem>
             </Accordion>
             
-            {/* 실시간 미리듣기 */}
-            <div className="space-y-2 p-3 bg-gray-800/50 rounded border border-gray-700">
-              <div className="flex items-center justify-between mb-2">
-                <Label style={{ color: '#E5E7EB' }} className="text-sm font-semibold">실시간 미리듣기</Label>
-                <div className="flex gap-2">
-                  {!isMixingPreviewPlaying ? (
+            {/* 믹싱된 결과 미리듣기 */}
+            {previewMixedAudio && (
+              <div className="space-y-2 p-3 bg-gray-800/50 rounded border border-gray-700">
+                <div className="flex items-center justify-between mb-2">
+                  <Label style={{ color: '#E5E7EB' }} className="text-sm font-semibold">믹싱된 결과 미리듣기</Label>
+                  <div className="flex gap-2">
                     <Button
                       size="sm"
                       variant="outline"
-                      className="border-blue-600 hover:bg-blue-800 hover:text-white text-xs"
+                      className="border-gray-600 hover:bg-gray-800 hover:text-white text-xs"
                       style={{ color: '#E5E7EB' }}
-                      onClick={startRealtimePreview}
-                      disabled={!mixingStates.get(selectedGenerationForMixing?.id)?.selectedVoiceTrack}
+                      onClick={() => handleExportMix("wav")}
                     >
-                      <Play className="w-3 h-3 mr-1" />
-                      실시간 재생
+                      WAV 다운로드
                     </Button>
-                  ) : (
                     <Button
                       size="sm"
                       variant="outline"
-                      className="border-red-600 hover:bg-red-800 hover:text-white text-xs"
+                      className="border-gray-600 hover:bg-gray-800 hover:text-white text-xs"
                       style={{ color: '#E5E7EB' }}
-                      onClick={stopRealtimePreview}
+                      onClick={() => handleExportMix("mp3")}
                     >
-                      <Pause className="w-3 h-3 mr-1" />
-                      정지
+                      MP3 다운로드
                     </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="border-gray-600 hover:bg-gray-800 hover:text-white text-xs"
-                    style={{ color: '#E5E7EB' }}
-                    onClick={() => handleExportMix("wav")}
-                    disabled={!previewMixedAudio}
-                  >
-                    WAV 다운로드
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="border-gray-600 hover:bg-gray-800 hover:text-white text-xs"
-                    style={{ color: '#E5E7EB' }}
-                    onClick={() => handleExportMix("mp3")}
-                    disabled={!previewMixedAudio}
-                  >
-                    MP3 다운로드
-                  </Button>
-                </div>
-              </div>
-              {isMixingPreviewPlaying && (
-                <div className="space-y-2">
-                  <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-blue-600 transition-all duration-100"
-                      style={{ width: `${mixingPreviewProgress}%` }}
-                    />
-                  </div>
-                  <div className="text-xs text-gray-400 text-center">
-                    {mixingPreviewProgress.toFixed(0)}%
                   </div>
                 </div>
-              )}
-              {previewMixedAudio && !isMixingPreviewPlaying && (
                 <AudioPlayer
                   audioUrl={previewMixedAudio}
-                  title="믹싱된 음원 (최종)"
+                  title="믹싱된 음원"
                   duration={0}
                 />
-              )}
-            </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button 
