@@ -786,7 +786,7 @@ const PublicVoiceGenerator = () => {
         bgmSource.connect(lowShelf);
         
         // BGM이 필요한 길이만큼 재생되도록 루프 설정
-        const bgmNeededDuration = bgmTotalDuration;
+        const bgmNeededDuration = bgmTotalDuration - bgmStartTime;
         const bgmOriginalDuration = bgmBuffer.duration;
         
         if (bgmNeededDuration > bgmOriginalDuration) {
@@ -803,13 +803,12 @@ const PublicVoiceGenerator = () => {
           }, bgmTotalDuration * 1000);
         }
         
-        // BGM은 항상 0초부터 시작
-        bgmSource.start(ctx.currentTime + bgmStartTime);
+        // BGM이 먼저 시작되면 음수 offset 허용
+        bgmSource.start(ctx.currentTime + bgmStartTime, Math.max(0, -settings.bgmOffset));
       }
 
-      // TTS 시작: fadeIn + bgmOffset 위치 (페이드 없이)
-      const ttsStartTime = settings.fadeIn + settings.bgmOffset;
-      ttsSource.start(ctx.currentTime + ttsStartTime);
+      // TTS 시작 (페이드 없이 바로 연결)
+      ttsSource.start(ctx.currentTime + Math.max(0, settings.ttsOffset), Math.max(0, -settings.ttsOffset));
 
       // 마스터 게인은 상수로 유지 (페이드 없음)
       masterGain.gain.value = settings.masterGain;
@@ -818,7 +817,7 @@ const PublicVoiceGenerator = () => {
       setIsMixingPreviewPlaying(true);
 
       // 재생 완료 시 정리 (BGM이 항상 더 길거나 같음)
-      const ttsEndTimeCalc = ctx.currentTime + settings.fadeIn + settings.bgmOffset + ttsBuffer.duration;
+      const ttsEndTimeCalc = ctx.currentTime + settings.ttsOffset + ttsBuffer.duration;
       
       // BGM 전체 길이 계산 (위에서 계산한 것과 동일)
       let bgmTotalDuration = 0;
@@ -826,9 +825,10 @@ const PublicVoiceGenerator = () => {
         if (settings.trimEndSec != null && settings.trimEndSec > 0) {
           bgmTotalDuration = settings.trimEndSec;
         } else {
-          bgmTotalDuration = settings.fadeIn + settings.bgmOffset + ttsBuffer.duration + (settings.bgmOffsetAfterTts || 0) + settings.fadeOut;
-          const minBgmDuration = ttsBuffer.duration + settings.fadeIn + settings.fadeOut;
-          bgmTotalDuration = Math.max(bgmTotalDuration, minBgmDuration);
+          const minBgmDuration = ttsBuffer.duration + (settings.fadeIn || 0) + (settings.fadeOut || 0);
+          const bgmStartTime = Math.max(0, -settings.bgmOffset);
+          const bgmOriginalDuration = bgmStartTime + bgmBuffer.duration;
+          bgmTotalDuration = Math.max(minBgmDuration, bgmOriginalDuration);
         }
       }
       

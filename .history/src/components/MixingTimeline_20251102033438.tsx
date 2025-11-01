@@ -122,7 +122,7 @@ const MixingTimeline: React.FC<MixingTimelineProps> = ({
         </div>
       </div>
 
-      {/* BGM 페이드인/아웃 슬라이더 */}
+      {/* BGM 페이드인/아웃 슬라이더 (BGM 전용) */}
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <div className="flex items-center justify-between">
@@ -137,7 +137,7 @@ const MixingTimeline: React.FC<MixingTimelineProps> = ({
             step={0.5}
             className="w-full"
           />
-          <p className="text-[10px] text-gray-500">BGM 시작 시 적용</p>
+          <p className="text-[10px] text-gray-500">BGM이 먼저 시작될 때 적용</p>
         </div>
         <div className="space-y-2">
           <div className="flex items-center justify-between">
@@ -154,42 +154,6 @@ const MixingTimeline: React.FC<MixingTimelineProps> = ({
           />
           <p className="text-[10px] text-gray-500">TTS 종료 후 BGM 종료 시 적용</p>
         </div>
-      </div>
-      
-      {/* BGM 시작/종료 오프셋 슬라이더 */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label style={{ color: '#E5E7EB' }} className="text-xs">BGM 시작: TTS 전</Label>
-            <span className="text-xs text-gray-400">{bgmOffset.toFixed(1)}초</span>
-          </div>
-          <Slider
-            value={[bgmOffset * 10]}
-            onValueChange={(values) => onBgmOffsetChange(values[0] / 10)}
-            min={0}
-            max={100}
-            step={0.5}
-            className="w-full"
-          />
-          <p className="text-[10px] text-gray-500">BGM이 TTS보다 먼저 시작하는 시간</p>
-        </div>
-        {onBgmOffsetAfterTtsChange && (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label style={{ color: '#E5E7EB' }} className="text-xs">BGM 종료: TTS 후</Label>
-              <span className="text-xs text-gray-400">{bgmOffsetAfterTts.toFixed(1)}초</span>
-            </div>
-            <Slider
-              value={[bgmOffsetAfterTts * 10]}
-              onValueChange={(values) => onBgmOffsetAfterTtsChange(values[0] / 10)}
-              min={0}
-              max={100}
-              step={0.5}
-              className="w-full"
-            />
-            <p className="text-[10px] text-gray-500">TTS 종료 후 BGM이 추가로 재생되는 시간</p>
-          </div>
-        )}
       </div>
     </div>
   );

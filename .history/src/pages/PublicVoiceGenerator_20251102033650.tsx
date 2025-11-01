@@ -818,7 +818,7 @@ const PublicVoiceGenerator = () => {
       setIsMixingPreviewPlaying(true);
 
       // 재생 완료 시 정리 (BGM이 항상 더 길거나 같음)
-      const ttsEndTimeCalc = ctx.currentTime + settings.fadeIn + settings.bgmOffset + ttsBuffer.duration;
+      const ttsEndTimeCalc = ctx.currentTime + settings.ttsOffset + ttsBuffer.duration;
       
       // BGM 전체 길이 계산 (위에서 계산한 것과 동일)
       let bgmTotalDuration = 0;
@@ -826,9 +826,10 @@ const PublicVoiceGenerator = () => {
         if (settings.trimEndSec != null && settings.trimEndSec > 0) {
           bgmTotalDuration = settings.trimEndSec;
         } else {
-          bgmTotalDuration = settings.fadeIn + settings.bgmOffset + ttsBuffer.duration + (settings.bgmOffsetAfterTts || 0) + settings.fadeOut;
-          const minBgmDuration = ttsBuffer.duration + settings.fadeIn + settings.fadeOut;
-          bgmTotalDuration = Math.max(bgmTotalDuration, minBgmDuration);
+          const minBgmDuration = ttsBuffer.duration + (settings.fadeIn || 0) + (settings.fadeOut || 0);
+          const bgmStartTime = Math.max(0, -settings.bgmOffset);
+          const bgmOriginalDuration = bgmStartTime + bgmBuffer.duration;
+          bgmTotalDuration = Math.max(minBgmDuration, bgmOriginalDuration);
         }
       }
       

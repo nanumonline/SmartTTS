@@ -68,47 +68,10 @@ const MixingTimeline: React.FC<MixingTimelineProps> = ({
           </div>
         ))}
 
-        {/* BGM 트랙 (고정, 하단에 배치) */}
-        {actualBgmDuration > 0 && (
-          <div className="absolute bottom-1 left-3 right-3">
-            <div 
-              className="relative h-6 bg-green-600/60 rounded border border-green-400/50"
-              style={{
-                left: `${bgmLeft}%`,
-                width: `${bgmVisualWidth}%`,
-              }}
-            >
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-[10px] text-white">BGM</span>
-              </div>
-              {/* BGM 페이드인 영역 (0초부터) */}
-              {fadeIn > 0 && (
-                <div 
-                  className="absolute left-0 top-0 bottom-0 rounded-l border-r border-green-300/50"
-                  style={{ 
-                    width: `${fadeInWidth}%`,
-                    background: 'linear-gradient(to right, rgba(0,0,0,0.8), transparent)'
-                  }}
-                />
-              )}
-              {/* BGM 페이드아웃 영역 (TTS 종료 + 연장 후) */}
-              {fadeOut > 0 && (
-                <div 
-                  className="absolute right-0 top-0 bottom-0 rounded-r border-l border-green-300/50"
-                  style={{ 
-                    width: `${fadeOutWidth}%`,
-                    background: 'linear-gradient(to left, rgba(0,0,0,0.8), transparent)'
-                  }}
-                />
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* TTS 트랙 (BGM 위에서 이동, 상단에 배치) */}
+        {/* TTS 트랙 (주요 - 강조, 페이드 없음) */}
         <div className="absolute top-8 left-3 right-3">
           <div 
-            className="relative h-8 bg-blue-600/80 rounded border-2 border-blue-400 shadow-lg z-10"
+            className="relative h-8 bg-blue-600/80 rounded border-2 border-blue-400 shadow-lg"
             style={{
               left: `${ttsLeft}%`,
               width: `${ttsWidth}%`,
@@ -120,9 +83,46 @@ const MixingTimeline: React.FC<MixingTimelineProps> = ({
             {/* TTS는 페이드인/아웃 없음 */}
           </div>
         </div>
+
+        {/* BGM 트랙 (페이드인/아웃 시각화 포함) */}
+        {actualBgmDuration > 0 && (
+          <div className="absolute bottom-1 left-3 right-3">
+            <div 
+              className="relative h-6 bg-green-600/60 rounded border border-green-400/50"
+              style={{
+                left: `${(bgmStart / totalDuration) * 100}%`,
+                width: `${bgmVisualWidth}%`,
+              }}
+            >
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-[10px] text-white">BGM</span>
+              </div>
+              {/* BGM 페이드인 영역 (BGM 시작 시) */}
+              {fadeIn > 0 && bgmStartOffset > 0 && (
+                <div 
+                  className="absolute left-0 top-0 bottom-0 bg-green-900/60 rounded-l border-r border-green-300/50"
+                  style={{ 
+                    width: `${Math.min(100, (fadeIn / bgmStartOffset) * 100)}%`,
+                    background: 'linear-gradient(to right, rgba(0,0,0,0.8), transparent)'
+                  }}
+                />
+              )}
+              {/* BGM 페이드아웃 영역 (TTS 종료 후 BGM 종료 시) */}
+              {fadeOut > 0 && (
+                <div 
+                  className="absolute right-0 top-0 bottom-0 bg-green-900/60 rounded-r border-l border-green-300/50"
+                  style={{ 
+                    width: `${Math.min(100, (fadeOut / actualBgmDuration) * 100)}%`,
+                    background: 'linear-gradient(to left, rgba(0,0,0,0.8), transparent)'
+                  }}
+                />
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* BGM 페이드인/아웃 슬라이더 */}
+      {/* BGM 페이드인/아웃 슬라이더 (BGM 전용) */}
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <div className="flex items-center justify-between">
@@ -137,7 +137,7 @@ const MixingTimeline: React.FC<MixingTimelineProps> = ({
             step={0.5}
             className="w-full"
           />
-          <p className="text-[10px] text-gray-500">BGM 시작 시 적용</p>
+          <p className="text-[10px] text-gray-500">BGM이 먼저 시작될 때 적용</p>
         </div>
         <div className="space-y-2">
           <div className="flex items-center justify-between">
@@ -154,42 +154,6 @@ const MixingTimeline: React.FC<MixingTimelineProps> = ({
           />
           <p className="text-[10px] text-gray-500">TTS 종료 후 BGM 종료 시 적용</p>
         </div>
-      </div>
-      
-      {/* BGM 시작/종료 오프셋 슬라이더 */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label style={{ color: '#E5E7EB' }} className="text-xs">BGM 시작: TTS 전</Label>
-            <span className="text-xs text-gray-400">{bgmOffset.toFixed(1)}초</span>
-          </div>
-          <Slider
-            value={[bgmOffset * 10]}
-            onValueChange={(values) => onBgmOffsetChange(values[0] / 10)}
-            min={0}
-            max={100}
-            step={0.5}
-            className="w-full"
-          />
-          <p className="text-[10px] text-gray-500">BGM이 TTS보다 먼저 시작하는 시간</p>
-        </div>
-        {onBgmOffsetAfterTtsChange && (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label style={{ color: '#E5E7EB' }} className="text-xs">BGM 종료: TTS 후</Label>
-              <span className="text-xs text-gray-400">{bgmOffsetAfterTts.toFixed(1)}초</span>
-            </div>
-            <Slider
-              value={[bgmOffsetAfterTts * 10]}
-              onValueChange={(values) => onBgmOffsetAfterTtsChange(values[0] / 10)}
-              min={0}
-              max={100}
-              step={0.5}
-              className="w-full"
-            />
-            <p className="text-[10px] text-gray-500">TTS 종료 후 BGM이 추가로 재생되는 시간</p>
-          </div>
-        )}
       </div>
     </div>
   );
