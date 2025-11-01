@@ -5456,15 +5456,13 @@ const PublicVoiceGenerator = () => {
                                         
                                         if (dbEntry?.audioBlob) {
                                           try {
-                                            // dbEntry가 any 타입이므로 mimeType을 안전하게 접근
-                                            const mimeType = (dbEntry as any).mimeType || entry.mimeType || "audio/mpeg";
-                                            const blob = dbService.arrayBufferToBlob(dbEntry.audioBlob, mimeType);
+                                            const blob = dbService.arrayBufferToBlob(dbEntry.audioBlob, dbEntry.mimeType || "audio/mpeg");
                                             const newUrl = URL.createObjectURL(blob);
                                             const cacheKey = entry.cacheKey || `${entry.id}_${Date.now()}`;
                                             cacheRef.current.set(cacheKey, { 
                                               blob, 
                                               duration: entry.duration || null, 
-                                              mimeType: mimeType,
+                                              mimeType: dbEntry.mimeType || "audio/mpeg",
                                               _audioUrl: newUrl 
                                             });
                                             
