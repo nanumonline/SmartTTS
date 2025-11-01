@@ -186,7 +186,6 @@ const PublicVoiceGenerator = () => {
   const [isPredictingDuration, setIsPredictingDuration] = useState(false);
   const [selectedVoiceInfo, setSelectedVoiceInfo] = useState<any | null>(null);
   const [playingSample, setPlayingSample] = useState<string | null>(null);
-  const audioSampleRef = useRef<HTMLAudioElement | null>(null);
   const [isVoiceFinderOpen, setIsVoiceFinderOpen] = useState(false);
   const [voiceFilters, setVoiceFilters] = useState({
     language: "ko",
@@ -3985,18 +3984,7 @@ const PublicVoiceGenerator = () => {
                                   onClick={() => {
                                     const sampleUrl = getPreferredSampleUrl(voice);
                                     if (sampleUrl) {
-                                      // 이전 재생 중인 오디오 정리
-                                      if (audioSampleRef.current) {
-                                        audioSampleRef.current.pause();
-                                        audioSampleRef.current.currentTime = 0;
-                                      }
-                                      
-                                      // 같은 샘플이면 정지, 다르면 새로 재생
-                                      if (playingSample === sampleUrl) {
-                                        setPlayingSample(null);
-                                      } else {
-                                        setPlayingSample(sampleUrl);
-                                      }
+                                      setPlayingSample(prev => prev === sampleUrl ? null : sampleUrl);
                                     } else {
                                       toast({ title: "샘플 없음", description: "이 음성은 샘플 오디오가 없습니다.", variant: "destructive" });
                                     }
@@ -4049,26 +4037,15 @@ const PublicVoiceGenerator = () => {
                 )}
               </ScrollArea>
               {/* 전역 샘플 재생 오디오 */}
-              <audio
-                ref={audioSampleRef}
-                src={playingSample || undefined}
-                autoPlay={Boolean(playingSample)}
-                onEnded={() => {
-                  setPlayingSample(null);
-                  if (audioSampleRef.current) {
-                    audioSampleRef.current.pause();
-                    audioSampleRef.current.currentTime = 0;
-                  }
-                }}
-                onError={() => {
-                  setPlayingSample(null);
-                  if (audioSampleRef.current) {
-                    audioSampleRef.current.pause();
-                    audioSampleRef.current.currentTime = 0;
-                  }
-                }}
-                className="hidden"
-              />
+              {(
+                <audio
+                  src={playingSample || undefined}
+                  autoPlay={Boolean(playingSample)}
+                  onEnded={() => setPlayingSample(null)}
+                  onError={() => setPlayingSample(null)}
+                  className="hidden"
+                />
+              )}
             </div>
           </div>
         </DialogContent>
