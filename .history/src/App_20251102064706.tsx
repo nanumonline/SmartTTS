@@ -318,7 +318,10 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <AppShell>
-                    <SettingsIntegrationsPage />
+                    <div className="space-y-4">
+                      <h1 className="text-2xl font-semibold">설정</h1>
+                      <p className="text-muted-foreground">서비스 설정을 관리합니다.</p>
+                    </div>
                   </AppShell>
                 </ProtectedRoute>
               } 
@@ -328,7 +331,10 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <AppShell>
-                    <SettingsIntegrationsPage />
+                    <div className="space-y-4">
+                      <h1 className="text-2xl font-semibold">통합 관리</h1>
+                      <p className="text-muted-foreground">API 및 외부 연동을 관리합니다.</p>
+                    </div>
                   </AppShell>
                 </ProtectedRoute>
               } 
@@ -338,7 +344,10 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <AppShell>
-                    <SettingsRolesPage />
+                    <div className="space-y-4">
+                      <h1 className="text-2xl font-semibold">권한 설정</h1>
+                      <p className="text-muted-foreground">사용자 권한을 관리합니다.</p>
+                    </div>
                   </AppShell>
                 </ProtectedRoute>
               } 
@@ -348,7 +357,10 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <AppShell>
-                    <SettingsBrandPage />
+                    <div className="space-y-4">
+                      <h1 className="text-2xl font-semibold">브랜드 정책</h1>
+                      <p className="text-muted-foreground">브랜드 정책을 설정합니다.</p>
+                    </div>
                   </AppShell>
                 </ProtectedRoute>
               } 
