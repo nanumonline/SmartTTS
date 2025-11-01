@@ -164,14 +164,12 @@ export async function exportMixToWav(
   sampleRate: number = 44100
 ): Promise<Blob> {
   // 렌더링 길이 계산
-  // BGM이 먼저 시작되면 음수 offset 허용
-  const ttsLen = ttsBuffer ? (ttsBuffer.duration + Math.max(0, settings.ttsOffset)) : 0;
-  const bgmStartTime = bgmBuffer ? Math.max(0, -settings.bgmOffset) : 0;
-  const bgmLen = bgmBuffer ? (bgmStartTime + bgmBuffer.duration) : 0;
+  const ttsLen = ttsBuffer ? ttsBuffer.duration + settings.ttsOffset : 0;
+  const bgmLen = bgmBuffer ? bgmBuffer.duration + settings.bgmOffset : 0;
   const effectLen = effectBuffer ? effectBuffer.duration : 0;
   let renderDur = Math.max(ttsLen, bgmLen, effectLen);
-  if (settings.trimEndSec != null && settings.trimEndSec > 0) {
-    renderDur = Math.max(renderDur, settings.trimEndSec);
+  if (settings.trimEndSec != null) {
+    renderDur = Math.min(renderDur, settings.trimEndSec);
   }
 
   const length = Math.ceil(renderDur * sampleRate);
@@ -279,66 +277,26 @@ export async function exportMixToWav(
     effectSrc.start(0, 0);
   }
 
-  // 오프라인 오토덕킹: TTS가 재생될 때만 BGM을 낮춤 (TTS는 그대로 유지)
+  // 오프라인 오토덕킹: TTS 버퍼에서 엔벨로프 추출
   if (settings.duckingEnabled && ttsBuffer && bgmBuffer) {
     const step = 0.02; // 20ms 분석
-    const reduction = Math.pow(10, settings.duckDb / 20); // BGM 감소량
-    
-    // BGM 페이드인/아웃을 고려한 게인 노드 확인
-    let bgmControlGain = bgmGain;
-    if (settings.fadeIn > 0 && bgmStartTime > 0) {
-      // 페이드인이 있는 경우, 페이드인 후 게인 조절
-      bgmControlGain = bgmGain;
-    }
-    if (settings.fadeOut > 0) {
-      // 페이드아웃이 있는 경우, 페이드아웃 전까지 게인 조절
-      const fadeOutStart = bgmEndTime - settings.fadeOut;
-      for (let t = 0; t < fadeOutStart; t += step) {
-        const tt = t - settings.ttsOffset; // TTS 시간 계산
-        if (tt < 0 || tt >= ttsBuffer.duration) {
-          // TTS가 재생되지 않으면 BGM 원래 볼륨
-          bgmControlGain.gain.setValueAtTime(settings.bgmGain, t);
-          continue;
-        }
-        const idxStart = Math.floor(tt * sampleRate);
-        const window = Math.floor(step * sampleRate);
-        const ch = new Float32Array(window);
-        ttsBuffer.copyFromChannel(ch, 0, idxStart);
-        let sum = 0;
-        for (let i = 0; i < ch.length; i++) {
-          sum += ch[i] * ch[i];
-        }
-        const rms = Math.sqrt(sum / (ch.length || 1));
-        const db = 20 * Math.log10(rms + 1e-8);
-        // TTS가 재생 중이면 BGM만 낮춤, TTS는 그대로
-        const target = db > settings.duckThreshold ? (settings.bgmGain * reduction) : settings.bgmGain;
-        bgmControlGain.gain.setValueAtTime(target, t);
-        bgmControlGain.gain.linearRampToValueAtTime(target, Math.min(fadeOutStart, t + settings.duckRelease));
+    const reduction = Math.pow(10, settings.duckDb / 20);
+    for (let t = 0; t < renderDur; t += step) {
+      const tt = t + settings.ttsOffset;
+      if (tt < 0 || tt >= ttsBuffer.duration) continue;
+      const idxStart = Math.floor(tt * sampleRate);
+      const window = Math.floor(step * sampleRate);
+      const ch = new Float32Array(window);
+      ttsBuffer.copyFromChannel(ch, 0, idxStart);
+      let sum = 0;
+      for (let i = 0; i < ch.length; i++) {
+        sum += ch[i] * ch[i];
       }
-    } else {
-      // 페이드아웃 없으면 전체 구간에 대해 적용
-      for (let t = 0; t < renderDur; t += step) {
-        const tt = t - settings.ttsOffset; // TTS 시간 계산
-        if (tt < 0 || tt >= ttsBuffer.duration) {
-          // TTS가 재생되지 않으면 BGM 원래 볼륨
-          bgmControlGain.gain.setValueAtTime(settings.bgmGain, t);
-          continue;
-        }
-        const idxStart = Math.floor(tt * sampleRate);
-        const window = Math.floor(step * sampleRate);
-        const ch = new Float32Array(window);
-        ttsBuffer.copyFromChannel(ch, 0, idxStart);
-        let sum = 0;
-        for (let i = 0; i < ch.length; i++) {
-          sum += ch[i] * ch[i];
-        }
-        const rms = Math.sqrt(sum / (ch.length || 1));
-        const db = 20 * Math.log10(rms + 1e-8);
-        // TTS가 재생 중이면 BGM만 낮춤, TTS는 그대로
-        const target = db > settings.duckThreshold ? (settings.bgmGain * reduction) : settings.bgmGain;
-        bgmControlGain.gain.setValueAtTime(target, t);
-        bgmControlGain.gain.linearRampToValueAtTime(target, Math.min(renderDur, t + settings.duckRelease));
-      }
+      const rms = Math.sqrt(sum / (ch.length || 1));
+      const db = 20 * Math.log10(rms + 1e-8);
+      const target = db > settings.duckThreshold ? reduction : 1;
+      bgmGain.gain.setValueAtTime(target, t);
+      bgmGain.gain.linearRampToValueAtTime(target, Math.min(renderDur, t + settings.duckRelease));
     }
   }
 

@@ -164,14 +164,12 @@ export async function exportMixToWav(
   sampleRate: number = 44100
 ): Promise<Blob> {
   // 렌더링 길이 계산
-  // BGM이 먼저 시작되면 음수 offset 허용
-  const ttsLen = ttsBuffer ? (ttsBuffer.duration + Math.max(0, settings.ttsOffset)) : 0;
-  const bgmStartTime = bgmBuffer ? Math.max(0, -settings.bgmOffset) : 0;
-  const bgmLen = bgmBuffer ? (bgmStartTime + bgmBuffer.duration) : 0;
+  const ttsLen = ttsBuffer ? ttsBuffer.duration + settings.ttsOffset : 0;
+  const bgmLen = bgmBuffer ? bgmBuffer.duration + settings.bgmOffset : 0;
   const effectLen = effectBuffer ? effectBuffer.duration : 0;
   let renderDur = Math.max(ttsLen, bgmLen, effectLen);
-  if (settings.trimEndSec != null && settings.trimEndSec > 0) {
-    renderDur = Math.max(renderDur, settings.trimEndSec);
+  if (settings.trimEndSec != null) {
+    renderDur = Math.min(renderDur, settings.trimEndSec);
   }
 
   const length = Math.ceil(renderDur * sampleRate);

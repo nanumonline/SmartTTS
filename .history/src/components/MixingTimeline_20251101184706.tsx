@@ -58,7 +58,7 @@ const MixingTimeline: React.FC<MixingTimelineProps> = ({
           </div>
         </div>
 
-        {/* BGM 트랙 (페이드인/아웃 시각화 포함) */}
+        {/* BGM 트랙 */}
         {bgmDuration > 0 && (
           <div className="absolute bottom-1 left-3 right-3">
             <div 
@@ -71,36 +71,16 @@ const MixingTimeline: React.FC<MixingTimelineProps> = ({
               <div className="absolute inset-0 flex items-center justify-center">
                 <span className="text-[10px] text-white">BGM</span>
               </div>
-              {/* BGM 페이드인 영역 (BGM 시작 시) */}
-              {fadeIn > 0 && bgmOffset < 0 && (
-                <div 
-                  className="absolute left-0 top-0 bottom-0 bg-green-900/60 rounded-l border-r border-green-300/50"
-                  style={{ 
-                    width: `${Math.min(100, (fadeIn / Math.abs(bgmOffset)) * 100)}%`,
-                    background: 'linear-gradient(to right, rgba(0,0,0,0.8), transparent)'
-                  }}
-                />
-              )}
-              {/* BGM 페이드아웃 영역 (BGM 종료 시) */}
-              {fadeOut > 0 && (
-                <div 
-                  className="absolute right-0 top-0 bottom-0 bg-green-900/60 rounded-r border-l border-green-300/50"
-                  style={{ 
-                    width: `${Math.min(100, (fadeOut / bgmDuration) * 100)}%`,
-                    background: 'linear-gradient(to left, rgba(0,0,0,0.8), transparent)'
-                  }}
-                />
-              )}
             </div>
           </div>
         )}
       </div>
 
-      {/* BGM 페이드인/아웃 슬라이더 (BGM 전용) */}
+      {/* 페이드인/아웃 슬라이더 */}
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label style={{ color: '#E5E7EB' }} className="text-xs">BGM 페이드 인</Label>
+            <Label style={{ color: '#E5E7EB' }} className="text-xs">페이드 인</Label>
             <span className="text-xs text-gray-400">{fadeIn.toFixed(2)}s</span>
           </div>
           <Slider
@@ -111,11 +91,10 @@ const MixingTimeline: React.FC<MixingTimelineProps> = ({
             step={0.5}
             className="w-full"
           />
-          <p className="text-[10px] text-gray-500">BGM이 먼저 시작될 때 적용</p>
         </div>
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label style={{ color: '#E5E7EB' }} className="text-xs">BGM 페이드 아웃</Label>
+            <Label style={{ color: '#E5E7EB' }} className="text-xs">페이드 아웃</Label>
             <span className="text-xs text-gray-400">{fadeOut.toFixed(2)}s</span>
           </div>
           <Slider
@@ -126,7 +105,6 @@ const MixingTimeline: React.FC<MixingTimelineProps> = ({
             step={0.5}
             className="w-full"
           />
-          <p className="text-[10px] text-gray-500">TTS 종료 후 BGM 종료 시 적용</p>
         </div>
       </div>
     </div>
