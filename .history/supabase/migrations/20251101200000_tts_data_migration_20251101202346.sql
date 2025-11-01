@@ -383,130 +383,142 @@ CREATE POLICY "Users can delete own generations" ON public.tts_generations
     (auth.uid() IS NULL AND user_id IS NOT NULL)
   );
 
-END $$;
-
--- 모든 정책 삭제 후 새로 생성 (인증되지 않은 사용자도 UUID로 접근 가능)
 DO $$
 BEGIN
-  -- tts_favorites 정책들 삭제
-  DROP POLICY IF EXISTS "Users can view own favorites" ON public.tts_favorites;
-  DROP POLICY IF EXISTS "Users can manage own favorites" ON public.tts_favorites;
   
-  -- tts_user_settings 정책들 삭제
-  DROP POLICY IF EXISTS "Users can view own settings" ON public.tts_user_settings;
-  DROP POLICY IF EXISTS "Users can manage own settings" ON public.tts_user_settings;
+  -- tts_favorites 정책들 (인증되지 않은 사용자도 UUID로 접근 가능)
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'tts_favorites' AND policyname = 'Users can view own favorites') THEN
+    CREATE POLICY "Users can view own favorites" ON public.tts_favorites
+      FOR SELECT USING (
+        auth.uid() = user_id OR 
+        (auth.uid() IS NULL AND user_id IS NOT NULL)
+      );
+  END IF;
   
-  -- 나머지 테이블 정책들 삭제
-  DROP POLICY IF EXISTS "Users can view own clone requests" ON public.tts_clone_requests;
-  DROP POLICY IF EXISTS "Users can manage own clone requests" ON public.tts_clone_requests;
-  DROP POLICY IF EXISTS "Users can view own mixing states" ON public.tts_mixing_states;
-  DROP POLICY IF EXISTS "Users can manage own mixing states" ON public.tts_mixing_states;
-  DROP POLICY IF EXISTS "Users can view own schedule requests" ON public.tts_schedule_requests;
-  DROP POLICY IF EXISTS "Users can manage own schedule requests" ON public.tts_schedule_requests;
-  DROP POLICY IF EXISTS "Users can view own review states" ON public.tts_review_states;
-  DROP POLICY IF EXISTS "Users can manage own review states" ON public.tts_review_states;
-  DROP POLICY IF EXISTS "Users can view own message history" ON public.tts_message_history;
-  DROP POLICY IF EXISTS "Users can manage own message history" ON public.tts_message_history;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'tts_favorites' AND policyname = 'Users can manage own favorites') THEN
+    CREATE POLICY "Users can manage own favorites" ON public.tts_favorites
+      FOR ALL USING (
+        auth.uid() = user_id OR 
+        (auth.uid() IS NULL AND user_id IS NOT NULL)
+      );
+  END IF;
   
-  -- tts_voice_catalog 정책들 삭제
-  DROP POLICY IF EXISTS "Anyone can view voice catalog" ON public.tts_voice_catalog;
-  DROP POLICY IF EXISTS "Anyone can insert voice catalog" ON public.tts_voice_catalog;
-  DROP POLICY IF EXISTS "Anyone can update voice catalog" ON public.tts_voice_catalog;
-  DROP POLICY IF EXISTS "Authenticated users can update voice catalog" ON public.tts_voice_catalog;
+  -- tts_user_settings 정책들 (인증되지 않은 사용자도 UUID로 접근 가능)
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'tts_user_settings' AND policyname = 'Users can view own settings') THEN
+    CREATE POLICY "Users can view own settings" ON public.tts_user_settings
+      FOR SELECT USING (
+        auth.uid() = user_id OR 
+        (auth.uid() IS NULL AND user_id IS NOT NULL)
+      );
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'tts_user_settings' AND policyname = 'Users can manage own settings') THEN
+    CREATE POLICY "Users can manage own settings" ON public.tts_user_settings
+      FOR ALL USING (
+        auth.uid() = user_id OR 
+        (auth.uid() IS NULL AND user_id IS NOT NULL)
+      );
+  END IF;
+  
+  -- tts_clone_requests 정책들 (인증되지 않은 사용자도 UUID로 접근 가능)
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'tts_clone_requests' AND policyname = 'Users can view own clone requests') THEN
+    CREATE POLICY "Users can view own clone requests" ON public.tts_clone_requests
+      FOR SELECT USING (
+        auth.uid() = user_id OR 
+        (auth.uid() IS NULL AND user_id IS NOT NULL)
+      );
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'tts_clone_requests' AND policyname = 'Users can manage own clone requests') THEN
+    CREATE POLICY "Users can manage own clone requests" ON public.tts_clone_requests
+      FOR ALL USING (
+        auth.uid() = user_id OR 
+        (auth.uid() IS NULL AND user_id IS NOT NULL)
+      );
+  END IF;
+  
+  -- tts_mixing_states 정책들 (인증되지 않은 사용자도 UUID로 접근 가능)
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'tts_mixing_states' AND policyname = 'Users can view own mixing states') THEN
+    CREATE POLICY "Users can view own mixing states" ON public.tts_mixing_states
+      FOR SELECT USING (
+        auth.uid() = user_id OR 
+        (auth.uid() IS NULL AND user_id IS NOT NULL)
+      );
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'tts_mixing_states' AND policyname = 'Users can manage own mixing states') THEN
+    CREATE POLICY "Users can manage own mixing states" ON public.tts_mixing_states
+      FOR ALL USING (
+        auth.uid() = user_id OR 
+        (auth.uid() IS NULL AND user_id IS NOT NULL)
+      );
+  END IF;
+  
+  -- tts_schedule_requests 정책들 (인증되지 않은 사용자도 UUID로 접근 가능)
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'tts_schedule_requests' AND policyname = 'Users can view own schedule requests') THEN
+    CREATE POLICY "Users can view own schedule requests" ON public.tts_schedule_requests
+      FOR SELECT USING (
+        auth.uid() = user_id OR 
+        (auth.uid() IS NULL AND user_id IS NOT NULL)
+      );
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'tts_schedule_requests' AND policyname = 'Users can manage own schedule requests') THEN
+    CREATE POLICY "Users can manage own schedule requests" ON public.tts_schedule_requests
+      FOR ALL USING (
+        auth.uid() = user_id OR 
+        (auth.uid() IS NULL AND user_id IS NOT NULL)
+      );
+  END IF;
+  
+  -- tts_review_states 정책들 (인증되지 않은 사용자도 UUID로 접근 가능)
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'tts_review_states' AND policyname = 'Users can view own review states') THEN
+    CREATE POLICY "Users can view own review states" ON public.tts_review_states
+      FOR SELECT USING (
+        auth.uid() = user_id OR 
+        (auth.uid() IS NULL AND user_id IS NOT NULL)
+      );
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'tts_review_states' AND policyname = 'Users can manage own review states') THEN
+    CREATE POLICY "Users can manage own review states" ON public.tts_review_states
+      FOR ALL USING (
+        auth.uid() = user_id OR 
+        (auth.uid() IS NULL AND user_id IS NOT NULL)
+      );
+  END IF;
+  
+  -- tts_message_history 정책들 (인증되지 않은 사용자도 UUID로 접근 가능)
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'tts_message_history' AND policyname = 'Users can view own message history') THEN
+    CREATE POLICY "Users can view own message history" ON public.tts_message_history
+      FOR SELECT USING (
+        auth.uid() = user_id OR 
+        (auth.uid() IS NULL AND user_id IS NOT NULL)
+      );
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'tts_message_history' AND policyname = 'Users can manage own message history') THEN
+    CREATE POLICY "Users can manage own message history" ON public.tts_message_history
+      FOR ALL USING (
+        auth.uid() = user_id OR 
+        (auth.uid() IS NULL AND user_id IS NOT NULL)
+      );
+  END IF;
+  
+  -- tts_voice_catalog 정책들 (공개 읽기, 공개 쓰기 - RLS 완화)
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'tts_voice_catalog' AND policyname = 'Anyone can view voice catalog') THEN
+    CREATE POLICY "Anyone can view voice catalog" ON public.tts_voice_catalog
+      FOR SELECT USING (true);
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'tts_voice_catalog' AND policyname = 'Anyone can insert voice catalog') THEN
+    CREATE POLICY "Anyone can insert voice catalog" ON public.tts_voice_catalog
+      FOR INSERT WITH CHECK (true);
+  END IF;
+  
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'tts_voice_catalog' AND policyname = 'Anyone can update voice catalog') THEN
+    CREATE POLICY "Anyone can update voice catalog" ON public.tts_voice_catalog
+      FOR UPDATE USING (true);
+  END IF;
 END $$;
-
--- 새 정책 생성 (인증되지 않은 사용자도 UUID로 접근 가능)
-CREATE POLICY "Users can view own favorites" ON public.tts_favorites
-  FOR SELECT USING (
-    auth.uid() = user_id OR 
-    (auth.uid() IS NULL AND user_id IS NOT NULL)
-  );
-
-CREATE POLICY "Users can manage own favorites" ON public.tts_favorites
-  FOR ALL USING (
-    auth.uid() = user_id OR 
-    (auth.uid() IS NULL AND user_id IS NOT NULL)
-  );
-
-CREATE POLICY "Users can view own settings" ON public.tts_user_settings
-  FOR SELECT USING (
-    auth.uid() = user_id OR 
-    (auth.uid() IS NULL AND user_id IS NOT NULL)
-  );
-
-CREATE POLICY "Users can manage own settings" ON public.tts_user_settings
-  FOR ALL USING (
-    auth.uid() = user_id OR 
-    (auth.uid() IS NULL AND user_id IS NOT NULL)
-  );
-
-CREATE POLICY "Users can view own clone requests" ON public.tts_clone_requests
-  FOR SELECT USING (
-    auth.uid() = user_id OR 
-    (auth.uid() IS NULL AND user_id IS NOT NULL)
-  );
-
-CREATE POLICY "Users can manage own clone requests" ON public.tts_clone_requests
-  FOR ALL USING (
-    auth.uid() = user_id OR 
-    (auth.uid() IS NULL AND user_id IS NOT NULL)
-  );
-
-CREATE POLICY "Users can view own mixing states" ON public.tts_mixing_states
-  FOR SELECT USING (
-    auth.uid() = user_id OR 
-    (auth.uid() IS NULL AND user_id IS NOT NULL)
-  );
-
-CREATE POLICY "Users can manage own mixing states" ON public.tts_mixing_states
-  FOR ALL USING (
-    auth.uid() = user_id OR 
-    (auth.uid() IS NULL AND user_id IS NOT NULL)
-  );
-
-CREATE POLICY "Users can view own schedule requests" ON public.tts_schedule_requests
-  FOR SELECT USING (
-    auth.uid() = user_id OR 
-    (auth.uid() IS NULL AND user_id IS NOT NULL)
-  );
-
-CREATE POLICY "Users can manage own schedule requests" ON public.tts_schedule_requests
-  FOR ALL USING (
-    auth.uid() = user_id OR 
-    (auth.uid() IS NULL AND user_id IS NOT NULL)
-  );
-
-CREATE POLICY "Users can view own review states" ON public.tts_review_states
-  FOR SELECT USING (
-    auth.uid() = user_id OR 
-    (auth.uid() IS NULL AND user_id IS NOT NULL)
-  );
-
-CREATE POLICY "Users can manage own review states" ON public.tts_review_states
-  FOR ALL USING (
-    auth.uid() = user_id OR 
-    (auth.uid() IS NULL AND user_id IS NOT NULL)
-  );
-
-CREATE POLICY "Users can view own message history" ON public.tts_message_history
-  FOR SELECT USING (
-    auth.uid() = user_id OR 
-    (auth.uid() IS NULL AND user_id IS NOT NULL)
-  );
-
-CREATE POLICY "Users can manage own message history" ON public.tts_message_history
-  FOR ALL USING (
-    auth.uid() = user_id OR 
-    (auth.uid() IS NULL AND user_id IS NOT NULL)
-  );
-
--- tts_voice_catalog 정책들 (공개 읽기, 공개 쓰기)
-CREATE POLICY "Anyone can view voice catalog" ON public.tts_voice_catalog
-  FOR SELECT USING (true);
-
-CREATE POLICY "Anyone can insert voice catalog" ON public.tts_voice_catalog
-  FOR INSERT WITH CHECK (true);
-
-CREATE POLICY "Anyone can update voice catalog" ON public.tts_voice_catalog
-  FOR UPDATE USING (true);
 
