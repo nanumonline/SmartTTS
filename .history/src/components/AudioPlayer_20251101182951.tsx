@@ -82,22 +82,13 @@ const AudioPlayer = ({
     audio.addEventListener('ended', handleEnded);
     audio.addEventListener('loadstart', handleLoadStart);
     audio.addEventListener('canplay', handleCanPlay);
-    audio.addEventListener('loadedmetadata', handleLoadedMetadata);
-    audio.addEventListener('durationchange', handleDurationChange);
     audio.addEventListener('error', handleError);
-
-    // 초기 duration 설정
-    if (audio.duration && isFinite(audio.duration)) {
-      setActualDuration(audio.duration);
-    }
 
     return () => {
       audio.removeEventListener('timeupdate', updateTime);
       audio.removeEventListener('ended', handleEnded);
       audio.removeEventListener('loadstart', handleLoadStart);
       audio.removeEventListener('canplay', handleCanPlay);
-      audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
-      audio.removeEventListener('durationchange', handleDurationChange);
       audio.removeEventListener('error', handleError);
     };
   }, [audioUrl, onError]);
@@ -129,38 +120,24 @@ const AudioPlayer = ({
 
   const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const audio = audioRef.current;
-    if (!audio) return;
-    
-    // 실제 duration 사용
-    const maxDuration = actualDuration || duration || audio.duration || 0;
-    if (!maxDuration || !isFinite(maxDuration)) return;
+    if (!audio || !duration) return;
 
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
-    const percentage = Math.max(0, Math.min(1, clickX / rect.width)); // 0-1 사이로 제한
-    const newTime = percentage * maxDuration;
+    const percentage = clickX / rect.width;
+    const newTime = percentage * duration;
     
-    audio.currentTime = Math.min(newTime, maxDuration); // duration 초과 방지
-    setCurrentTime(Math.min(newTime, maxDuration));
+    audio.currentTime = newTime;
+    setCurrentTime(newTime);
   };
 
   const formatTime = (time: number) => {
-    if (!isFinite(time) || isNaN(time) || time < 0) return "0:00";
     const minutes = Math.floor(time / 60);
     const seconds = Math.floor(time % 60);
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
-  // 실제 duration 사용 (prop duration보다 우선)
-  const displayDuration = actualDuration || duration || 0;
-  // currentTime이 duration을 초과하지 않도록 제한
-  const clampedCurrentTime = displayDuration > 0 
-    ? Math.max(0, Math.min(currentTime, displayDuration))
-    : currentTime;
-  // 프로그레스 퍼센트 계산 (0-100%로 제한)
-  const progressPercentage = displayDuration > 0 
-    ? Math.max(0, Math.min(100, (clampedCurrentTime / displayDuration) * 100))
-    : 0;
+  const progressPercentage = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   return (
     <Card className={`border-primary/20 bg-primary/5 ${className}`}>
@@ -175,7 +152,7 @@ const AudioPlayer = ({
             <div>
               <h3 className="font-medium">{title}</h3>
               <p className="text-sm text-muted-foreground">
-                {formatTime(clampedCurrentTime)} / {formatTime(displayDuration)}
+                {formatTime(currentTime)} / {formatTime(duration)}
               </p>
             </div>
           </div>
@@ -211,18 +188,18 @@ const AudioPlayer = ({
         {/* Progress Bar */}
         <div className="space-y-2">
           <div 
-            className="w-full h-2 bg-muted rounded-full cursor-pointer overflow-hidden"
+            className="w-full h-2 bg-muted rounded-full cursor-pointer"
             onClick={handleProgressClick}
           >
             <div 
               className="h-full bg-primary rounded-full transition-all duration-100"
-              style={{ width: `${progressPercentage}%`, maxWidth: '100%' }}
+              style={{ width: `${progressPercentage}%` }}
             />
           </div>
           
           <div className="flex justify-between text-xs text-muted-foreground">
-            <span>{formatTime(clampedCurrentTime)}</span>
-            <span>{formatTime(displayDuration)}</span>
+            <span>{formatTime(currentTime)}</span>
+            <span>{formatTime(duration)}</span>
           </div>
         </div>
       </CardContent>

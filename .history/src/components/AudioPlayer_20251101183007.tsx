@@ -211,18 +211,18 @@ const AudioPlayer = ({
         {/* Progress Bar */}
         <div className="space-y-2">
           <div 
-            className="w-full h-2 bg-muted rounded-full cursor-pointer overflow-hidden"
+            className="w-full h-2 bg-muted rounded-full cursor-pointer"
             onClick={handleProgressClick}
           >
             <div 
               className="h-full bg-primary rounded-full transition-all duration-100"
-              style={{ width: `${progressPercentage}%`, maxWidth: '100%' }}
+              style={{ width: `${progressPercentage}%` }}
             />
           </div>
           
           <div className="flex justify-between text-xs text-muted-foreground">
-            <span>{formatTime(clampedCurrentTime)}</span>
-            <span>{formatTime(displayDuration)}</span>
+            <span>{formatTime(currentTime)}</span>
+            <span>{formatTime(duration)}</span>
           </div>
         </div>
       </CardContent>
