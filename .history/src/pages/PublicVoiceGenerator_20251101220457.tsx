@@ -3915,22 +3915,9 @@ const PublicVoiceGenerator = () => {
                           const v = availableVoices.find((x: any) => x.voice_id === vid) || 
                                    allVoices.find((x: any) => x.voice_id === vid);
                           // 없으면 즐겨찾기 ID만 표시
-                          if (!v) {
-                            return (
-                              <SelectItem key={vid} value={vid} disabled={true}>
-                                로딩 중... (${vid.slice(0, 12)}...)
-                              </SelectItem>
-                            );
-                          }
-                          // 성별 색상 구분
-                          const genderKo = genderCodeToKo(v.gender);
-                          const genderColor = v.gender === "female" ? "bg-red-500" : v.gender === "male" ? "bg-blue-500" : "bg-gray-400";
                           return (
-                            <SelectItem key={vid} value={vid}>
-                              <div className="flex items-center gap-2">
-                                <span className={`inline-block w-2.5 h-2.5 rounded-full ${genderColor}`}></span>
-                                <span>{v.name || vid}</span>
-                              </div>
+                            <SelectItem key={vid} value={vid} disabled={!v}>
+                              {v ? (v.name || vid) : `로딩 중... (${vid.slice(0, 12)}...)`}
                             </SelectItem>
                           );
                         })}
