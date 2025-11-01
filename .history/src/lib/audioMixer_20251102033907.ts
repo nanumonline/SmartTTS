@@ -274,7 +274,7 @@ export async function exportMixToWav(
     
     // BGM이 필요한 길이만큼 재생되도록 루프 설정
     // bgmTotalLen만큼 재생하려면 루프 필요
-    const bgmNeededDuration = bgmTotalLen;
+    const bgmNeededDuration = bgmTotalLen - bgmStartTime;
     const bgmOriginalDuration = bgmBuffer.duration;
     
     if (bgmNeededDuration > bgmOriginalDuration) {
@@ -294,9 +294,7 @@ export async function exportMixToWav(
     const ttsSrc = ctx.createBufferSource();
     ttsSrc.buffer = ttsBuffer;
     ttsSrc.connect(ttsGain); // TTS는 페이드 없이 바로 연결
-    // TTS 시작 시간: fadeIn + bgmOffset
-    const ttsStartTime = settings.fadeIn + settings.bgmOffset;
-    ttsSrc.start(ttsStartTime);
+    ttsSrc.start(0, Math.max(0, settings.ttsOffset));
   }
 
   if (effectBuffer) {

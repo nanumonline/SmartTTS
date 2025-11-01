@@ -274,7 +274,7 @@ export async function exportMixToWav(
     
     // BGM이 필요한 길이만큼 재생되도록 루프 설정
     // bgmTotalLen만큼 재생하려면 루프 필요
-    const bgmNeededDuration = bgmTotalLen;
+    const bgmNeededDuration = bgmTotalLen - bgmStartTime;
     const bgmOriginalDuration = bgmBuffer.duration;
     
     if (bgmNeededDuration > bgmOriginalDuration) {

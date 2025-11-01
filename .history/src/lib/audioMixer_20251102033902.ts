@@ -274,7 +274,7 @@ export async function exportMixToWav(
     
     // BGM이 필요한 길이만큼 재생되도록 루프 설정
     // bgmTotalLen만큼 재생하려면 루프 필요
-    const bgmNeededDuration = bgmTotalLen;
+    const bgmNeededDuration = bgmTotalLen - bgmStartTime;
     const bgmOriginalDuration = bgmBuffer.duration;
     
     if (bgmNeededDuration > bgmOriginalDuration) {
@@ -283,8 +283,8 @@ export async function exportMixToWav(
       bgmSrc.loopEnd = bgmOriginalDuration;
     }
     
-    // BGM은 항상 0초부터 시작
-    bgmSrc.start(0);
+    // BGM이 먼저 시작되면 음수 offset 허용
+    bgmSrc.start(0, Math.max(0, -settings.bgmOffset));
     
     // OfflineAudioContext에서는 전체 길이만큼 렌더링하면 자동으로 필요한 만큼만 처리됨
     // bgmTotalLen만큼 렌더링하도록 이미 renderDur을 설정했으므로 추가 처리 불필요
@@ -294,9 +294,7 @@ export async function exportMixToWav(
     const ttsSrc = ctx.createBufferSource();
     ttsSrc.buffer = ttsBuffer;
     ttsSrc.connect(ttsGain); // TTS는 페이드 없이 바로 연결
-    // TTS 시작 시간: fadeIn + bgmOffset
-    const ttsStartTime = settings.fadeIn + settings.bgmOffset;
-    ttsSrc.start(ttsStartTime);
+    ttsSrc.start(0, Math.max(0, settings.ttsOffset));
   }
 
   if (effectBuffer) {
