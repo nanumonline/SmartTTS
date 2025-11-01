@@ -2667,11 +2667,9 @@ const PublicVoiceGenerator = () => {
             });
             if (retryResp?.ok) {
               audioResult = await parseSupertoneResponse(retryResp);
-              console.log(`✅ 청크 ${i + 1}/${textChunks.length} 최소 필드로 재시도 성공`);
+              console.log("✅ 최소 필드로 재시도 성공");
               finalFailed = false;
-              if (i === 0) {
-                toast({ title: "⚠️ 제한된 옵션으로 생성", description: "일부 파라미터 미지원으로 기본값으로 생성되었습니다.", });
-              }
+              toast({ title: "⚠️ 제한된 옵션으로 생성", description: "일부 파라미터 미지원으로 기본값으로 생성되었습니다.", });
             } else if (retryResp) {
               let retryMsg = `재시도 실패 (${retryResp.status})`;
               try {
@@ -2692,60 +2690,40 @@ const PublicVoiceGenerator = () => {
         }
 
         if (!audioResult && finalFailed) {
-          throw new Error(`청크 ${i + 1}/${textChunks.length} 생성 실패: ${firstErrorMsg}`);
+          toast({ title: "❌ 음성 생성 실패", description: firstErrorMsg, variant: "destructive" });
         }
       }
 
       // 2. Mock 폴백
+      let usedMock = false;
       if (!audioResult) {
         source = "Mock";
+        usedMock = true;
         const mockBlob = base64ToBlob(MOCK_AUDIO_BASE64, "audio/wav");
-        const chunkDuration = chunk.length * 0.1;
         audioResult = {
-          blob: mockBlob,
-          duration: chunkDuration,
+          blob: mockBlob, // blob 데이터 저장
+          duration: estimatedDuration,
           mimeType: "audio/wav",
         };
       }
 
       if (!audioResult) {
-        throw new Error(`청크 ${i + 1}/${textChunks.length} 음성 데이터를 생성할 수 없습니다.`);
+        throw new Error("음성 데이터를 생성할 수 없습니다.");
       }
 
-      // 각 청크의 blob 저장
-      audioChunks.push(audioResult.blob);
-      if (audioResult.duration) {
-        totalDuration += audioResult.duration;
-      } else {
-        totalDuration += chunk.length * 0.1; // 대략 추정
-      }
-      finalMimeType = audioResult.mimeType || "audio/mpeg";
-
-      console.log(`✅ 청크 ${i + 1}/${textChunks.length} 생성 완료 (${audioResult.duration?.toFixed(2) || '추정'}초)`);
-      }
-
-      // 여러 청크가 있으면 결합, 하나면 그대로 사용
-      if (audioChunks.length > 1) {
-        console.log(`${audioChunks.length}개 청크를 결합합니다...`);
-        finalAudioBlob = await concatenateAudios(audioChunks);
-        finalMimeType = "audio/wav"; // 결합 후 WAV 형식
-      } else {
-        finalAudioBlob = audioChunks[0];
-      }
-
-      const roundedDuration = Math.round(totalDuration * 100) / 100;
+      const finalDuration = audioResult.duration ?? predictedDuration ?? estimatedDuration;
+      const roundedDuration = Math.round(finalDuration * 100) / 100;
 
       // blob에서 blob URL 생성
-      const audioUrl = URL.createObjectURL(finalAudioBlob);
+      const audioUrl = URL.createObjectURL(audioResult.blob);
       
       setGeneratedAudio(audioUrl);
       setGeneratedDuration(roundedDuration);
       setPredictedDuration(roundedDuration);
-      setGenerationProgress(null);
 
-      const description = needsSplitting
-        ? `총 ${textChunks.length}개 청크 생성 완료 | 길이: ${roundedDuration.toFixed(2)}초 | 형식: ${finalMimeType}`
-        : `오디오 길이: ${roundedDuration.toFixed(2)}초 | 형식: ${finalMimeType}`;
+      const description = usedMock
+        ? `Mock 오디오로 대체되었습니다. 예상 길이: ${roundedDuration.toFixed(2)}초`
+        : `오디오 길이: ${roundedDuration.toFixed(2)}초 | 형식: ${audioResult.mimeType || "알 수 없음"}`;
 
       toast({
         title: "✅ 음성 생성 완료",
