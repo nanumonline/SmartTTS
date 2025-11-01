@@ -6221,7 +6221,7 @@ const PublicVoiceGenerator = () => {
                   <SelectValue placeholder="기준 음성을 선택하세요" className="text-gray-400" />
                 </SelectTrigger>
                 <SelectContent className="max-h-64 bg-gray-800 border-gray-600">
-                  <div className="px-2 py-1.5 border-b border-gray-700 space-y-2 sticky top-0 bg-gray-800 z-10" onClick={(e) => e.stopPropagation()}>
+                  <div className="px-2 py-1.5 border-b border-gray-700 space-y-2 sticky top-0 bg-gray-800 z-10">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[10px] text-muted-foreground">정렬:</span>
                       <Select 
@@ -6234,11 +6234,12 @@ const PublicVoiceGenerator = () => {
                             if (cloneBaseVoiceSortBy !== v) setCloneBaseVoiceSortOrder("asc");
                           }
                         }}
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        <SelectTrigger className="h-6 w-24 text-[10px] border-gray-600" onClick={(e) => e.stopPropagation()}>
+                        <SelectTrigger className="h-6 w-24 text-[10px] border-gray-600">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent onClick={(e) => e.stopPropagation()}>
+                        <SelectContent>
                           <SelectItem value="none">정렬 안함</SelectItem>
                           <SelectItem value="name">이름</SelectItem>
                           <SelectItem value="language">언어</SelectItem>

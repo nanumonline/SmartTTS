@@ -6221,90 +6221,11 @@ const PublicVoiceGenerator = () => {
                   <SelectValue placeholder="기준 음성을 선택하세요" className="text-gray-400" />
                 </SelectTrigger>
                 <SelectContent className="max-h-64 bg-gray-800 border-gray-600">
-                  <div className="px-2 py-1.5 border-b border-gray-700 space-y-2 sticky top-0 bg-gray-800 z-10" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[10px] text-muted-foreground">정렬:</span>
-                      <Select 
-                        value={cloneBaseVoiceSortBy} 
-                        onValueChange={(v) => {
-                          if (v === "none") {
-                            setCloneBaseVoiceSortBy("none");
-                          } else {
-                            setCloneBaseVoiceSortBy(v as "name" | "language" | "gender");
-                            if (cloneBaseVoiceSortBy !== v) setCloneBaseVoiceSortOrder("asc");
-                          }
-                        }}
-                      >
-                        <SelectTrigger className="h-6 w-24 text-[10px] border-gray-600" onClick={(e) => e.stopPropagation()}>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent onClick={(e) => e.stopPropagation()}>
-                          <SelectItem value="none">정렬 안함</SelectItem>
-                          <SelectItem value="name">이름</SelectItem>
-                          <SelectItem value="language">언어</SelectItem>
-                          <SelectItem value="gender">성별</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      {cloneBaseVoiceSortBy !== "none" && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-6 w-6 p-0"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setCloneBaseVoiceSortOrder(cloneBaseVoiceSortOrder === "asc" ? "desc" : "asc");
-                          }}
-                          title={cloneBaseVoiceSortOrder === "asc" ? "오름차순" : "내림차순"}
-                        >
-                          {cloneBaseVoiceSortOrder === "asc" ? "↑" : "↓"}
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                  {(() => {
-                    const sorted = [...allVoices].sort((a: any, b: any) => {
-                      if (cloneBaseVoiceSortBy === "name") {
-                        const nameA = (a.name || a.voice_id || "").toLowerCase();
-                        const nameB = (b.name || b.voice_id || "").toLowerCase();
-                        return cloneBaseVoiceSortOrder === "asc" 
-                          ? nameA.localeCompare(nameB, "ko") 
-                          : nameB.localeCompare(nameA, "ko");
-                      } else if (cloneBaseVoiceSortBy === "language") {
-                        const langA = Array.isArray(a.language) ? a.language[0] || "" : (a.language || "");
-                        const langB = Array.isArray(b.language) ? b.language[0] || "" : (b.language || "");
-                        const langRankA = langA === "ko" ? 0 : langA === "en" ? 1 : langA === "ja" ? 2 : 3;
-                        const langRankB = langB === "ko" ? 0 : langB === "en" ? 1 : langB === "ja" ? 2 : 3;
-                        return cloneBaseVoiceSortOrder === "asc" 
-                          ? langRankA - langRankB 
-                          : langRankB - langRankA;
-                      } else if (cloneBaseVoiceSortBy === "gender") {
-                        const genderA = (a.gender || "").toLowerCase();
-                        const genderB = (b.gender || "").toLowerCase();
-                        const genderOrder = { female: 0, male: 1, neutral: 2, "": 3 };
-                        const rankA = genderOrder[genderA as keyof typeof genderOrder] ?? 3;
-                        const rankB = genderOrder[genderB as keyof typeof genderOrder] ?? 3;
-                        return cloneBaseVoiceSortOrder === "asc" ? rankA - rankB : rankB - rankA;
-                      }
-                      return 0;
-                    });
-                    return sorted.map((voice: any) => {
-                      const flags = (() => {
-                        const arr = Array.isArray(voice.language) ? voice.language : (voice.language ? [voice.language] : []);
-                        return arr.map((c: string) => languageCodeToFlag(c)).filter(Boolean).join(" ") || "";
-                      })();
-                      const genderKo = genderCodeToKo(voice.gender);
-                      const genderColor = voice.gender === "female" ? "bg-red-500" : voice.gender === "male" ? "bg-blue-500" : "bg-gray-400";
-                      return (
-                        <SelectItem key={voice.voice_id} value={voice.voice_id} className="text-white focus:bg-gray-700">
-                          <div className="flex items-center gap-2">
-                            <span className={`inline-block w-2 h-2 rounded-full ${genderColor}`}></span>
-                            <span>{voice.name || voice.voice_id}</span>
-                            {flags && <span className="text-xs">{flags}</span>}
-                          </div>
-                        </SelectItem>
-                      );
-                    });
-                  })()}
+                  {allVoices.map((voice: any) => (
+                    <SelectItem key={voice.voice_id} value={voice.voice_id} className="text-white focus:bg-gray-700">
+                      {voice.name || voice.voice_id}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
