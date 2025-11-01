@@ -2239,6 +2239,7 @@ const PublicVoiceGenerator = () => {
     
     // 한국어 조사 자동 교정
     try {
+      const { correctKoreanPostpositions } = require("@/lib/koreanPostposition");
       replaced = correctKoreanPostpositions(replaced);
     } catch (e) {
       // 조사 교정 실패해도 원본 텍스트 반환

@@ -2231,21 +2231,10 @@ const PublicVoiceGenerator = () => {
 
   // 변수 값으로 템플릿 교체
   const replaceTemplateWithVariables = (templateText: string, variables: Record<string, string>): string => {
-    // 템플릿 변수 교체
-    let replaced = templateText.replace(/\{([^}]+)\}/g, (_, key) => {
+    return templateText.replace(/\{([^}]+)\}/g, (_, key) => {
       const k = String(key).trim();
       return variables[k] || `{${k}}`;
     });
-    
-    // 한국어 조사 자동 교정
-    try {
-      replaced = correctKoreanPostpositions(replaced);
-    } catch (e) {
-      // 조사 교정 실패해도 원본 텍스트 반환
-      console.warn("한국어 조사 교정 실패:", e);
-    }
-    
-    return replaced;
   };
 
   const handleTemplateSelect = (template: any) => {
