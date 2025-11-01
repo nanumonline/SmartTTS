@@ -54,7 +54,11 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <AppShell>
-                    <ScriptsPage />
+                    <div className="space-y-4">
+                      <h1 className="text-2xl font-semibold">문구 관리</h1>
+                      <p className="text-muted-foreground">문구 및 대본을 관리합니다.</p>
+                      {/* TODO: 문구 관리 컴포넌트 추가 */}
+                    </div>
                   </AppShell>
                 </ProtectedRoute>
               } 
@@ -110,7 +114,11 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <AppShell>
-                    <AudioHistoryPage />
+                    <div className="space-y-4">
+                      <h1 className="text-2xl font-semibold">생성 내역</h1>
+                      <p className="text-muted-foreground">음원 생성 내역을 확인합니다.</p>
+                      {/* PublicVoiceGenerator의 생성 기록 섹션을 재사용 가능 */}
+                    </div>
                   </AppShell>
                 </ProtectedRoute>
               } 
