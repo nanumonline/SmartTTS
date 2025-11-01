@@ -241,9 +241,6 @@ const PublicVoiceGenerator = () => {
   const [saveNameInput, setSaveNameInput] = useState("");
   const [pendingGeneration, setPendingGeneration] = useState<any>(null);
   const [uploadedBgmFile, setUploadedBgmFile] = useState<File | null>(null);
-  const [expandedGenerationId, setExpandedGenerationId] = useState<number | null>(null);
-  const [editingGenerationId, setEditingGenerationId] = useState<number | null>(null);
-  const [editNameInput, setEditNameInput] = useState("");
 
   // Phase 4: 사용량 및 크레딧 모니터링
   const [usageStats, setUsageStats] = useState<UsageStats>({
@@ -1358,74 +1355,6 @@ const PublicVoiceGenerator = () => {
       setGenerationHistory(next);
       localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(next));
     } catch {}
-  };
-
-  // 음원 삭제
-  const deleteGeneration = (id: number) => {
-    const updated = generationHistory.filter((g) => g.id !== id);
-    setGenerationHistory(updated);
-    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(updated));
-    toast({
-      title: "음원 삭제 완료",
-      description: "생성 기록이 삭제되었습니다.",
-    });
-  };
-
-  // 음원 이름 편집
-  const editGenerationName = (id: number, newName: string | null) => {
-    const updated = generationHistory.map((g) =>
-      g.id === id ? { ...g, savedName: newName } : g
-    );
-    setGenerationHistory(updated);
-    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(updated));
-    setEditingGenerationId(null);
-    setEditNameInput("");
-    toast({
-      title: "이름 변경 완료",
-      description: newName ? `"${newName}"으로 변경되었습니다.` : "이름이 제거되었습니다.",
-    });
-  };
-
-  // 음원 다운로드
-  const downloadGeneration = async (entry: any) => {
-    try {
-      let audioUrl = entry.audioUrl;
-      if (!audioUrl && entry.cacheKey) {
-        const cached = cacheRef.current.get(entry.cacheKey);
-        if (cached?.audioUrl) {
-          audioUrl = cached.audioUrl;
-        }
-      }
-
-      if (!audioUrl) {
-        toast({
-          title: "다운로드 불가",
-          description: "오디오 파일을 찾을 수 없습니다.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const response = await fetch(audioUrl);
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${entry.savedName || formatDateTime(entry.createdAt)}.mp3`;
-      a.click();
-      URL.revokeObjectURL(url);
-
-      toast({
-        title: "다운로드 완료",
-        description: "음원 파일이 다운로드되었습니다.",
-      });
-    } catch (error: any) {
-      toast({
-        title: "다운로드 실패",
-        description: error.message || "파일 다운로드 중 오류가 발생했습니다.",
-        variant: "destructive",
-      });
-    }
   };
 
   const buildGenerationKey = (params: {
@@ -3619,162 +3548,33 @@ const PublicVoiceGenerator = () => {
                 <div className="space-y-3">
                   {generationHistory.map((entry) => {
                     const languageKo = languageCodeToKo(entry.language);
-                    const isExpanded = expandedGenerationId === entry.id;
-                    const isEditing = editingGenerationId === entry.id;
-                    let audioUrl = entry.audioUrl;
-                    if (!audioUrl && entry.cacheKey) {
-                      const cached = cacheRef.current.get(entry.cacheKey);
-                      if (cached?.audioUrl) {
-                        audioUrl = cached.audioUrl;
-                        // generationHistory도 업데이트
-                        if (!entry.audioUrl) {
-                          setGenerationHistory((prev) => 
-                            prev.map((g) => 
-                              g.id === entry.id ? { ...g, audioUrl } : g
-                            )
-                          );
-                        }
-                      }
-                    }
                     return (
-                      <div key={entry.id} className="rounded-xl border border-border bg-muted/20 p-3 transition-all hover:shadow-md" style={{ borderRadius: '12px' }}>
-                        <div className="grid gap-3 md:grid-cols-[160px_minmax(0,1fr)_160px_auto] items-center">
-                          <div className="space-y-1">
-                            <Badge>{entry.purposeLabel}</Badge>
-                            <div className="text-xs text-muted-foreground">{formatDateTime(entry.createdAt)}</div>
-                          </div>
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              {isEditing ? (
-                                <div className="flex items-center gap-2 flex-1">
-                                  <Input
-                                    value={editNameInput}
-                                    onChange={(e) => setEditNameInput(e.target.value)}
-                                    placeholder="이름 입력"
-                                    className="h-7 text-sm"
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter') {
-                                        editGenerationName(entry.id, editNameInput.trim() || null);
-                                      } else if (e.key === 'Escape') {
-                                        setEditingGenerationId(null);
-                                        setEditNameInput("");
-                                      }
-                                    }}
-                                    autoFocus
-                                  />
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-7 px-2"
-                                    onClick={() => editGenerationName(entry.id, editNameInput.trim() || null)}
-                                  >
-                                    확인
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-7 px-2"
-                                    onClick={() => {
-                                      setEditingGenerationId(null);
-                                      setEditNameInput("");
-                                    }}
-                                  >
-                                    취소
-                                  </Button>
-                                </div>
-                              ) : (
-                                <>
-                                  <div className="text-sm font-medium truncate flex-1" title={entry.savedName || formatDateTime(entry.createdAt)}>
-                                    {entry.savedName || formatDateTime(entry.createdAt)}
-                                  </div>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-6 w-6 p-0"
-                                    onClick={() => {
-                                      setEditingGenerationId(entry.id);
-                                      setEditNameInput(entry.savedName || "");
-                                    }}
-                                  >
-                                    <Edit className="w-3 h-3" />
-                                  </Button>
-                                </>
-                              )}
-                            </div>
-                            <div className="text-xs text-muted-foreground truncate" title={entry.textPreview}>{entry.textPreview || "(텍스트 없음)"}</div>
-                            <div className="text-xs text-muted-foreground">길이: {entry.duration != null ? `${entry.duration.toFixed(2)}초` : "-"}</div>
-                          </div>
-                          <div className="space-y-1 text-xs text-muted-foreground">
-                            <div>음성: {entry.voiceName || "-"}</div>
-                            <div>언어: {languageKo}</div>
-                            <div>상태: <Badge variant="outline" className="text-[10px] uppercase">{entry.status}</Badge></div>
-                          </div>
-                          <div className="flex flex-wrap gap-2 justify-end">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="landio-button"
-                              onClick={() => setExpandedGenerationId(isExpanded ? null : entry.id)}
-                            >
-                              {isExpanded ? "접기" : "미리듣기"}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="landio-button"
-                              onClick={() => openCloneModal(entry.voiceId)}
-                            >
-                              클로닝
-                            </Button>
-                            <Button size="sm" variant="outline" className="landio-button" onClick={() => openMixingModal(entry)}>믹싱</Button>
-                            <Button size="sm" variant="outline" className="landio-button" onClick={() => openScheduleModal(entry)}>예약</Button>
-                          </div>
+                      <div key={entry.id} className="rounded-xl border border-border bg-muted/20 p-3 grid gap-3 md:grid-cols-[160px_minmax(0,1fr)_160px_200px] items-center transition-all hover:shadow-md" style={{ borderRadius: '12px' }}>
+                        <div className="space-y-1">
+                          <Badge>{entry.purposeLabel}</Badge>
+                          <div className="text-xs text-muted-foreground">{formatDateTime(entry.createdAt)}</div>
                         </div>
-                        {isExpanded && (
-                          <div className="mt-3 pt-3 border-t border-border space-y-3">
-                            {/* 미리듣기 */}
-                            {audioUrl ? (
-                              <div className="p-3 bg-muted/40 rounded-lg">
-                                <div className="text-xs font-semibold mb-2 text-muted-foreground">미리듣기</div>
-                                <AudioPlayer
-                                  audioUrl={audioUrl}
-                                  title={entry.savedName || formatDateTime(entry.createdAt)}
-                                  duration={entry.duration || 0}
-                                />
-                              </div>
-                            ) : (
-                              <div className="p-3 bg-muted/40 rounded-lg text-xs text-muted-foreground">
-                                오디오 파일을 불러올 수 없습니다.
-                              </div>
-                            )}
-                            {/* 관리 기능 */}
-                            <div className="flex flex-wrap gap-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="landio-button"
-                                onClick={() => downloadGeneration(entry)}
-                                disabled={!audioUrl}
-                              >
-                                <Download className="w-3 h-3 mr-1" />
-                                다운로드
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="landio-button text-red-600 hover:text-red-700 hover:bg-red-50"
-                                onClick={() => {
-                                  if (confirm("정말 이 음원을 삭제하시겠습니까?")) {
-                                    deleteGeneration(entry.id);
-                                  }
-                                }}
-                              >
-                                <Trash2 className="w-3 h-3 mr-1" />
-                                삭제
-                              </Button>
-                            </div>
-                          </div>
-                        )}
+                        <div className="space-y-1">
+                          <div className="text-sm font-medium truncate" title={entry.textPreview}>{entry.textPreview || "(텍스트 없음)"}</div>
+                          <div className="text-xs text-muted-foreground">길이: {entry.duration != null ? `${entry.duration.toFixed(2)}초` : "-"}</div>
+                        </div>
+                        <div className="space-y-1 text-xs text-muted-foreground">
+                          <div>음성: {entry.voiceName || "-"}</div>
+                          <div>언어: {languageKo}</div>
+                          <div>상태: <Badge variant="outline" className="text-[10px] uppercase">{entry.status}</Badge></div>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="landio-button"
+                            onClick={() => openCloneModal(entry.voiceId)}
+                          >
+                            클로닝
+                          </Button>
+                          <Button size="sm" variant="outline" className="landio-button" onClick={() => openMixingModal(entry)}>믹싱</Button>
+                          <Button size="sm" variant="outline" className="landio-button" onClick={() => openScheduleModal(entry)}>예약</Button>
+                        </div>
                       </div>
                     );
                   })}
