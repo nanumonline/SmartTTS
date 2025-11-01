@@ -779,25 +779,6 @@ const PublicVoiceGenerator = () => {
         const bgmSource = ctx.createBufferSource();
         bgmSource.buffer = bgmBuffer;
         bgmSource.connect(lowShelf);
-        
-        // BGM이 필요한 길이만큼 재생되도록 루프 설정
-        const bgmNeededDuration = bgmTotalDuration - bgmStartTime;
-        const bgmOriginalDuration = bgmBuffer.duration;
-        
-        if (bgmNeededDuration > bgmOriginalDuration) {
-          // BGM이 더 길 필요가 있으면 루프 설정
-          bgmSource.loop = true;
-          bgmSource.loopEnd = bgmOriginalDuration;
-          // 필요한 시간만큼 재생 후 정지
-          setTimeout(() => {
-            try {
-              bgmSource.stop();
-            } catch (e) {
-              // 이미 정지되었으면 무시
-            }
-          }, bgmTotalDuration * 1000);
-        }
-        
         // BGM이 먼저 시작되면 음수 offset 허용
         bgmSource.start(ctx.currentTime + bgmStartTime, Math.max(0, -settings.bgmOffset));
       }
