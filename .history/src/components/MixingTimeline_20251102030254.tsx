@@ -37,10 +37,6 @@ const MixingTimeline: React.FC<MixingTimelineProps> = ({
   const totalDuration = actualBgmDuration;
   const scale = 100 / Math.max(10, totalDuration); // 100%를 기준으로 스케일링
 
-  // BGM 시작/끝 위치 계산
-  // bgmOffset이 음수면 BGM이 TTS보다 먼저 시작 (예: -7.4초 = BGM이 7.4초 먼저 시작)
-  const bgmStartOffset = bgmOffset < 0 ? Math.abs(bgmOffset) : 0;
-  
   // TTS 시작 위치: BGM이 먼저 시작하면 TTS는 그 이후에 시작
   // BGM 시작 오프셋만큼 TTS가 뒤로 밀림
   const ttsStartOffset = bgmStartOffset; // BGM이 먼저 시작한 만큼 TTS도 오프셋
@@ -48,6 +44,10 @@ const MixingTimeline: React.FC<MixingTimelineProps> = ({
   const ttsEnd = ttsStartOffset + ttsDuration; // TTS 종료 위치
   const ttsWidth = (ttsDuration / totalDuration) * 100;
   const ttsLeft = (ttsStartOffset / totalDuration) * 100; // TTS 시작 위치 (%)
+
+  // BGM 시작/끝 위치 계산
+  // bgmOffset이 음수면 BGM이 TTS보다 먼저 시작 (예: -7.4초 = BGM이 7.4초 먼저 시작)
+  const bgmStartOffset = bgmOffset < 0 ? Math.abs(bgmOffset) : 0;
   const bgmStart = bgmStartOffset; // BGM 시작 위치
   const bgmEnd = actualBgmDuration; // BGM 종료 위치
   const bgmVisualWidth = (actualBgmDuration / totalDuration) * 100;
@@ -70,12 +70,11 @@ const MixingTimeline: React.FC<MixingTimelineProps> = ({
           <div 
             className="relative h-8 bg-blue-600/80 rounded border-2 border-blue-400 shadow-lg"
             style={{
-              left: `${ttsLeft}%`,
               width: `${ttsWidth}%`,
             }}
           >
             <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-xs font-bold text-white">TTS 음원 ({ttsDuration.toFixed(1)}s)</span>
+              <span className="text-xs font-bold text-white">TTS 음원</span>
             </div>
             {/* TTS는 페이드인/아웃 없음 */}
           </div>

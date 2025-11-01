@@ -69,10 +69,26 @@ const AudioPlayer = ({
       console.warn('Audio loading/playing error:', e);
       setIsLoading(false);
       setIsPlaying(false);
-      // blob URL이 만료되었을 수 있음
-      if (audioUrl.startsWith('blob:')) {
+      
+      // 오류 코드 확인
+      const error = audio.error;
+      const errorCode = error?.code;
+      const errorMessage = error?.message || '';
+      
+      // ERR_REQUEST_RANGE_NOT_SATISFIABLE (416) 또는 다른 blob 관련 오류 처리
+      if (audioUrl.startsWith('blob:') && (errorCode === 4 || errorMessage.includes('range') || errorMessage.includes('satisfiable'))) {
+        console.warn('Blob URL error detected (likely expired or corrupted):', {
+          url: audioUrl,
+          code: errorCode,
+          message: errorMessage
+        });
+        // onError 콜백이 있으면 즉시 호출 (부모에서 복원 시도)
+        if (onError) {
+          onError();
+        }
+      } else if (audioUrl.startsWith('blob:')) {
+        // 기타 blob URL 오류
         console.warn('Blob URL may have expired:', audioUrl);
-        // onError 콜백이 있으면 호출 (부모에서 복원 시도)
         if (onError) {
           setTimeout(() => onError(), 100); // 약간의 딜레이로 복원 시도
         }
