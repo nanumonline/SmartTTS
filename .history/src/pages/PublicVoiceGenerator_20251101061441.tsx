@@ -1241,10 +1241,6 @@ const PublicVoiceGenerator = () => {
               textPreview: item.textPreview || item.text || "",
               cacheKey: item.cacheKey || item.key || "",
               savedName: item.savedName || null,
-              audioUrl: item.audioUrl || (item.cacheKey || item.key ? (() => {
-                const cached = cacheRef.current.get(item.cacheKey || item.key || "");
-                return cached?.audioUrl || null;
-              })() : null),
             };
           });
           setGenerationHistory(normalized);
@@ -4017,23 +4013,6 @@ const PublicVoiceGenerator = () => {
                 onValueChange={(value) => {
                   const selectedTrack = generationHistory.find((g) => g.id.toString() === value);
                   if (selectedGenerationForMixing?.id && selectedTrack) {
-                    // audioUrl이 없으면 cacheKey로부터 복원 시도
-                    let audioUrl = selectedTrack.audioUrl;
-                    if (!audioUrl && selectedTrack.cacheKey) {
-                      const cached = cacheRef.current.get(selectedTrack.cacheKey);
-                      if (cached?.audioUrl) {
-                        audioUrl = cached.audioUrl;
-                        // generationHistory도 업데이트
-                        setGenerationHistory((prev) => 
-                          prev.map((g) => 
-                            g.id === selectedTrack.id 
-                              ? { ...g, audioUrl }
-                              : g
-                          )
-                        );
-                      }
-                    }
-                    
                     const state = mixingStates.get(selectedGenerationForMixing.id) || { 
                       voiceTrackVolume: 100, 
                       backgroundTrackVolume: 50, 
@@ -4041,7 +4020,7 @@ const PublicVoiceGenerator = () => {
                     };
                     setMixingStates((prev) => new Map(prev).set(selectedGenerationForMixing.id, { 
                       ...state, 
-                      selectedVoiceTrack: { ...selectedTrack, audioUrl: audioUrl || selectedTrack.audioUrl }
+                      selectedVoiceTrack: selectedTrack 
                     }));
                   }
                 }}
