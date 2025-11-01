@@ -219,7 +219,7 @@ export async function exportMixToWav(
   midPeaking.connect(highShelf);
   highShelf.connect(bgmGain);
 
-  // TTS 경로 (페이드 없음)
+  // TTS 경로
   const ttsGain = ctx.createGain();
   ttsGain.gain.value = settings.ttsGain;
 

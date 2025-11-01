@@ -219,7 +219,7 @@ export async function exportMixToWav(
   midPeaking.connect(highShelf);
   highShelf.connect(bgmGain);
 
-  // TTS 경로 (페이드 없음)
+  // TTS 경로
   const ttsGain = ctx.createGain();
   ttsGain.gain.value = settings.ttsGain;
 
@@ -228,8 +228,9 @@ export async function exportMixToWav(
   effectGain.gain.value = settings.effectGain;
 
   // BGM에만 페이드 적용 (TTS는 페이드 없음)
-  // BGM은 항상 0초부터 시작하므로 페이드인도 0초부터
-  if (bgmBuffer && settings.fadeIn > 0) {
+  // BGM이 먼저 시작되는 경우 (bgmOffset < 0): 페이드인 적용
+  // bgmStartTime은 위에서 이미 계산됨 (169번 라인)
+  if (bgmBuffer && settings.fadeIn > 0 && bgmStartTime > 0) {
     const bgmFadeInGain = ctx.createGain();
     bgmFadeInGain.gain.setValueAtTime(0.0001, bgmStartTime);
     bgmFadeInGain.gain.exponentialRampToValueAtTime(settings.bgmGain, bgmStartTime + Math.max(0.01, settings.fadeIn));
