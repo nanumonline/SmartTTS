@@ -3982,39 +3982,21 @@ const PublicVoiceGenerator = () => {
                                 size="sm"
                                   variant="ghost"
                                   className="landio-button hover:bg-gray-800"
-                                  onClick={async () => {
+                                  onClick={() => {
                                     const sampleUrl = getPreferredSampleUrl(voice);
                                     if (sampleUrl) {
-                                      // 같은 샘플이면 정지
-                                      if (playingSample === sampleUrl) {
-                                        if (audioSampleRef.current) {
-                                          audioSampleRef.current.pause().catch(() => {}); // AbortError 무시
-                                          audioSampleRef.current.currentTime = 0;
-                                        }
-                                        setPlayingSample(null);
-                                        return;
-                                      }
-                                      
                                       // 이전 재생 중인 오디오 정리
-                                      if (audioSampleRef.current && playingSample) {
-                                        audioSampleRef.current.pause().catch(() => {}); // AbortError 무시
+                                      if (audioSampleRef.current) {
+                                        audioSampleRef.current.pause();
                                         audioSampleRef.current.currentTime = 0;
                                       }
                                       
-                                      // 새 샘플 설정
-                                      setPlayingSample(sampleUrl);
-                                      
-                                      // 재생 시작 (약간의 지연을 두어 상태 업데이트 후 재생)
-                                      setTimeout(() => {
-                                        if (audioSampleRef.current && playingSample === sampleUrl) {
-                                          audioSampleRef.current.play().catch((err) => {
-                                            // AbortError는 무시 (다른 오디오 재생으로 인한 중단)
-                                            if (err.name !== 'AbortError') {
-                                              console.error('Audio play error:', err);
-                                            }
-                                          });
-                                        }
-                                      }, 50);
+                                      // 같은 샘플이면 정지, 다르면 새로 재생
+                                      if (playingSample === sampleUrl) {
+                                        setPlayingSample(null);
+                                      } else {
+                                        setPlayingSample(sampleUrl);
+                                      }
                                     } else {
                                       toast({ title: "샘플 없음", description: "이 음성은 샘플 오디오가 없습니다.", variant: "destructive" });
                                     }
