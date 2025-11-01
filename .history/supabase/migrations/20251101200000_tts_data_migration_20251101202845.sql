@@ -247,15 +247,16 @@ CREATE TABLE IF NOT EXISTS public.tts_message_history (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 외래 키 제약조건 제거 (더미 사용자 허용, RLS 정책으로 보호됨)
+-- 외래 키 제약조건 추가
 DO $$
 BEGIN
-  IF EXISTS (
+  IF NOT EXISTS (
     SELECT 1 FROM pg_constraint 
     WHERE conname = 'tts_message_history_user_id_fkey'
   ) THEN
     ALTER TABLE public.tts_message_history 
-    DROP CONSTRAINT tts_message_history_user_id_fkey;
+    ADD CONSTRAINT tts_message_history_user_id_fkey 
+    FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
   END IF;
 END $$;
 

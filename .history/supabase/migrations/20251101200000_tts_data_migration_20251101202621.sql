@@ -27,15 +27,16 @@ CREATE TABLE IF NOT EXISTS public.tts_generations (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 외래 키 제약조건 제거 (더미 사용자 허용, RLS 정책으로 보호됨)
+-- 외래 키 제약조건 추가 (존재하지 않을 때만)
 DO $$
 BEGIN
-  IF EXISTS (
+  IF NOT EXISTS (
     SELECT 1 FROM pg_constraint 
     WHERE conname = 'tts_generations_user_id_fkey'
   ) THEN
     ALTER TABLE public.tts_generations 
-    DROP CONSTRAINT tts_generations_user_id_fkey;
+    ADD CONSTRAINT tts_generations_user_id_fkey 
+    FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
   END IF;
 END $$;
 
@@ -48,15 +49,16 @@ CREATE TABLE IF NOT EXISTS public.tts_favorites (
   UNIQUE(user_id, voice_id)
 );
 
--- 외래 키 제약조건 제거 (더미 사용자 허용, RLS 정책으로 보호됨)
+-- 외래 키 제약조건 추가
 DO $$
 BEGIN
-  IF EXISTS (
+  IF NOT EXISTS (
     SELECT 1 FROM pg_constraint 
     WHERE conname = 'tts_favorites_user_id_fkey'
   ) THEN
     ALTER TABLE public.tts_favorites 
-    DROP CONSTRAINT tts_favorites_user_id_fkey;
+    ADD CONSTRAINT tts_favorites_user_id_fkey 
+    FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
   END IF;
 END $$;
 
@@ -71,29 +73,16 @@ CREATE TABLE IF NOT EXISTS public.tts_user_settings (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 외래 키 제약조건 추가 (개발 환경에서는 제약조건 제거하여 더미 사용자 허용)
--- 프로덕션에서는 실제 인증된 사용자만 사용하므로 외래 키 제약조건 불필요
--- RLS 정책으로 이미 데이터 보호됨
--- DO $$
--- BEGIN
---   IF NOT EXISTS (
---     SELECT 1 FROM pg_constraint 
---     WHERE conname = 'tts_user_settings_user_id_fkey'
---   ) THEN
---     ALTER TABLE public.tts_user_settings 
---     ADD CONSTRAINT tts_user_settings_user_id_fkey 
---     FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
---   END IF;
--- END $$;
--- 외래 키 제약조건 제거 (더미 사용자 허용)
+-- 외래 키 제약조건 추가
 DO $$
 BEGIN
-  IF EXISTS (
+  IF NOT EXISTS (
     SELECT 1 FROM pg_constraint 
     WHERE conname = 'tts_user_settings_user_id_fkey'
   ) THEN
     ALTER TABLE public.tts_user_settings 
-    DROP CONSTRAINT tts_user_settings_user_id_fkey;
+    ADD CONSTRAINT tts_user_settings_user_id_fkey 
+    FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
   END IF;
 END $$;
 
@@ -118,15 +107,16 @@ CREATE TABLE IF NOT EXISTS public.tts_clone_requests (
   completed_at TIMESTAMPTZ
 );
 
--- 외래 키 제약조건 제거 (더미 사용자 허용, RLS 정책으로 보호됨)
+-- 외래 키 제약조건 추가
 DO $$
 BEGIN
-  IF EXISTS (
+  IF NOT EXISTS (
     SELECT 1 FROM pg_constraint 
     WHERE conname = 'tts_clone_requests_user_id_fkey'
   ) THEN
     ALTER TABLE public.tts_clone_requests 
-    DROP CONSTRAINT tts_clone_requests_user_id_fkey;
+    ADD CONSTRAINT tts_clone_requests_user_id_fkey 
+    FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
   END IF;
 END $$;
 
@@ -143,18 +133,18 @@ CREATE TABLE IF NOT EXISTS public.tts_mixing_states (
   UNIQUE(user_id, generation_id)
 );
 
--- 외래 키 제약조건 제거 (더미 사용자 허용, RLS 정책으로 보호됨)
+-- 외래 키 제약조건 추가
 DO $$
 BEGIN
-  IF EXISTS (
+  IF NOT EXISTS (
     SELECT 1 FROM pg_constraint 
     WHERE conname = 'tts_mixing_states_user_id_fkey'
   ) THEN
     ALTER TABLE public.tts_mixing_states 
-    DROP CONSTRAINT tts_mixing_states_user_id_fkey;
+    ADD CONSTRAINT tts_mixing_states_user_id_fkey 
+    FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
   END IF;
   
-  -- generation_id 외래 키는 유지 (tts_generations 참조)
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint 
     WHERE conname = 'tts_mixing_states_generation_id_fkey'
@@ -181,18 +171,18 @@ CREATE TABLE IF NOT EXISTS public.tts_schedule_requests (
   mixing_state JSONB -- MixingState (있는 경우)
 );
 
--- 외래 키 제약조건 제거 (더미 사용자 허용, RLS 정책으로 보호됨)
+-- 외래 키 제약조건 추가
 DO $$
 BEGIN
-  IF EXISTS (
+  IF NOT EXISTS (
     SELECT 1 FROM pg_constraint 
     WHERE conname = 'tts_schedule_requests_user_id_fkey'
   ) THEN
     ALTER TABLE public.tts_schedule_requests 
-    DROP CONSTRAINT tts_schedule_requests_user_id_fkey;
+    ADD CONSTRAINT tts_schedule_requests_user_id_fkey 
+    FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
   END IF;
   
-  -- generation_id 외래 키는 유지 (tts_generations 참조)
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint 
     WHERE conname = 'tts_schedule_requests_generation_id_fkey'
@@ -215,18 +205,18 @@ CREATE TABLE IF NOT EXISTS public.tts_review_states (
   UNIQUE(user_id, generation_id)
 );
 
--- 외래 키 제약조건 제거 (더미 사용자 허용, RLS 정책으로 보호됨)
+-- 외래 키 제약조건 추가
 DO $$
 BEGIN
-  IF EXISTS (
+  IF NOT EXISTS (
     SELECT 1 FROM pg_constraint 
     WHERE conname = 'tts_review_states_user_id_fkey'
   ) THEN
     ALTER TABLE public.tts_review_states 
-    DROP CONSTRAINT tts_review_states_user_id_fkey;
+    ADD CONSTRAINT tts_review_states_user_id_fkey 
+    FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
   END IF;
   
-  -- generation_id 외래 키는 유지 (tts_generations 참조)
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint 
     WHERE conname = 'tts_review_states_generation_id_fkey'
@@ -247,15 +237,16 @@ CREATE TABLE IF NOT EXISTS public.tts_message_history (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 외래 키 제약조건 제거 (더미 사용자 허용, RLS 정책으로 보호됨)
+-- 외래 키 제약조건 추가
 DO $$
 BEGIN
-  IF EXISTS (
+  IF NOT EXISTS (
     SELECT 1 FROM pg_constraint 
     WHERE conname = 'tts_message_history_user_id_fkey'
   ) THEN
     ALTER TABLE public.tts_message_history 
-    DROP CONSTRAINT tts_message_history_user_id_fkey;
+    ADD CONSTRAINT tts_message_history_user_id_fkey 
+    FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
   END IF;
 END $$;
 
