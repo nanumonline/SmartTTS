@@ -332,9 +332,7 @@ export async function loadUserSettings(userId: string): Promise<UserSettings | n
       preferences: data.preferences,
     };
   } catch (error: any) {
-    if (error.code !== "PGRST205") {
-      console.error("설정 조회 실패:", error);
-    }
+    console.error("설정 조회 실패:", error);
     return null;
   }
 }
@@ -795,9 +793,7 @@ export async function loadMessages(userId: string): Promise<MessageHistoryEntry[
       updatedAt: row.updated_at,
     }));
   } catch (error: any) {
-    if (error.code !== "PGRST205") {
-      console.error("메시지 조회 실패:", error);
-    }
+    console.error("메시지 조회 실패:", error);
     return [];
   }
 }
@@ -838,18 +834,13 @@ export async function syncVoiceCatalog(voices: any[]): Promise<boolean> {
         });
 
       if (error) {
-        // 테이블 없으면 조용히 스킵
-        if (error.code !== "PGRST205" && !error.message?.includes("schema cache")) {
-          console.warn(`음성 ${voice.voice_id} 동기화 실패:`, error);
-        }
+        console.warn(`음성 ${voice.voice_id} 동기화 실패:`, error);
       }
     }
 
     return true;
   } catch (error: any) {
-    if (error.code !== "PGRST205") {
-      console.error("음성 카탈로그 동기화 실패:", error);
-    }
+    console.error("음성 카탈로그 동기화 실패:", error);
     return false;
   }
 }
@@ -862,17 +853,10 @@ export async function loadVoiceCatalog(): Promise<any[]> {
       .select("voice_data")
       .order("synced_at", { ascending: false });
 
-    if (error) {
-      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
-        return [];
-      }
-      throw error;
-    }
+    if (error) throw error;
     return (data || []).map((row: any) => row.voice_data);
   } catch (error: any) {
-    if (error.code !== "PGRST205") {
-      console.error("음성 카탈로그 조회 실패:", error);
-    }
+    console.error("음성 카탈로그 조회 실패:", error);
     return [];
   }
 }

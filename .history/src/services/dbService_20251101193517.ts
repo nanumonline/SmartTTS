@@ -158,17 +158,10 @@ export async function updateGeneration(userId: string, id: string, updates: Part
       .eq("user_id", userId)
       .eq("id", id);
 
-    if (error) {
-      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
-        return false;
-      }
-      throw error;
-    }
+    if (error) throw error;
     return true;
   } catch (error: any) {
-    if (error.code !== "PGRST205") {
-      console.error("생성 이력 업데이트 실패:", error);
-    }
+    console.error("생성 이력 업데이트 실패:", error);
     return false;
   }
 }
@@ -182,17 +175,10 @@ export async function deleteGeneration(userId: string, id: string): Promise<bool
       .eq("user_id", userId)
       .eq("id", id);
 
-    if (error) {
-      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
-        return false;
-      }
-      throw error;
-    }
+    if (error) throw error;
     return true;
   } catch (error: any) {
-    if (error.code !== "PGRST205") {
-      console.error("생성 이력 삭제 실패:", error);
-    }
+    console.error("생성 이력 삭제 실패:", error);
     return false;
   }
 }
@@ -256,17 +242,10 @@ export async function loadFavorites(userId: string): Promise<string[]> {
       .select("voice_id")
       .eq("user_id", userId);
 
-    if (error) {
-      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
-        return [];
-      }
-      throw error;
-    }
+    if (error) throw error;
     return (data || []).map((row: any) => row.voice_id);
   } catch (error: any) {
-    if (error.code !== "PGRST205") {
-      console.error("즐겨찾기 조회 실패:", error);
-    }
+    console.error("즐겨찾기 조회 실패:", error);
     return [];
   }
 }
@@ -294,17 +273,10 @@ export async function saveUserSettings(userId: string, settings: UserSettings): 
         onConflict: "user_id"
       });
 
-    if (error) {
-      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
-        return false;
-      }
-      throw error;
-    }
+    if (error) throw error;
     return true;
   } catch (error: any) {
-    if (error.code !== "PGRST205") {
-      console.error("설정 저장 실패:", error);
-    }
+    console.error("설정 저장 실패:", error);
     return false;
   }
 }
@@ -321,7 +293,7 @@ export async function loadUserSettings(userId: string): Promise<UserSettings | n
     if (error) {
       if (error.code === "PGRST116") return null; // 없음
       if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
-        return null; // 테이블 없음 (조용히 처리)
+        return null; // 테이블 없음
       }
       throw error;
     }
@@ -332,9 +304,7 @@ export async function loadUserSettings(userId: string): Promise<UserSettings | n
       preferences: data.preferences,
     };
   } catch (error: any) {
-    if (error.code !== "PGRST205") {
-      console.error("설정 조회 실패:", error);
-    }
+    console.error("설정 조회 실패:", error);
     return null;
   }
 }
@@ -390,17 +360,10 @@ export async function saveCloneRequest(userId: string, request: CloneRequestEntr
       .select("id")
       .single();
 
-    if (error) {
-      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
-        return null;
-      }
-      throw error;
-    }
+    if (error) throw error;
     return data?.id || null;
   } catch (error: any) {
-    if (error.code !== "PGRST205") {
-      console.error("클론 요청 저장 실패:", error);
-    }
+    console.error("클론 요청 저장 실패:", error);
     return null;
   }
 }
@@ -414,12 +377,7 @@ export async function loadCloneRequests(userId: string): Promise<CloneRequestEnt
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
 
-    if (error) {
-      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
-        return [];
-      }
-      throw error;
-    }
+    if (error) throw error;
 
     return (data || []).map((row: any) => ({
       id: row.id,
@@ -440,9 +398,7 @@ export async function loadCloneRequests(userId: string): Promise<CloneRequestEnt
       completedAt: row.completed_at,
     }));
   } catch (error: any) {
-    if (error.code !== "PGRST205") {
-      console.error("클론 요청 조회 실패:", error);
-    }
+    console.error("클론 요청 조회 실패:", error);
     return [];
   }
 }
@@ -477,17 +433,10 @@ export async function saveMixingState(userId: string, state: MixingStateEntry, a
         onConflict: "user_id,generation_id"
       });
 
-    if (error) {
-      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
-        return false;
-      }
-      throw error;
-    }
+    if (error) throw error;
     return true;
   } catch (error: any) {
-    if (error.code !== "PGRST205") {
-      console.error("믹싱 상태 저장 실패:", error);
-    }
+    console.error("믹싱 상태 저장 실패:", error);
     return false;
   }
 }
@@ -500,12 +449,7 @@ export async function loadMixingStates(userId: string): Promise<Map<string, Mixi
       .select("*")
       .eq("user_id", userId);
 
-    if (error) {
-      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
-        return new Map();
-      }
-      throw error;
-    }
+    if (error) throw error;
 
     const map = new Map<string, MixingStateEntry>();
     (data || []).forEach((row: any) => {
@@ -518,9 +462,7 @@ export async function loadMixingStates(userId: string): Promise<Map<string, Mixi
     });
     return map;
   } catch (error: any) {
-    if (error.code !== "PGRST205") {
-      console.error("믹싱 상태 조회 실패:", error);
-    }
+    console.error("믹싱 상태 조회 실패:", error);
     return new Map();
   }
 }
@@ -561,17 +503,10 @@ export async function saveScheduleRequest(userId: string, request: ScheduleReque
       .select("id")
       .single();
 
-    if (error) {
-      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
-        return null;
-      }
-      throw error;
-    }
+    if (error) throw error;
     return data?.id || null;
   } catch (error: any) {
-    if (error.code !== "PGRST205") {
-      console.error("예약 요청 저장 실패:", error);
-    }
+    console.error("예약 요청 저장 실패:", error);
     return null;
   }
 }
@@ -585,12 +520,7 @@ export async function loadScheduleRequests(userId: string): Promise<ScheduleRequ
       .eq("user_id", userId)
       .order("scheduled_time", { ascending: false });
 
-    if (error) {
-      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
-        return [];
-      }
-      throw error;
-    }
+    if (error) throw error;
 
     return (data || []).map((row: any) => ({
       id: row.id,
@@ -606,9 +536,7 @@ export async function loadScheduleRequests(userId: string): Promise<ScheduleRequ
       createdAt: row.created_at,
     }));
   } catch (error: any) {
-    if (error.code !== "PGRST205") {
-      console.error("예약 요청 조회 실패:", error);
-    }
+    console.error("예약 요청 조회 실패:", error);
     return [];
   }
 }
@@ -637,17 +565,10 @@ export async function saveReviewState(userId: string, state: ReviewStateEntry): 
         onConflict: "user_id,generation_id"
       });
 
-    if (error) {
-      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
-        return false;
-      }
-      throw error;
-    }
+    if (error) throw error;
     return true;
   } catch (error: any) {
-    if (error.code !== "PGRST205") {
-      console.error("검수 상태 저장 실패:", error);
-    }
+    console.error("검수 상태 저장 실패:", error);
     return false;
   }
 }
@@ -660,12 +581,7 @@ export async function loadReviewStates(userId: string): Promise<Map<string, Revi
       .select("*")
       .eq("user_id", userId);
 
-    if (error) {
-      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
-        return new Map();
-      }
-      throw error;
-    }
+    if (error) throw error;
 
     const map = new Map<string, ReviewStateEntry>();
     (data || []).forEach((row: any) => {
@@ -678,9 +594,7 @@ export async function loadReviewStates(userId: string): Promise<Map<string, Revi
     });
     return map;
   } catch (error: any) {
-    if (error.code !== "PGRST205") {
-      console.error("검수 상태 조회 실패:", error);
-    }
+    console.error("검수 상태 조회 실패:", error);
     return new Map();
   }
 }
@@ -708,17 +622,10 @@ export async function saveMessage(userId: string, message: MessageHistoryEntry):
       .select("id")
       .single();
 
-    if (error) {
-      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
-        return null;
-      }
-      throw error;
-    }
+    if (error) throw error;
     return data?.id || null;
   } catch (error: any) {
-    if (error.code !== "PGRST205") {
-      console.error("메시지 저장 실패:", error);
-    }
+    console.error("메시지 저장 실패:", error);
     return null;
   }
 }
@@ -732,17 +639,10 @@ export async function updateMessage(userId: string, id: string, text: string): P
       .eq("user_id", userId)
       .eq("id", id);
 
-    if (error) {
-      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
-        return false;
-      }
-      throw error;
-    }
+    if (error) throw error;
     return true;
   } catch (error: any) {
-    if (error.code !== "PGRST205") {
-      console.error("메시지 업데이트 실패:", error);
-    }
+    console.error("메시지 업데이트 실패:", error);
     return false;
   }
 }
@@ -756,17 +656,10 @@ export async function deleteMessage(userId: string, id: string): Promise<boolean
       .eq("user_id", userId)
       .eq("id", id);
 
-    if (error) {
-      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
-        return false;
-      }
-      throw error;
-    }
+    if (error) throw error;
     return true;
   } catch (error: any) {
-    if (error.code !== "PGRST205") {
-      console.error("메시지 삭제 실패:", error);
-    }
+    console.error("메시지 삭제 실패:", error);
     return false;
   }
 }
@@ -780,12 +673,7 @@ export async function loadMessages(userId: string): Promise<MessageHistoryEntry[
       .eq("user_id", userId)
       .order("updated_at", { ascending: false });
 
-    if (error) {
-      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
-        return [];
-      }
-      throw error;
-    }
+    if (error) throw error;
 
     return (data || []).map((row: any) => ({
       id: row.id,
@@ -795,9 +683,7 @@ export async function loadMessages(userId: string): Promise<MessageHistoryEntry[
       updatedAt: row.updated_at,
     }));
   } catch (error: any) {
-    if (error.code !== "PGRST205") {
-      console.error("메시지 조회 실패:", error);
-    }
+    console.error("메시지 조회 실패:", error);
     return [];
   }
 }
@@ -838,18 +724,13 @@ export async function syncVoiceCatalog(voices: any[]): Promise<boolean> {
         });
 
       if (error) {
-        // 테이블 없으면 조용히 스킵
-        if (error.code !== "PGRST205" && !error.message?.includes("schema cache")) {
-          console.warn(`음성 ${voice.voice_id} 동기화 실패:`, error);
-        }
+        console.warn(`음성 ${voice.voice_id} 동기화 실패:`, error);
       }
     }
 
     return true;
   } catch (error: any) {
-    if (error.code !== "PGRST205") {
-      console.error("음성 카탈로그 동기화 실패:", error);
-    }
+    console.error("음성 카탈로그 동기화 실패:", error);
     return false;
   }
 }
@@ -862,17 +743,10 @@ export async function loadVoiceCatalog(): Promise<any[]> {
       .select("voice_data")
       .order("synced_at", { ascending: false });
 
-    if (error) {
-      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
-        return [];
-      }
-      throw error;
-    }
+    if (error) throw error;
     return (data || []).map((row: any) => row.voice_data);
   } catch (error: any) {
-    if (error.code !== "PGRST205") {
-      console.error("음성 카탈로그 조회 실패:", error);
-    }
+    console.error("음성 카탈로그 조회 실패:", error);
     return [];
   }
 }

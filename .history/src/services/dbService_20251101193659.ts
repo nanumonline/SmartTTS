@@ -332,9 +332,7 @@ export async function loadUserSettings(userId: string): Promise<UserSettings | n
       preferences: data.preferences,
     };
   } catch (error: any) {
-    if (error.code !== "PGRST205") {
-      console.error("설정 조회 실패:", error);
-    }
+    console.error("설정 조회 실패:", error);
     return null;
   }
 }
