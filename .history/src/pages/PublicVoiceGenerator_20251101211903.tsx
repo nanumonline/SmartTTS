@@ -1550,7 +1550,7 @@ const PublicVoiceGenerator = () => {
       const messages = await dbService.loadMessages(user.id);
       if (messages.length > 0) {
         const normalized = messages.map(msg => ({
-          id: String(msg.id || generateUniqueId()),
+          id: msg.id || generateUniqueId(),
           text: msg.text,
           purpose: msg.purpose,
           createdAt: msg.createdAt || new Date().toISOString(),
