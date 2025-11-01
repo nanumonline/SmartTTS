@@ -180,7 +180,10 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <AppShell>
-                    <SendSetupPage />
+                    <div className="space-y-4">
+                      <h1 className="text-2xl font-semibold">전송 설정</h1>
+                      <p className="text-muted-foreground">전송 채널 및 설정을 관리합니다.</p>
+                    </div>
                   </AppShell>
                 </ProtectedRoute>
               } 
