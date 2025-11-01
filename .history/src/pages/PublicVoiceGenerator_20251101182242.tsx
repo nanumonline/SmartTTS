@@ -2260,53 +2260,31 @@ const PublicVoiceGenerator = () => {
     }
   }, [favoriteVoiceIds.size, allVoices.length, availableVoices.length, loadFavoriteVoices]);
 
-  // 텍스트 변경 시 예상 오디오 길이 및 크레딧 자동 예측 (300자 초과 지원)
+  // 텍스트 변경 시 예상 오디오 길이 자동 예측
   useEffect(() => {
     const timer = setTimeout(async () => {
-      if (customText.trim() && selectedVoice) {
+      if (customText.trim() && selectedVoice && customText.length <= 300) {
         // 실제 API voice_id인 경우에만 예측 (기본 음성은 스킵)
         const isRealVoiceId = availableVoices.some((v: any) => v.voice_id === selectedVoice) || 
                              !voiceStyles.some((v: any) => v.id === selectedVoice);
         
         if (isRealVoiceId) {
           setIsPredictingDuration(true);
-          
-          // 선택된 음성의 언어 확인
-          const selected = availableVoices.find((v: any) => v.voice_id === selectedVoice) || selectedVoiceInfo;
-          const supportedLanguages: string[] = Array.isArray(selected?.language) ? selected.language : (selected?.language ? [selected.language] : []);
-          const chosenLanguage = supportedLanguages.length > 0 && !supportedLanguages.includes("ko") ? supportedLanguages[0] : "ko";
-          
-          // 스타일 결정
-          const styleValue = metaOverrides.style || 
-            getEmotionValue(voiceSettings.emotion.preset, voiceSettings.emotion.customPrompt);
-          
-          if (customText.length <= 300) {
-            // 300자 이하: 단일 예측
-            const duration = await predictDuration(customText, selectedVoice, chosenLanguage, styleValue);
-            setPredictedDuration(duration);
-            setPredictedCredit(duration ? Math.ceil(duration) : null);
-          } else {
-            // 300자 초과: 전체 예측 (분할된 청크 전체)
-            const prediction = await predictTotalDurationAndCredit(customText, selectedVoice, chosenLanguage, styleValue);
-            setPredictedDuration(prediction.totalDuration);
-            setPredictedCredit(prediction.totalCredit);
-          }
-          
+          const duration = await predictDuration(customText, selectedVoice);
+          setPredictedDuration(duration);
           setIsPredictingDuration(false);
         } else {
           // 기본 음성 목록 사용 시 대략적인 추정
           const estimated = customText.length * 0.1 / (voiceSettings.readingSpeed.preset === "빠름" ? 1.3 : voiceSettings.readingSpeed.preset === "느림" ? 0.7 : 1.0);
           setPredictedDuration(Math.round(estimated * 100) / 100);
-          setPredictedCredit(Math.ceil(estimated));
         }
       } else {
         setPredictedDuration(null);
-        setPredictedCredit(null);
       }
     }, 500); // 디바운싱: 500ms 후 예측
 
     return () => clearTimeout(timer);
-  }, [customText, selectedVoice, voiceSettings.readingSpeed.preset, voiceSettings.emotion, availableVoices, selectedVoiceInfo]);
+  }, [customText, selectedVoice, voiceSettings.readingSpeed.preset, availableVoices]);
 
   // 텍스트를 300자 단위로 분할 (문장 단위로 분할하여 자연스럽게)
   const splitTextIntoChunks = (text: string, maxLength: number = 300): string[] => {
@@ -2730,7 +2708,7 @@ const PublicVoiceGenerator = () => {
         description,
       });
 
-      console.log(`음성 생성 성공 - ${needsSplitting ? `${textChunks.length}개 청크 결합` : '단일 생성'}`);
+      console.log(`음성 생성 성공 - ${source}`);
       
       // 이름 저장 다이얼로그 표시
       setPendingGeneration({
@@ -2742,8 +2720,8 @@ const PublicVoiceGenerator = () => {
         voiceName: getVoiceDisplayName(selectedVoice || ""),
         createdAt: new Date().toISOString(),
         duration: roundedDuration,
-        status: "ready",
-        hasAudio: true,
+        status: usedMock ? "mock" : "ready",
+        hasAudio: !usedMock,
         language: chosenLanguage,
         model: chosenModel,
         style: styleValue,
@@ -2757,9 +2735,9 @@ const PublicVoiceGenerator = () => {
 
       // 캐시에 blob 데이터 저장
       cacheRef.current.set(cacheKey, {
-        blob: finalAudioBlob,
-        duration: roundedDuration,
-        mimeType: finalMimeType,
+        blob: audioResult.blob,
+        duration: audioResult.duration,
+        mimeType: audioResult.mimeType,
         _audioUrl: audioUrl,
       });
       // pushHistory는 이름 저장 다이얼로그에서 처리
@@ -2774,7 +2752,6 @@ const PublicVoiceGenerator = () => {
       });
     } finally {
       setIsGenerating(false);
-      setGenerationProgress(null);
     }
   };
 

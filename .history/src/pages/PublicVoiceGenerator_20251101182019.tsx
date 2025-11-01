@@ -2106,7 +2106,7 @@ const PublicVoiceGenerator = () => {
     if (!isVoiceFinderOpen && abortRef.current) {
       abortRef.current.abort();
       abortRef.current = null;
-    setIsSearchingVoices(false);
+      setIsSearchingVoices(false);
       // 오디오 정리
       if (audioSampleRef.current) {
         audioSampleRef.current.pause();
@@ -2260,110 +2260,41 @@ const PublicVoiceGenerator = () => {
     }
   }, [favoriteVoiceIds.size, allVoices.length, availableVoices.length, loadFavoriteVoices]);
 
-  // 텍스트 변경 시 예상 오디오 길이 및 크레딧 자동 예측 (300자 초과 지원)
+  // 텍스트 변경 시 예상 오디오 길이 자동 예측
   useEffect(() => {
     const timer = setTimeout(async () => {
-      if (customText.trim() && selectedVoice) {
+      if (customText.trim() && selectedVoice && customText.length <= 300) {
         // 실제 API voice_id인 경우에만 예측 (기본 음성은 스킵)
         const isRealVoiceId = availableVoices.some((v: any) => v.voice_id === selectedVoice) || 
                              !voiceStyles.some((v: any) => v.id === selectedVoice);
         
         if (isRealVoiceId) {
           setIsPredictingDuration(true);
-          
-          // 선택된 음성의 언어 확인
-          const selected = availableVoices.find((v: any) => v.voice_id === selectedVoice) || selectedVoiceInfo;
-          const supportedLanguages: string[] = Array.isArray(selected?.language) ? selected.language : (selected?.language ? [selected.language] : []);
-          const chosenLanguage = supportedLanguages.length > 0 && !supportedLanguages.includes("ko") ? supportedLanguages[0] : "ko";
-          
-          // 스타일 결정
-          const styleValue = metaOverrides.style || 
-            getEmotionValue(voiceSettings.emotion.preset, voiceSettings.emotion.customPrompt);
-          
-          if (customText.length <= 300) {
-            // 300자 이하: 단일 예측
-            const duration = await predictDuration(customText, selectedVoice, chosenLanguage, styleValue);
-            setPredictedDuration(duration);
-            setPredictedCredit(duration ? Math.ceil(duration) : null);
-          } else {
-            // 300자 초과: 전체 예측 (분할된 청크 전체)
-            const prediction = await predictTotalDurationAndCredit(customText, selectedVoice, chosenLanguage, styleValue);
-            setPredictedDuration(prediction.totalDuration);
-            setPredictedCredit(prediction.totalCredit);
-          }
-          
+          const duration = await predictDuration(customText, selectedVoice);
+          setPredictedDuration(duration);
           setIsPredictingDuration(false);
         } else {
           // 기본 음성 목록 사용 시 대략적인 추정
           const estimated = customText.length * 0.1 / (voiceSettings.readingSpeed.preset === "빠름" ? 1.3 : voiceSettings.readingSpeed.preset === "느림" ? 0.7 : 1.0);
           setPredictedDuration(Math.round(estimated * 100) / 100);
-          setPredictedCredit(Math.ceil(estimated));
         }
       } else {
         setPredictedDuration(null);
-        setPredictedCredit(null);
       }
     }, 500); // 디바운싱: 500ms 후 예측
 
     return () => clearTimeout(timer);
-  }, [customText, selectedVoice, voiceSettings.readingSpeed.preset, voiceSettings.emotion, availableVoices, selectedVoiceInfo]);
-
-  // 텍스트를 300자 단위로 분할 (문장 단위로 분할하여 자연스럽게)
-  const splitTextIntoChunks = (text: string, maxLength: number = 300): string[] => {
-    const trimmed = text.trim();
-    if (trimmed.length <= maxLength) {
-      return [trimmed];
-    }
-
-    const chunks: string[] = [];
-    let currentIndex = 0;
-
-    while (currentIndex < trimmed.length) {
-      let chunkEnd = Math.min(currentIndex + maxLength, trimmed.length);
-      
-      // 문장 끝을 찾아서 자연스럽게 분할
-      if (chunkEnd < trimmed.length) {
-        // 마침표, 물음표, 느낌표, 줄바꿈 등으로 분할
-        const sentenceEnd = Math.max(
-          trimmed.lastIndexOf('。', chunkEnd),
-          trimmed.lastIndexOf('.', chunkEnd),
-          trimmed.lastIndexOf('!', chunkEnd),
-          trimmed.lastIndexOf('?', chunkEnd),
-          trimmed.lastIndexOf('\n', chunkEnd),
-          trimmed.lastIndexOf('！', chunkEnd),
-          trimmed.lastIndexOf('？', chunkEnd)
-        );
-        
-        if (sentenceEnd > currentIndex) {
-          chunkEnd = sentenceEnd + 1;
-        } else {
-          // 문장 끝이 없으면 공백으로 분할
-          const spaceIndex = trimmed.lastIndexOf(' ', chunkEnd);
-          if (spaceIndex > currentIndex) {
-            chunkEnd = spaceIndex + 1;
-          }
-        }
-      }
-
-      const chunk = trimmed.slice(currentIndex, chunkEnd).trim();
-      if (chunk.length > 0) {
-        chunks.push(chunk);
-      }
-      currentIndex = chunkEnd;
-    }
-
-    return chunks;
-  };
+  }, [customText, selectedVoice, voiceSettings.readingSpeed.preset, availableVoices]);
 
   // 예상 오디오 길이 예측 함수 (Supabase Edge Function 프록시 사용)
   // 참고: https://docs.supertoneapi.com/en/user-guide/text-to-speech
   // 이 API는 크레딧을 소비하지 않음
-  const predictDuration = async (text: string, voiceId: string, language: string = "ko", style: string = "neutral"): Promise<number | null> => {
+  const predictDuration = async (text: string, voiceId: string): Promise<number | null> => {
     if (!text.trim() || !voiceId) return null;
     try {
       const response = await fetchWithSupabaseProxy(`/predict-duration/${voiceId}`, {
         method: "POST",
-        body: JSON.stringify({ text, language, style }),
+        body: JSON.stringify({ text, language: "ko", style: "neutral" }),
       });
       if (response?.ok) {
         const data = await response.json();
@@ -2373,84 +2304,6 @@ const PublicVoiceGenerator = () => {
       console.warn("예상 길이 계산 실패:", error);
     }
     return null;
-  };
-
-  // 전체 텍스트의 예상 길이와 크레딧 계산
-  const predictTotalDurationAndCredit = async (text: string, voiceId: string, language: string = "ko", style: string = "neutral"): Promise<{ totalDuration: number; totalCredit: number; chunkCount: number }> => {
-    const chunks = splitTextIntoChunks(text, 300);
-    let totalDuration = 0;
-    
-    // 각 청크에 대해 예측 수행
-    for (const chunk of chunks) {
-      const duration = await predictDuration(chunk, voiceId, language, style);
-      if (duration) {
-        totalDuration += duration;
-      } else {
-        // 예측 실패 시 대략적인 추정 (초당 10자 가정)
-        totalDuration += chunk.length * 0.1;
-      }
-    }
-
-    // 크레딧 계산: 일반적으로 1초당 1 크레딧 또는 더 복잡한 계산
-    // 실제 API 문서를 확인해야 하지만, 여기서는 duration 기반으로 가정
-    const totalCredit = Math.ceil(totalDuration); // 예: 1초당 1 크레딧
-
-    return {
-      totalDuration,
-      totalCredit,
-      chunkCount: chunks.length,
-    };
-  };
-
-  // 여러 오디오를 하나로 결합하는 함수
-  const concatenateAudios = async (audioBlobs: Blob[]): Promise<Blob> => {
-    if (audioBlobs.length === 0) {
-      throw new Error("결합할 오디오가 없습니다.");
-    }
-    if (audioBlobs.length === 1) {
-      return audioBlobs[0];
-    }
-
-    try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 44100 });
-      const audioBuffers: AudioBuffer[] = [];
-
-      // 모든 오디오를 디코딩
-      for (const blob of audioBlobs) {
-        const arrayBuffer = await blob.arrayBuffer();
-        const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-        audioBuffers.push(audioBuffer);
-      }
-
-      // 전체 길이 계산
-      const totalLength = audioBuffers.reduce((sum, buf) => sum + buf.length, 0);
-      const sampleRate = audioBuffers[0].sampleRate;
-      const numChannels = audioBuffers[0].numberOfChannels;
-
-      // 오프라인 컨텍스트로 결합
-      const offlineCtx = new OfflineAudioContext(numChannels, totalLength, sampleRate);
-      let currentOffset = 0;
-
-      for (const buffer of audioBuffers) {
-        const source = offlineCtx.createBufferSource();
-        source.buffer = buffer;
-        source.connect(offlineCtx.destination);
-        source.start(currentOffset / sampleRate);
-        currentOffset += buffer.length;
-      }
-
-      const renderedBuffer = await offlineCtx.startRendering();
-
-      // WAV로 인코딩 (audioMixer의 함수 사용)
-      const { encodeWavPCM16, mixDownToStereo } = await import("@/lib/audioMixer");
-      const interleaved = mixDownToStereo(renderedBuffer);
-      const wavBlob = encodeWavPCM16(interleaved, sampleRate, numChannels);
-
-      return wavBlob;
-    } catch (error: any) {
-      console.error("오디오 결합 실패:", error);
-      throw new Error(`오디오 결합 실패: ${error.message}`);
-    }
   };
 
 
@@ -2508,10 +2361,6 @@ const PublicVoiceGenerator = () => {
     const needsSplitting = trimmedText.length > 300;
     if (needsSplitting) {
       console.log(`장문 텍스트 감지 (${trimmedText.length}자). 300자 단위로 분할하여 생성합니다.`);
-      toast({ 
-        title: "장문 텍스트 분할 생성", 
-        description: `텍스트가 ${trimmedText.length}자로, ${Math.ceil(trimmedText.length / 300)}개 청크로 분할하여 생성합니다.`,
-      });
     }
 
     // 실제 Supertone voice_id인지 확인 (기본 템플릿 id는 차단)
@@ -2599,47 +2448,33 @@ const PublicVoiceGenerator = () => {
     }
 
     setIsGenerating(true);
-    setGenerationProgress(null);
 
-    // 300자 초과 시 분할 처리
-    const textChunks = needsSplitting ? splitTextIntoChunks(processedText, 300) : [processedText];
+    const requestBody: Record<string, any> = {
+      text: processedText, // pause 구간이 적용된 텍스트
+      language: chosenLanguage,
+      style: styleValue,
+      model: chosenModel,
+      voice_settings: {
+        speed: speedValue, // 읽는 속도 (0.7 ~ 1.3)
+        pitch_shift: pitchShift, // 피치 변경 (-12 ~ +12 세미톤)
+        pitch_variance: 1,
+        playback_speed: voiceSettings.playbackSpeed, // 재생 속도 (0.5 ~ 2.0)
+      },
+    };
+
     const estimatedDuration = estimateDurationFromText(trimmedText);
 
     try {
       cleanupGeneratedAudioUrl(generatedAudio);
 
-      let finalAudioBlob: Blob | null = null;
-      let finalDuration: number = 0;
-      let finalMimeType: string = "audio/mpeg";
-      const audioChunks: Blob[] = [];
-      let totalDuration = 0;
+      let audioResult: { blob: Blob; duration: number | null; mimeType?: string } | null = null;
+      let source = "프록시";
 
-      // 각 청크를 순차적으로 생성
-      for (let i = 0; i < textChunks.length; i++) {
-        const chunk = textChunks[i];
-        setGenerationProgress({ current: i + 1, total: textChunks.length });
-
-        const requestBody: Record<string, any> = {
-          text: chunk,
-          language: chosenLanguage,
-          style: styleValue,
-          model: chosenModel,
-          voice_settings: {
-            speed: speedValue,
-            pitch_shift: pitchShift,
-            pitch_variance: 1,
-            playback_speed: voiceSettings.playbackSpeed,
-          },
-        };
-
-        let audioResult: { blob: Blob; duration: number | null; mimeType?: string } | null = null;
-        let source = "프록시";
-
-        // 1. Supabase Edge Function 프록시 시도
-        const proxyResponse = await fetchWithSupabaseProxy(`/text-to-speech/${selectedVoice}?output_format=mp3`, {
-          method: "POST",
-          body: JSON.stringify({ ...requestBody, voice_id: selectedVoice }),
-        });
+      // 1. Supabase Edge Function 프록시 시도
+      const proxyResponse = await fetchWithSupabaseProxy(`/text-to-speech/${selectedVoice}?output_format=mp3`, {
+        method: "POST",
+        body: JSON.stringify({ ...requestBody, voice_id: selectedVoice }),
+      });
 
       if (proxyResponse?.ok) {
         audioResult = await parseSupertoneResponse(proxyResponse);
@@ -2730,7 +2565,7 @@ const PublicVoiceGenerator = () => {
         description,
       });
 
-      console.log(`음성 생성 성공 - ${needsSplitting ? `${textChunks.length}개 청크 결합` : '단일 생성'}`);
+      console.log(`음성 생성 성공 - ${source}`);
       
       // 이름 저장 다이얼로그 표시
       setPendingGeneration({
@@ -2742,8 +2577,8 @@ const PublicVoiceGenerator = () => {
         voiceName: getVoiceDisplayName(selectedVoice || ""),
         createdAt: new Date().toISOString(),
         duration: roundedDuration,
-        status: "ready",
-        hasAudio: true,
+        status: usedMock ? "mock" : "ready",
+        hasAudio: !usedMock,
         language: chosenLanguage,
         model: chosenModel,
         style: styleValue,
@@ -2757,9 +2592,9 @@ const PublicVoiceGenerator = () => {
 
       // 캐시에 blob 데이터 저장
       cacheRef.current.set(cacheKey, {
-        blob: finalAudioBlob,
-        duration: roundedDuration,
-        mimeType: finalMimeType,
+        blob: audioResult.blob,
+        duration: audioResult.duration,
+        mimeType: audioResult.mimeType,
         _audioUrl: audioUrl,
       });
       // pushHistory는 이름 저장 다이얼로그에서 처리
@@ -2774,7 +2609,6 @@ const PublicVoiceGenerator = () => {
       });
     } finally {
       setIsGenerating(false);
-      setGenerationProgress(null);
     }
   };
 
@@ -4683,7 +4517,7 @@ const PublicVoiceGenerator = () => {
                 onChange={(e) => setCloneForm((prev) => ({ ...prev, targetName: e.target.value }))}
                 className="bg-gray-800/50 border-gray-600 text-white placeholder:text-gray-400 focus-visible:ring-gray-500"
               />
-    </div>
+            </div>
             <div className="space-y-2">
               <Label className="text-gray-200">기준 음성 *</Label>
               <Select

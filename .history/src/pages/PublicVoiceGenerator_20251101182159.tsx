@@ -2260,53 +2260,31 @@ const PublicVoiceGenerator = () => {
     }
   }, [favoriteVoiceIds.size, allVoices.length, availableVoices.length, loadFavoriteVoices]);
 
-  // 텍스트 변경 시 예상 오디오 길이 및 크레딧 자동 예측 (300자 초과 지원)
+  // 텍스트 변경 시 예상 오디오 길이 자동 예측
   useEffect(() => {
     const timer = setTimeout(async () => {
-      if (customText.trim() && selectedVoice) {
+      if (customText.trim() && selectedVoice && customText.length <= 300) {
         // 실제 API voice_id인 경우에만 예측 (기본 음성은 스킵)
         const isRealVoiceId = availableVoices.some((v: any) => v.voice_id === selectedVoice) || 
                              !voiceStyles.some((v: any) => v.id === selectedVoice);
         
         if (isRealVoiceId) {
           setIsPredictingDuration(true);
-          
-          // 선택된 음성의 언어 확인
-          const selected = availableVoices.find((v: any) => v.voice_id === selectedVoice) || selectedVoiceInfo;
-          const supportedLanguages: string[] = Array.isArray(selected?.language) ? selected.language : (selected?.language ? [selected.language] : []);
-          const chosenLanguage = supportedLanguages.length > 0 && !supportedLanguages.includes("ko") ? supportedLanguages[0] : "ko";
-          
-          // 스타일 결정
-          const styleValue = metaOverrides.style || 
-            getEmotionValue(voiceSettings.emotion.preset, voiceSettings.emotion.customPrompt);
-          
-          if (customText.length <= 300) {
-            // 300자 이하: 단일 예측
-            const duration = await predictDuration(customText, selectedVoice, chosenLanguage, styleValue);
-            setPredictedDuration(duration);
-            setPredictedCredit(duration ? Math.ceil(duration) : null);
-          } else {
-            // 300자 초과: 전체 예측 (분할된 청크 전체)
-            const prediction = await predictTotalDurationAndCredit(customText, selectedVoice, chosenLanguage, styleValue);
-            setPredictedDuration(prediction.totalDuration);
-            setPredictedCredit(prediction.totalCredit);
-          }
-          
+          const duration = await predictDuration(customText, selectedVoice);
+          setPredictedDuration(duration);
           setIsPredictingDuration(false);
         } else {
           // 기본 음성 목록 사용 시 대략적인 추정
           const estimated = customText.length * 0.1 / (voiceSettings.readingSpeed.preset === "빠름" ? 1.3 : voiceSettings.readingSpeed.preset === "느림" ? 0.7 : 1.0);
           setPredictedDuration(Math.round(estimated * 100) / 100);
-          setPredictedCredit(Math.ceil(estimated));
         }
       } else {
         setPredictedDuration(null);
-        setPredictedCredit(null);
       }
     }, 500); // 디바운싱: 500ms 후 예측
 
     return () => clearTimeout(timer);
-  }, [customText, selectedVoice, voiceSettings.readingSpeed.preset, voiceSettings.emotion, availableVoices, selectedVoiceInfo]);
+  }, [customText, selectedVoice, voiceSettings.readingSpeed.preset, availableVoices]);
 
   // 텍스트를 300자 단위로 분할 (문장 단위로 분할하여 자연스럽게)
   const splitTextIntoChunks = (text: string, maxLength: number = 300): string[] => {
@@ -2504,14 +2482,9 @@ const PublicVoiceGenerator = () => {
       return;
     }
 
-    // 300자 초과 시 자동 분할 처리 (에러 대신 진행)
-    const needsSplitting = trimmedText.length > 300;
-    if (needsSplitting) {
-      console.log(`장문 텍스트 감지 (${trimmedText.length}자). 300자 단위로 분할하여 생성합니다.`);
-      toast({ 
-        title: "장문 텍스트 분할 생성", 
-        description: `텍스트가 ${trimmedText.length}자로, ${Math.ceil(trimmedText.length / 300)}개 청크로 분할하여 생성합니다.`,
-      });
+    if (trimmedText.length > 300) {
+      toast({ title: "길이 초과", description: `텍스트는 300자 이내여야 합니다. (현재: ${trimmedText.length}자)`, variant: "destructive" }); addOperationLog("warning", "텍스트 길이 초과"); return;
+      return;
     }
 
     // 실제 Supertone voice_id인지 확인 (기본 템플릿 id는 차단)
@@ -2599,47 +2572,33 @@ const PublicVoiceGenerator = () => {
     }
 
     setIsGenerating(true);
-    setGenerationProgress(null);
 
-    // 300자 초과 시 분할 처리
-    const textChunks = needsSplitting ? splitTextIntoChunks(processedText, 300) : [processedText];
+    const requestBody: Record<string, any> = {
+      text: processedText, // pause 구간이 적용된 텍스트
+      language: chosenLanguage,
+      style: styleValue,
+      model: chosenModel,
+      voice_settings: {
+        speed: speedValue, // 읽는 속도 (0.7 ~ 1.3)
+        pitch_shift: pitchShift, // 피치 변경 (-12 ~ +12 세미톤)
+        pitch_variance: 1,
+        playback_speed: voiceSettings.playbackSpeed, // 재생 속도 (0.5 ~ 2.0)
+      },
+    };
+
     const estimatedDuration = estimateDurationFromText(trimmedText);
 
     try {
       cleanupGeneratedAudioUrl(generatedAudio);
 
-      let finalAudioBlob: Blob | null = null;
-      let finalDuration: number = 0;
-      let finalMimeType: string = "audio/mpeg";
-      const audioChunks: Blob[] = [];
-      let totalDuration = 0;
+      let audioResult: { blob: Blob; duration: number | null; mimeType?: string } | null = null;
+      let source = "프록시";
 
-      // 각 청크를 순차적으로 생성
-      for (let i = 0; i < textChunks.length; i++) {
-        const chunk = textChunks[i];
-        setGenerationProgress({ current: i + 1, total: textChunks.length });
-
-        const requestBody: Record<string, any> = {
-          text: chunk,
-          language: chosenLanguage,
-          style: styleValue,
-          model: chosenModel,
-          voice_settings: {
-            speed: speedValue,
-            pitch_shift: pitchShift,
-            pitch_variance: 1,
-            playback_speed: voiceSettings.playbackSpeed,
-          },
-        };
-
-        let audioResult: { blob: Blob; duration: number | null; mimeType?: string } | null = null;
-        let source = "프록시";
-
-        // 1. Supabase Edge Function 프록시 시도
-        const proxyResponse = await fetchWithSupabaseProxy(`/text-to-speech/${selectedVoice}?output_format=mp3`, {
-          method: "POST",
-          body: JSON.stringify({ ...requestBody, voice_id: selectedVoice }),
-        });
+      // 1. Supabase Edge Function 프록시 시도
+      const proxyResponse = await fetchWithSupabaseProxy(`/text-to-speech/${selectedVoice}?output_format=mp3`, {
+        method: "POST",
+        body: JSON.stringify({ ...requestBody, voice_id: selectedVoice }),
+      });
 
       if (proxyResponse?.ok) {
         audioResult = await parseSupertoneResponse(proxyResponse);
@@ -2730,7 +2689,7 @@ const PublicVoiceGenerator = () => {
         description,
       });
 
-      console.log(`음성 생성 성공 - ${needsSplitting ? `${textChunks.length}개 청크 결합` : '단일 생성'}`);
+      console.log(`음성 생성 성공 - ${source}`);
       
       // 이름 저장 다이얼로그 표시
       setPendingGeneration({
@@ -2742,8 +2701,8 @@ const PublicVoiceGenerator = () => {
         voiceName: getVoiceDisplayName(selectedVoice || ""),
         createdAt: new Date().toISOString(),
         duration: roundedDuration,
-        status: "ready",
-        hasAudio: true,
+        status: usedMock ? "mock" : "ready",
+        hasAudio: !usedMock,
         language: chosenLanguage,
         model: chosenModel,
         style: styleValue,
@@ -2757,9 +2716,9 @@ const PublicVoiceGenerator = () => {
 
       // 캐시에 blob 데이터 저장
       cacheRef.current.set(cacheKey, {
-        blob: finalAudioBlob,
-        duration: roundedDuration,
-        mimeType: finalMimeType,
+        blob: audioResult.blob,
+        duration: audioResult.duration,
+        mimeType: audioResult.mimeType,
         _audioUrl: audioUrl,
       });
       // pushHistory는 이름 저장 다이얼로그에서 처리
@@ -2774,7 +2733,6 @@ const PublicVoiceGenerator = () => {
       });
     } finally {
       setIsGenerating(false);
-      setGenerationProgress(null);
     }
   };
 
