@@ -2235,7 +2235,7 @@ const PublicVoiceGenerator = () => {
       }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [favoriteVoiceIds.size, allVoices.length, availableVoices.length, loadFavoriteVoices]);
+  }, [favoriteVoiceIds.size, allVoices.length, availableVoices.length, favoriteVoiceIds, allVoices, availableVoices]);
 
   // 텍스트 변경 시 예상 오디오 길이 자동 예측
   useEffect(() => {
