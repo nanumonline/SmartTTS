@@ -298,16 +298,11 @@ export async function saveUserSettings(userId: string, settings: UserSettings): 
       if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
         return false;
       }
-      // RLS 정책 위반이나 권한 에러는 조용히 처리 (localStorage 폴백)
-      if (error.code === "42501" || error.status === 401 || error.status === 406) {
-        console.warn("설정 저장 실패 (RLS/권한):", error);
-        return false;
-      }
       throw error;
     }
     return true;
   } catch (error: any) {
-    if (error.code !== "PGRST205" && error.code !== "42501" && error.status !== 401 && error.status !== 406) {
+    if (error.code !== "PGRST205") {
       console.error("설정 저장 실패:", error);
     }
     return false;
