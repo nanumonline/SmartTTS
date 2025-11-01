@@ -383,6 +383,8 @@ CREATE POLICY "Users can delete own generations" ON public.tts_generations
     (auth.uid() IS NULL AND user_id IS NOT NULL)
   );
 
+END $$;
+
 -- 모든 정책 삭제 후 새로 생성 (인증되지 않은 사용자도 UUID로 접근 가능)
 DO $$
 BEGIN
