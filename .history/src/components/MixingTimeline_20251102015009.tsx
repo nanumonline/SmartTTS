@@ -64,12 +64,7 @@ const MixingTimeline: React.FC<MixingTimelineProps> = ({
 
         {/* TTS 트랙 (주요 - 강조, 페이드 없음) */}
         <div className="absolute top-8 left-3 right-3">
-          <div 
-            className="relative h-8 bg-blue-600/80 rounded border-2 border-blue-400 shadow-lg"
-            style={{
-              width: `${ttsWidth}%`,
-            }}
-          >
+          <div className="relative h-8 bg-blue-600/80 rounded border-2 border-blue-400 shadow-lg">
             <div className="absolute inset-0 flex items-center justify-center">
               <span className="text-xs font-bold text-white">TTS 음원</span>
             </div>
@@ -78,34 +73,34 @@ const MixingTimeline: React.FC<MixingTimelineProps> = ({
         </div>
 
         {/* BGM 트랙 (페이드인/아웃 시각화 포함) */}
-        {actualBgmDuration > 0 && (
+        {bgmDuration > 0 && (
           <div className="absolute bottom-1 left-3 right-3">
             <div 
               className="relative h-6 bg-green-600/60 rounded border border-green-400/50"
               style={{
-                left: `${(bgmStart / totalDuration) * 100}%`,
-                width: `${bgmVisualWidth}%`,
+                left: `${bgmStart * scale}%`,
+                width: `${(bgmDuration / totalDuration) * 100}%`,
               }}
             >
               <div className="absolute inset-0 flex items-center justify-center">
                 <span className="text-[10px] text-white">BGM</span>
               </div>
               {/* BGM 페이드인 영역 (BGM 시작 시) */}
-              {fadeIn > 0 && bgmStartOffset > 0 && (
+              {fadeIn > 0 && bgmOffset < 0 && (
                 <div 
                   className="absolute left-0 top-0 bottom-0 bg-green-900/60 rounded-l border-r border-green-300/50"
                   style={{ 
-                    width: `${Math.min(100, (fadeIn / bgmStartOffset) * 100)}%`,
+                    width: `${Math.min(100, (fadeIn / Math.abs(bgmOffset)) * 100)}%`,
                     background: 'linear-gradient(to right, rgba(0,0,0,0.8), transparent)'
                   }}
                 />
               )}
-              {/* BGM 페이드아웃 영역 (TTS 종료 후 BGM 종료 시) */}
+              {/* BGM 페이드아웃 영역 (BGM 종료 시) */}
               {fadeOut > 0 && (
                 <div 
                   className="absolute right-0 top-0 bottom-0 bg-green-900/60 rounded-r border-l border-green-300/50"
                   style={{ 
-                    width: `${Math.min(100, (fadeOut / actualBgmDuration) * 100)}%`,
+                    width: `${Math.min(100, (fadeOut / bgmDuration) * 100)}%`,
                     background: 'linear-gradient(to left, rgba(0,0,0,0.8), transparent)'
                   }}
                 />

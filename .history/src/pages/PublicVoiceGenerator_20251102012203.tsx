@@ -782,25 +782,12 @@ const PublicVoiceGenerator = () => {
 
       setIsMixingPreviewPlaying(true);
 
-      // 재생 완료 시 정리 (BGM이 항상 더 길거나 같음)
+      // 재생 완료 시 정리 (TTS 종료 시간 또는 BGM 종료 시간 중 큰 값)
       const ttsEndTimeCalc = ctx.currentTime + settings.ttsOffset + ttsBuffer.duration;
-      
-      // BGM 전체 길이 계산 (위에서 계산한 것과 동일)
-      let bgmTotalDuration = 0;
-      if (bgmBuffer) {
-        if (settings.trimEndSec != null && settings.trimEndSec > 0) {
-          bgmTotalDuration = settings.trimEndSec;
-        } else {
-          const minBgmDuration = ttsBuffer.duration + (settings.fadeIn || 0) + (settings.fadeOut || 0);
-          const bgmStartTime = Math.max(0, -settings.bgmOffset);
-          const bgmOriginalDuration = bgmStartTime + bgmBuffer.duration;
-          bgmTotalDuration = Math.max(minBgmDuration, bgmOriginalDuration);
-        }
-      }
-      
-      const bgmEndTimeCalc = bgmBuffer ? (ctx.currentTime + bgmTotalDuration) : ttsEndTimeCalc;
-      // BGM이 항상 더 길거나 같으므로 BGM 종료 시간 사용
-      const totalEndTime = bgmEndTimeCalc;
+      const bgmEndTimeCalc = settings.trimEndSec ? 
+        ctx.currentTime + settings.trimEndSec : 
+        (bgmBuffer ? (ctx.currentTime + Math.max(0, -settings.bgmOffset) + bgmBuffer.duration) : ttsEndTimeCalc);
+      const totalEndTime = Math.max(ttsEndTimeCalc, bgmEndTimeCalc);
       const endTime = totalEndTime - ctx.currentTime;
       setTimeout(() => {
         setIsMixingPreviewPlaying(false);
@@ -5795,12 +5782,11 @@ const PublicVoiceGenerator = () => {
                     // BGM 길이 가져오기 (uploadedBgmFile 또는 selectedBackground에서)
                     const bgmState = mixingStates.get(selectedGenerationForMixing?.id)?.selectedBackground;
                     // 실제로는 AudioBuffer의 duration을 가져와야 하지만, 여기서는 placeholder
-                    return bgmState?.duration || 30; // 기본값 30초
+                    return 30; // 기본값 30초
                   })()}
                   bgmOffset={mixingStates.get(selectedGenerationForMixing?.id)?.bgmOffset ?? DEFAULT_MIXING_SETTINGS.bgmOffset}
                   fadeIn={mixingStates.get(selectedGenerationForMixing?.id)?.fadeIn ?? DEFAULT_MIXING_SETTINGS.fadeIn}
                   fadeOut={mixingStates.get(selectedGenerationForMixing?.id)?.fadeOut ?? DEFAULT_MIXING_SETTINGS.fadeOut}
-                  trimEndSec={mixingStates.get(selectedGenerationForMixing?.id)?.trimEndSec ?? null}
                   onBgmOffsetChange={(offset) => {
                     const genId = selectedGenerationForMixing?.id;
                     if (genId) {

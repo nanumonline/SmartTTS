@@ -267,24 +267,13 @@ export async function exportMixToWav(
   if (bgmBuffer) {
     const bgmSrc = ctx.createBufferSource();
     bgmSrc.buffer = bgmBuffer;
-    bgmSrc.connect(lowShelf);
-    
-    // BGM이 필요한 길이만큼 재생되도록 루프 설정
-    // bgmTotalLen만큼 재생하려면 루프 필요
-    const bgmNeededDuration = bgmTotalLen - bgmStartTime;
-    const bgmOriginalDuration = bgmBuffer.duration;
-    
-    if (bgmNeededDuration > bgmOriginalDuration) {
-      // BGM이 더 길 필요가 있으면 루프 설정
-      bgmSrc.loop = true;
-      bgmSrc.loopEnd = bgmOriginalDuration;
+    if (settings.fadeIn > 0 && bgmStartTime > 0) {
+      bgmSrc.connect(lowShelf); // 페이드인 경로
+    } else {
+      bgmSrc.connect(lowShelf); // 일반 경로
     }
-    
     // BGM이 먼저 시작되면 음수 offset 허용
     bgmSrc.start(0, Math.max(0, -settings.bgmOffset));
-    
-    // OfflineAudioContext에서는 전체 길이만큼 렌더링하면 자동으로 필요한 만큼만 처리됨
-    // bgmTotalLen만큼 렌더링하도록 이미 renderDur을 설정했으므로 추가 처리 불필요
   }
 
   if (ttsBuffer) {

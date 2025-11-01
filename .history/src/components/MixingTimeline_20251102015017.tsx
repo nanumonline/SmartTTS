@@ -91,21 +91,21 @@ const MixingTimeline: React.FC<MixingTimelineProps> = ({
                 <span className="text-[10px] text-white">BGM</span>
               </div>
               {/* BGM 페이드인 영역 (BGM 시작 시) */}
-              {fadeIn > 0 && bgmStartOffset > 0 && (
+              {fadeIn > 0 && bgmOffset < 0 && (
                 <div 
                   className="absolute left-0 top-0 bottom-0 bg-green-900/60 rounded-l border-r border-green-300/50"
                   style={{ 
-                    width: `${Math.min(100, (fadeIn / bgmStartOffset) * 100)}%`,
+                    width: `${Math.min(100, (fadeIn / Math.abs(bgmOffset)) * 100)}%`,
                     background: 'linear-gradient(to right, rgba(0,0,0,0.8), transparent)'
                   }}
                 />
               )}
-              {/* BGM 페이드아웃 영역 (TTS 종료 후 BGM 종료 시) */}
+              {/* BGM 페이드아웃 영역 (BGM 종료 시) */}
               {fadeOut > 0 && (
                 <div 
                   className="absolute right-0 top-0 bottom-0 bg-green-900/60 rounded-r border-l border-green-300/50"
                   style={{ 
-                    width: `${Math.min(100, (fadeOut / actualBgmDuration) * 100)}%`,
+                    width: `${Math.min(100, (fadeOut / bgmDuration) * 100)}%`,
                     background: 'linear-gradient(to left, rgba(0,0,0,0.8), transparent)'
                   }}
                 />

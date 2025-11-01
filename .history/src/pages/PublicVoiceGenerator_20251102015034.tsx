@@ -782,25 +782,12 @@ const PublicVoiceGenerator = () => {
 
       setIsMixingPreviewPlaying(true);
 
-      // 재생 완료 시 정리 (BGM이 항상 더 길거나 같음)
+      // 재생 완료 시 정리 (TTS 종료 시간 또는 BGM 종료 시간 중 큰 값)
       const ttsEndTimeCalc = ctx.currentTime + settings.ttsOffset + ttsBuffer.duration;
-      
-      // BGM 전체 길이 계산 (위에서 계산한 것과 동일)
-      let bgmTotalDuration = 0;
-      if (bgmBuffer) {
-        if (settings.trimEndSec != null && settings.trimEndSec > 0) {
-          bgmTotalDuration = settings.trimEndSec;
-        } else {
-          const minBgmDuration = ttsBuffer.duration + (settings.fadeIn || 0) + (settings.fadeOut || 0);
-          const bgmStartTime = Math.max(0, -settings.bgmOffset);
-          const bgmOriginalDuration = bgmStartTime + bgmBuffer.duration;
-          bgmTotalDuration = Math.max(minBgmDuration, bgmOriginalDuration);
-        }
-      }
-      
-      const bgmEndTimeCalc = bgmBuffer ? (ctx.currentTime + bgmTotalDuration) : ttsEndTimeCalc;
-      // BGM이 항상 더 길거나 같으므로 BGM 종료 시간 사용
-      const totalEndTime = bgmEndTimeCalc;
+      const bgmEndTimeCalc = settings.trimEndSec ? 
+        ctx.currentTime + settings.trimEndSec : 
+        (bgmBuffer ? (ctx.currentTime + Math.max(0, -settings.bgmOffset) + bgmBuffer.duration) : ttsEndTimeCalc);
+      const totalEndTime = Math.max(ttsEndTimeCalc, bgmEndTimeCalc);
       const endTime = totalEndTime - ctx.currentTime;
       setTimeout(() => {
         setIsMixingPreviewPlaying(false);
