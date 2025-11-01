@@ -5109,33 +5109,6 @@ const PublicVoiceGenerator = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* 음원 삭제 확인 다이얼로그 */}
-      <AlertDialog open={deleteConfirmDialog.open} onOpenChange={(open) => setDeleteConfirmDialog({ open, id: open ? deleteConfirmDialog.id : null })}>
-        <AlertDialogContent className="dark-dialog bg-gray-900/95 border-gray-700">
-          <AlertDialogHeader>
-            <AlertDialogTitle style={{ color: '#FFFFFF' }}>음원 삭제 확인</AlertDialogTitle>
-            <AlertDialogDescription style={{ color: '#E5E7EB' }}>
-              정말 이 음원을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel className="border-gray-600 hover:bg-gray-800 hover:text-white" style={{ color: '#E5E7EB' }}>
-              취소
-            </AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-red-600 hover:bg-red-700 text-white"
-              onClick={() => {
-                if (deleteConfirmDialog.id) {
-                  deleteGeneration(deleteConfirmDialog.id);
-                }
-              }}
-            >
-              삭제
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 };
