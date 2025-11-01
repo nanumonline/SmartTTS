@@ -855,8 +855,8 @@ const PublicVoiceGenerator = () => {
         bgmTotalDurationCalc = settings.fadeIn + settings.bgmOffset + ttsBuffer.duration;
       }
       
-      // BGM 종료 시간 = 시작 시간 + 총 길이 (bgmStartTime은 항상 0이므로 ctx.currentTime + bgmTotalDurationCalc)
-      const bgmEndTimeCalc = ctx.currentTime + bgmTotalDurationCalc;
+      // BGM 종료 시간 = 시작 시간 + 총 길이
+      const bgmEndTimeCalc = ctx.currentTime + bgmStartTime + bgmTotalDurationCalc;
       const totalEndTime = bgmEndTimeCalc;
       const endTime = totalEndTime - ctx.currentTime;
       
