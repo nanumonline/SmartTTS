@@ -5246,11 +5246,25 @@ const PublicVoiceGenerator = () => {
                               <div className="p-3 bg-muted/40 rounded-lg">
                                 <div className="text-xs font-semibold mb-2 text-muted-foreground">미리듣기</div>
                                 <AudioPlayer
-                                  audioUrl={audioUrl || ""}
+                                  audioUrl={audioUrl}
                                   title={entry.savedName || formatDateTime(entry.createdAt)}
                                   duration={entry.duration || 0}
                                   cacheKey={entry.cacheKey}
-                                  onError={restoreAudioUrl}
+                                  onError={async () => {
+                                    // blob URL이 만료된 경우 복원 시도
+                                    if (entry.cacheKey) {
+                                      const cached = cacheRef.current.get(entry.cacheKey);
+                                      if (cached?.blob) {
+                                        // blob 데이터가 있으면 새 URL 생성
+                                        const newUrl = URL.createObjectURL(cached.blob);
+                                        setGenerationHistory((prev) => 
+                                          prev.map((g) => 
+                                            g.id === entry.id ? { ...g, audioUrl: newUrl } : g
+                                          )
+                                        );
+                                        toast({
+                                          title: "음원 복원 완료",
+                                          description: "만료된 음원을 복원했습니다.",
                                         });
                                       } else {
                                         // cacheRef에 blob 데이터가 없는 경우 - 복원 불가능
