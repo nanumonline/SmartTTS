@@ -1,5 +1,4 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import { supabase } from "@/integrations/supabase/client";
 
 interface User {
   id: string;
@@ -40,75 +39,18 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Supabase 세션 확인 및 로컬 스토리지에서 사용자 정보 로드
+  // 로컬 스토리지에서 사용자 정보 로드
   useEffect(() => {
-    const loadUser = async () => {
+    const savedUser = localStorage.getItem("user");
+    if (savedUser) {
       try {
-        // Supabase 세션 확인
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (session?.user) {
-          // 실제 Supabase 인증된 사용자
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("*")
-            .eq("id", session.user.id)
-            .single();
-
-          const user: User = {
-            id: session.user.id,
-            email: session.user.email || "",
-            name: profile?.full_name || session.user.email?.split("@")[0] || "",
-            organizationType: "public",
-            organization: profile?.organization || "",
-            department: profile?.department || "",
-            position: "",
-            plan: "standard",
-            isActive: true,
-          };
-
-          setUser(user);
-          localStorage.setItem("user", JSON.stringify(user));
-        } else {
-          // 로컬 스토리지에서 사용자 정보 로드
-          const savedUser = localStorage.getItem("user");
-          if (savedUser) {
-            try {
-              const parsed = JSON.parse(savedUser);
-              // UUID 형식 확인 및 수정
-              if (!parsed.id || !parsed.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-                let userId = localStorage.getItem("test_user_id");
-                if (!userId || !userId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-                  userId = crypto.randomUUID();
-                  localStorage.setItem("test_user_id", userId);
-                }
-                parsed.id = userId;
-                localStorage.setItem("user", JSON.stringify(parsed));
-              }
-              setUser(parsed);
-            } catch (error) {
-              console.error("Failed to parse saved user:", error);
-              localStorage.removeItem("user");
-            }
-          }
-        }
+        setUser(JSON.parse(savedUser));
       } catch (error) {
-        console.error("Failed to load user:", error);
-        // 폴백: 로컬 스토리지에서 로드
-        const savedUser = localStorage.getItem("user");
-        if (savedUser) {
-          try {
-            setUser(JSON.parse(savedUser));
-          } catch (e) {
-            localStorage.removeItem("user");
-          }
-        }
-      } finally {
-        setIsLoading(false);
+        console.error("Failed to parse saved user:", error);
+        localStorage.removeItem("user");
       }
-    };
-
-    loadUser();
+    }
+    setIsLoading(false);
   }, []);
 
   const login = async (email: string, password: string): Promise<boolean> => {
@@ -187,48 +129,10 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     setIsLoading(true);
     
     try {
-      // 실제 Supabase Auth 사용 시도
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: userData.email,
-        password: userData.password,
-        options: {
-          data: {
-            full_name: userData.name,
-            organization: userData.organization,
-            department: userData.department,
-          },
-        },
-      });
-
-      if (authData?.user && !authError) {
-        // 실제 회원가입 성공
-        const user: User = {
-          id: authData.user.id, // UUID 형식
-          email: authData.user.email || userData.email,
-          name: userData.name,
-          organizationType: userData.organizationType,
-          organization: userData.organization,
-          department: userData.department,
-          position: userData.position,
-          plan: userData.plan || "public_basic",
-          isActive: true,
-        };
-
-        setUser(user);
-        localStorage.setItem("user", JSON.stringify(user));
-        setIsLoading(false);
-        return true;
-      }
-
-      // 더미 회원가입 (UUID 형식)
-      let userId = localStorage.getItem("test_user_id");
-      if (!userId || !userId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-        userId = crypto.randomUUID();
-        localStorage.setItem("test_user_id", userId);
-      }
-
+      // TODO: 실제 API 호출로 대체
+      // 임시 회원가입 로직
       const mockUser: User = {
-        id: userId, // UUID 형식
+        id: "1",
         email: userData.email,
         name: userData.name,
         organizationType: userData.organizationType,

@@ -446,20 +446,15 @@ BEGIN
       FOR ALL USING (auth.uid() = user_id);
   END IF;
   
-  -- tts_voice_catalog 정책들 (공개 읽기, 공개 쓰기 - RLS 완화)
+  -- tts_voice_catalog 정책들
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'tts_voice_catalog' AND policyname = 'Anyone can view voice catalog') THEN
     CREATE POLICY "Anyone can view voice catalog" ON public.tts_voice_catalog
       FOR SELECT USING (true);
   END IF;
   
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'tts_voice_catalog' AND policyname = 'Anyone can insert voice catalog') THEN
-    CREATE POLICY "Anyone can insert voice catalog" ON public.tts_voice_catalog
-      FOR INSERT WITH CHECK (true);
-  END IF;
-  
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'tts_voice_catalog' AND policyname = 'Anyone can update voice catalog') THEN
-    CREATE POLICY "Anyone can update voice catalog" ON public.tts_voice_catalog
-      FOR UPDATE USING (true);
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'tts_voice_catalog' AND policyname = 'Authenticated users can update voice catalog') THEN
+    CREATE POLICY "Authenticated users can update voice catalog" ON public.tts_voice_catalog
+      FOR ALL USING (auth.role() = 'authenticated');
   END IF;
 END $$;
 
