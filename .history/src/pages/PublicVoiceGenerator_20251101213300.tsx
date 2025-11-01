@@ -353,20 +353,8 @@ const PublicVoiceGenerator = () => {
       }
     });
     
-    // 실제 존재하는 용도만 필터링 (game과 gaming 모두 게임으로 처리)
-    return allUseCaseOptions.filter(opt => {
-      if (opt.value === "gaming" || opt.value === "game") {
-        // game 또는 gaming 중 하나라도 있으면 게임 표시
-        return foundUseCases.has("game") || foundUseCases.has("gaming");
-      }
-      return foundUseCases.has(opt.value);
-    }).filter((opt, index, arr) => {
-      // game과 gaming 둘 다 있으면 gaming만 표시 (중복 제거)
-      if (opt.value === "game") {
-        return !arr.some(o => o.value === "gaming");
-      }
-      return true;
-    });
+    // 실제 존재하는 용도만 필터링
+    return allUseCaseOptions.filter(opt => foundUseCases.has(opt.value));
   }, [allVoices]);
 
   // 스타일 그룹 정의
@@ -1328,8 +1316,6 @@ const PublicVoiceGenerator = () => {
       advertisement: "광고",
       telephone: "전화",
       documentary: "다큐멘터리",
-      gaming: "게임",
-      game: "게임", // API에서 game으로 반환되는 경우
       meme: "밈",
     };
     return useCase ? (map[useCase] || useCase) : undefined;
@@ -2625,19 +2611,11 @@ const PublicVoiceGenerator = () => {
       if (filters.useCase) {
         const raw = v.use_case ?? v.useCase ?? v.usecases ?? v.useCases ?? "";
         const normalizeUseCase = (val: string) => (val || "").toLowerCase().replace(/_/g, "-").replace(/\s+/g, "-");
-        const filterValue = normalizeUseCase(filters.useCase);
-        
-        // game과 gaming은 동일하게 처리
-        const filterValues = filterValue === "gaming" ? ["game", "gaming"] : 
-                           filterValue === "game" ? ["game", "gaming"] : 
-                           [filterValue];
-        
         if (Array.isArray(raw)) {
           const vals = raw.map((x: any) => normalizeUseCase(String(x)));
-          if (!filterValues.some(fv => vals.includes(fv))) return false;
+          if (!vals.includes(normalizeUseCase(filters.useCase))) return false;
         } else if (typeof raw === "string") {
-          const normalized = normalizeUseCase(raw);
-          if (!filterValues.includes(normalized)) return false;
+          if (normalizeUseCase(raw) !== normalizeUseCase(filters.useCase)) return false;
         } else {
           return false;
         }

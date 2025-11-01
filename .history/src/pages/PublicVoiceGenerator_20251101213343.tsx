@@ -1328,8 +1328,8 @@ const PublicVoiceGenerator = () => {
       advertisement: "광고",
       telephone: "전화",
       documentary: "다큐멘터리",
+      game: "게임",
       gaming: "게임",
-      game: "게임", // API에서 game으로 반환되는 경우
       meme: "밈",
     };
     return useCase ? (map[useCase] || useCase) : undefined;

@@ -1328,8 +1328,6 @@ const PublicVoiceGenerator = () => {
       advertisement: "광고",
       telephone: "전화",
       documentary: "다큐멘터리",
-      gaming: "게임",
-      game: "게임", // API에서 game으로 반환되는 경우
       meme: "밈",
     };
     return useCase ? (map[useCase] || useCase) : undefined;
@@ -2625,19 +2623,11 @@ const PublicVoiceGenerator = () => {
       if (filters.useCase) {
         const raw = v.use_case ?? v.useCase ?? v.usecases ?? v.useCases ?? "";
         const normalizeUseCase = (val: string) => (val || "").toLowerCase().replace(/_/g, "-").replace(/\s+/g, "-");
-        const filterValue = normalizeUseCase(filters.useCase);
-        
-        // game과 gaming은 동일하게 처리
-        const filterValues = filterValue === "gaming" ? ["game", "gaming"] : 
-                           filterValue === "game" ? ["game", "gaming"] : 
-                           [filterValue];
-        
         if (Array.isArray(raw)) {
           const vals = raw.map((x: any) => normalizeUseCase(String(x)));
-          if (!filterValues.some(fv => vals.includes(fv))) return false;
+          if (!vals.includes(normalizeUseCase(filters.useCase))) return false;
         } else if (typeof raw === "string") {
-          const normalized = normalizeUseCase(raw);
-          if (!filterValues.includes(normalized)) return false;
+          if (normalizeUseCase(raw) !== normalizeUseCase(filters.useCase)) return false;
         } else {
           return false;
         }

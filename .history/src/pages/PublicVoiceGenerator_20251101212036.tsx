@@ -327,7 +327,6 @@ const PublicVoiceGenerator = () => {
     { value: "news", label: "뉴스" },
     { value: "audiobook", label: "오디오북" },
     { value: "gaming", label: "게임" },
-    { value: "game", label: "게임" }, // API에서 game으로 반환되는 경우 대비
     { value: "advertisement", label: "광고" },
     { value: "telephone", label: "전화" },
     { value: "documentary", label: "다큐멘터리" },
@@ -353,20 +352,8 @@ const PublicVoiceGenerator = () => {
       }
     });
     
-    // 실제 존재하는 용도만 필터링 (game과 gaming 모두 게임으로 처리)
-    return allUseCaseOptions.filter(opt => {
-      if (opt.value === "gaming" || opt.value === "game") {
-        // game 또는 gaming 중 하나라도 있으면 게임 표시
-        return foundUseCases.has("game") || foundUseCases.has("gaming");
-      }
-      return foundUseCases.has(opt.value);
-    }).filter((opt, index, arr) => {
-      // game과 gaming 둘 다 있으면 gaming만 표시 (중복 제거)
-      if (opt.value === "game") {
-        return !arr.some(o => o.value === "gaming");
-      }
-      return true;
-    });
+    // 실제 존재하는 용도만 필터링
+    return allUseCaseOptions.filter(opt => foundUseCases.has(opt.value));
   }, [allVoices]);
 
   // 스타일 그룹 정의
@@ -1328,8 +1315,6 @@ const PublicVoiceGenerator = () => {
       advertisement: "광고",
       telephone: "전화",
       documentary: "다큐멘터리",
-      gaming: "게임",
-      game: "게임", // API에서 game으로 반환되는 경우
       meme: "밈",
     };
     return useCase ? (map[useCase] || useCase) : undefined;
@@ -2625,19 +2610,11 @@ const PublicVoiceGenerator = () => {
       if (filters.useCase) {
         const raw = v.use_case ?? v.useCase ?? v.usecases ?? v.useCases ?? "";
         const normalizeUseCase = (val: string) => (val || "").toLowerCase().replace(/_/g, "-").replace(/\s+/g, "-");
-        const filterValue = normalizeUseCase(filters.useCase);
-        
-        // game과 gaming은 동일하게 처리
-        const filterValues = filterValue === "gaming" ? ["game", "gaming"] : 
-                           filterValue === "game" ? ["game", "gaming"] : 
-                           [filterValue];
-        
         if (Array.isArray(raw)) {
           const vals = raw.map((x: any) => normalizeUseCase(String(x)));
-          if (!filterValues.some(fv => vals.includes(fv))) return false;
+          if (!vals.includes(normalizeUseCase(filters.useCase))) return false;
         } else if (typeof raw === "string") {
-          const normalized = normalizeUseCase(raw);
-          if (!filterValues.includes(normalized)) return false;
+          if (normalizeUseCase(raw) !== normalizeUseCase(filters.useCase)) return false;
         } else {
           return false;
         }
@@ -2753,19 +2730,20 @@ const PublicVoiceGenerator = () => {
     console.log(`즐겨찾기된 음성 ${missingVoiceIds.length}개를 로드합니다.`);
     
     try {
-      // 1. 먼저 DB 카탈로그에서 찾기
-      const dbVoices = await dbService.loadVoiceCatalog();
-      if (dbVoices && dbVoices.length > 0) {
-        const favoriteVoicesFromDB = dbVoices.filter((v: any) => missingVoiceIds.includes(v.voice_id));
-        if (favoriteVoicesFromDB.length > 0) {
-          console.log(`✅ DB에서 즐겨찾기 음성 ${favoriteVoicesFromDB.length}개 발견`);
-          
+      // API에서 로드 시도
+      const response = await fetchWithSupabaseProxy("/voices?limit=1000", { method: "GET" });
+      if (response?.ok) {
+        const data = await response.json();
+        const voices = data.items || (Array.isArray(data) ? data : (data.voices || data.data || []));
+        const favoriteVoices = voices.filter((v: any) => missingVoiceIds.includes(v.voice_id));
+        
+        if (favoriteVoices.length > 0) {
           // allVoices에 추가
           setAllVoices((prev) => {
             const existingIds = new Set(prev.map((v: any) => v.voice_id));
-            const newVoices = favoriteVoicesFromDB.filter((v: any) => !existingIds.has(v.voice_id));
+            const newVoices = favoriteVoices.filter((v: any) => !existingIds.has(v.voice_id));
             if (newVoices.length > 0) {
-              console.log(`✅ 즐겨찾기 음성 ${newVoices.length}개를 allVoices에 추가 (DB)`);
+              console.log(`✅ 즐겨찾기 음성 ${newVoices.length}개를 allVoices에 추가`);
               return [...prev, ...newVoices];
             }
             return prev;
@@ -2774,66 +2752,20 @@ const PublicVoiceGenerator = () => {
           // availableVoices에도 추가
           setAvailableVoices((prev) => {
             const existingIds = new Set(prev.map((v: any) => v.voice_id));
-            const newVoices = favoriteVoicesFromDB.filter((v: any) => !existingIds.has(v.voice_id));
+            const newVoices = favoriteVoices.filter((v: any) => !existingIds.has(v.voice_id));
             if (newVoices.length > 0) {
-              console.log(`✅ 즐겨찾기 음성 ${newVoices.length}개를 availableVoices에 추가 (DB)`);
+              console.log(`✅ 즐겨찾기 음성 ${newVoices.length}개를 availableVoices에 추가`);
               return [...prev, ...newVoices];
             }
             return prev;
           });
           
-          // DB에서 찾은 음성 제외하고 남은 것만 API에서 로드
-          const remainingIds = missingVoiceIds.filter((vid) => 
-            !favoriteVoicesFromDB.find((v: any) => v.voice_id === vid)
-          );
-          
-          if (remainingIds.length === 0) {
-            console.log(`✅ 모든 즐겨찾기 음성을 DB에서 로드 완료`);
-            return;
-          }
-          
-          missingVoiceIds.splice(0, missingVoiceIds.length, ...remainingIds);
-        }
-      }
-      
-      // 2. DB에 없으면 API에서 로드
-      if (missingVoiceIds.length > 0) {
-        const response = await fetchWithSupabaseProxy("/voices?limit=1000", { method: "GET" });
-        if (response?.ok) {
-          const data = await response.json();
-          const voices = data.items || (Array.isArray(data) ? data : (data.voices || data.data || []));
-          const favoriteVoices = voices.filter((v: any) => missingVoiceIds.includes(v.voice_id));
-          
-          if (favoriteVoices.length > 0) {
-            // allVoices에 추가
-            setAllVoices((prev) => {
-              const existingIds = new Set(prev.map((v: any) => v.voice_id));
-              const newVoices = favoriteVoices.filter((v: any) => !existingIds.has(v.voice_id));
-              if (newVoices.length > 0) {
-                console.log(`✅ 즐겨찾기 음성 ${newVoices.length}개를 allVoices에 추가 (API)`);
-                return [...prev, ...newVoices];
-              }
-              return prev;
-            });
-            
-            // availableVoices에도 추가
-            setAvailableVoices((prev) => {
-              const existingIds = new Set(prev.map((v: any) => v.voice_id));
-              const newVoices = favoriteVoices.filter((v: any) => !existingIds.has(v.voice_id));
-              if (newVoices.length > 0) {
-                console.log(`✅ 즐겨찾기 음성 ${newVoices.length}개를 availableVoices에 추가 (API)`);
-                return [...prev, ...newVoices];
-              }
-              return prev;
-            });
-            
-            console.log(`✅ 즐겨찾기 음성 ${favoriteVoices.length}개 로드 완료`);
-          } else {
-            console.warn(`⚠️ 즐겨찾기된 음성 ${missingVoiceIds.length}개를 찾을 수 없습니다.`);
-          }
+          console.log(`✅ 즐겨찾기 음성 ${favoriteVoices.length}개 로드 완료`);
         } else {
-          console.warn("즐겨찾기 음성 로드 API 실패:", response?.status);
+          console.warn(`⚠️ 즐겨찾기된 음성 ${missingVoiceIds.length}개를 찾을 수 없습니다.`);
         }
+      } else {
+        console.warn("즐겨찾기 음성 로드 API 실패:", response?.status);
       }
     } catch (e: any) {
       console.warn("즐겨찾기 음성 로드 실패:", e.message);
