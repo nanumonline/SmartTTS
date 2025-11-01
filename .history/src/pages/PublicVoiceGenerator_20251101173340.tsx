@@ -2912,24 +2912,18 @@ const PublicVoiceGenerator = () => {
                   {favoriteVoiceIds.size > 0 && (
                     <Select onValueChange={(v) => {
                       setSelectedVoice(v);
-                      // availableVoices와 allVoices 모두에서 찾기
-                      const voice = availableVoices.find((vv: any) => vv.voice_id === v) || 
-                                   allVoices.find((vv: any) => vv.voice_id === v);
+                      const voice = availableVoices.find((vv: any) => vv.voice_id === v);
                       setSelectedVoiceInfo(voice || null);
                     }}>
                       <SelectTrigger className="h-9 w-48">
-                        <SelectValue placeholder="즐겨찾기" />
+                        <SelectValue placeholder="즐겨찾기에서 선택" />
                       </SelectTrigger>
                       <SelectContent>
                         {Array.from(favoriteVoiceIds).map((vid) => {
-                          // availableVoices와 allVoices 모두에서 찾기
-                          const v = availableVoices.find((x: any) => x.voice_id === vid) || 
-                                   allVoices.find((x: any) => x.voice_id === vid);
-                          // 없으면 즐겨찾기 ID만 표시하고, 클릭 시 로드 시도
+                          const v = availableVoices.find((x: any) => x.voice_id === vid);
+                          if (!v) return null;
                           return (
-                            <SelectItem key={vid} value={vid}>
-                              {v ? (v.name || vid) : `로딩 중... (${vid})`}
-                            </SelectItem>
+                            <SelectItem key={vid} value={vid}>{v.name || vid}</SelectItem>
                           );
                         })}
                       </SelectContent>
