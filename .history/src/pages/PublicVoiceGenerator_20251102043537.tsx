@@ -868,7 +868,7 @@ const PublicVoiceGenerator = () => {
         }
       }, 50);
       
-      // interval ID 추적 (정지 시 정리)
+      // interval ID도 추적 (정지 시 정리)
       if (mixingAudioSourcesRef.current.intervalId) {
         clearInterval(mixingAudioSourcesRef.current.intervalId);
       }
