@@ -2383,17 +2383,9 @@ const PublicVoiceGenerator = () => {
     startUsagePolling();
   }, []);
 
-  // allVoices 변경 시 진행률 업데이트 (자동 로드 중일 때)
-  useEffect(() => {
-    if (isAutoLoadingRef.current && isLoadingVoices && voiceTotalCount) {
-      const progress = Math.min(100, Math.round((allVoices.length / voiceTotalCount) * 100));
-      setVoiceLoadingProgress(progress);
-    }
-  }, [allVoices.length, voiceTotalCount, isLoadingVoices]);
-
   // 즐겨찾기가 로드된 후 또는 음성 목록이 로드된 후 즐겨찾기 음성 자동 확인 및 로드
   useEffect(() => {
-    if (favoriteVoiceIds.size > 0 && allVoices.length > 0 && !isLoadingVoices) {
+    if (favoriteVoiceIds.size > 0 && allVoices.length > 0) {
       // 모든 음성 로드가 완료된 후 즐겨찾기 음성 확인
       // 약간의 딜레이 후 로드 (초기 로드 완료 대기)
       const timer = setTimeout(() => {
@@ -2423,7 +2415,7 @@ const PublicVoiceGenerator = () => {
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [favoriteVoiceIds.size, allVoices.length, loadFavoriteVoices, isLoadingVoices]);
+  }, [favoriteVoiceIds.size, allVoices.length, loadFavoriteVoices]);
 
   // 텍스트 변경 시 예상 오디오 길이 및 크레딧 자동 예측 (300자 초과 지원)
   useEffect(() => {
