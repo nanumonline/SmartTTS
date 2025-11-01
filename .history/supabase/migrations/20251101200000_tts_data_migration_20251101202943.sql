@@ -1,20 +1,6 @@
 -- TTS 서비스 데이터베이스 스키마
 -- 모든 사용자 데이터를 계정별로 관리
 
--- 먼저 모든 외래 키 제약조건 제거 (더미 사용자 허용을 위해)
-DO $$
-BEGIN
-  -- 모든 user_id 외래 키 제약조건 제거
-  ALTER TABLE IF EXISTS public.tts_generations DROP CONSTRAINT IF EXISTS tts_generations_user_id_fkey;
-  ALTER TABLE IF EXISTS public.tts_favorites DROP CONSTRAINT IF EXISTS tts_favorites_user_id_fkey;
-  ALTER TABLE IF EXISTS public.tts_user_settings DROP CONSTRAINT IF EXISTS tts_user_settings_user_id_fkey;
-  ALTER TABLE IF EXISTS public.tts_clone_requests DROP CONSTRAINT IF EXISTS tts_clone_requests_user_id_fkey;
-  ALTER TABLE IF EXISTS public.tts_mixing_states DROP CONSTRAINT IF EXISTS tts_mixing_states_user_id_fkey;
-  ALTER TABLE IF EXISTS public.tts_schedule_requests DROP CONSTRAINT IF EXISTS tts_schedule_requests_user_id_fkey;
-  ALTER TABLE IF EXISTS public.tts_review_states DROP CONSTRAINT IF EXISTS tts_review_states_user_id_fkey;
-  ALTER TABLE IF EXISTS public.tts_message_history DROP CONSTRAINT IF EXISTS tts_message_history_user_id_fkey;
-END $$;
-
 -- 1. 음원 생성 이력 테이블
 CREATE TABLE IF NOT EXISTS public.tts_generations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
