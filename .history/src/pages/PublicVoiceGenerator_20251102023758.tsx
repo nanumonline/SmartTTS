@@ -5088,37 +5088,19 @@ const PublicVoiceGenerator = () => {
                     
                     // blob URL 복원 함수 (AudioPlayer의 onError에서 호출)
                     const restoreAudioUrl = async () => {
-                      // 먼저 기존 blob URL 정리
-                      if (entry.audioUrl && entry.audioUrl.startsWith("blob:")) {
-                        try {
-                          URL.revokeObjectURL(entry.audioUrl);
-                        } catch (e) {
-                          // 이미 해제되었으면 무시
-                        }
-                      }
-                      
                       if (entry.cacheKey) {
                         const cached = cacheRef.current.get(entry.cacheKey);
                         if (cached?.blob) {
                           // cacheRef에 blob이 있으면 새 blob URL 생성
-                          try {
-                            const newUrl = URL.createObjectURL(cached.blob);
-                            cacheRef.current.set(entry.cacheKey, { ...cached, _audioUrl: newUrl });
-                            setGenerationHistory((prev) => 
-                              prev.map((g) => 
-                                g.id === entry.id ? { ...g, audioUrl: newUrl } : g
-                              )
-                            );
-                            console.log(`✅ cacheRef에서 음원 복원: ${entry.cacheKey}`);
-                            
-                            toast({
-                              title: "음원 복원 완료",
-                              description: "만료된 음원을 복원했습니다.",
-                            });
-                            return;
-                          } catch (error) {
-                            console.error("cacheRef에서 복원 실패:", error);
-                          }
+                          const newUrl = URL.createObjectURL(cached.blob);
+                          cacheRef.current.set(entry.cacheKey, { ...cached, _audioUrl: newUrl });
+                          setGenerationHistory((prev) => 
+                            prev.map((g) => 
+                              g.id === entry.id ? { ...g, audioUrl: newUrl } : g
+                            )
+                          );
+                          console.log(`✅ cacheRef에서 음원 복원: ${entry.cacheKey}`);
+                          return;
                         }
                       }
                       
@@ -5138,33 +5120,12 @@ const PublicVoiceGenerator = () => {
                               )
                             );
                             console.log(`✅ DB에서 음원 복원: ${entry.id}`);
-                            
-                            toast({
-                              title: "음원 복원 완료",
-                              description: "DB에서 음원을 복원했습니다.",
-                            });
                           } else {
                             console.warn(`⚠️ DB에 audioBlob 없음: ${entry.id}`);
-                            toast({
-                              title: "음원 복원 불가",
-                              description: "음원 데이터를 찾을 수 없습니다.",
-                              variant: "destructive",
-                            });
                           }
                         } catch (error) {
                           console.error("음원 복원 실패:", error);
-                          toast({
-                            title: "음원 복원 실패",
-                            description: "음원 복원 중 오류가 발생했습니다.",
-                            variant: "destructive",
-                          });
                         }
-                      } else {
-                        toast({
-                          title: "음원 복원 불가",
-                          description: "로그인이 필요하거나 음원 ID가 없습니다.",
-                          variant: "destructive",
-                        });
                       }
                     };
                     
