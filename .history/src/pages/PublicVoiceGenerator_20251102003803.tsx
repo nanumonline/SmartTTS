@@ -2296,7 +2296,7 @@ const PublicVoiceGenerator = () => {
 
   // Supertone API에서 음성 목록 가져오기 (Supabase Edge Function 프록시 사용)
   // 공식 레퍼런스: https://docs.supertoneapi.com/en/api-reference/endpoints/list-voices
-  const fetchVoices = async (showToast = true, forceReload = false) => {
+  const fetchVoices = async (showToast = true) => {
     if (showToast) {
       toast({
         title: "모든 음성 가져오는 중...",
@@ -2307,13 +2307,9 @@ const PublicVoiceGenerator = () => {
     setVoiceLoadingProgress(0);
     let voicesLoaded = false;
     try {
-      // forceReload가 true이면 DB 체크 건너뛰고 API에서 직접 가져오기
-      if (forceReload) {
-        console.log("강제 재로드: API에서 모든 음성을 가져옵니다...");
-      } else {
-        // 먼저 DB에서 음성 카탈로그 로드 시도 (샘플 음원 포함)
-        const dbVoices = await dbService.loadVoiceCatalog();
-        if (dbVoices && dbVoices.length > 0) {
+      // 먼저 DB에서 음성 카탈로그 로드 시도 (샘플 음원 포함)
+      const dbVoices = await dbService.loadVoiceCatalog();
+      if (dbVoices && dbVoices.length > 0) {
         console.log(`✅ DB에서 음성 카탈로그 로드: ${dbVoices.length}개`);
         setAllVoices(dbVoices);
         setAvailableVoices(dbVoices);
@@ -2334,12 +2330,8 @@ const PublicVoiceGenerator = () => {
         dbService.syncVoiceCatalog(dbVoices, false).catch(err => 
           console.error("음성 카탈로그 동기화 실패:", err)
         );
-        return; // DB에서 로드 완료했으면 함수 종료
-      }
-      }
-      
-      // DB에 음성이 없거나 forceReload=true이면 API에서 가져오기
-      {
+      } else {
+        // DB에 음성이 없으면 API에서 가져오기
         console.log("DB에 음성 카탈로그가 없어 API에서 가져옵니다.");
         const response = await fetchWithSupabaseProxy("/voices?limit=100", { method: "GET" });
         if (response?.ok) {
@@ -2371,8 +2363,7 @@ const PublicVoiceGenerator = () => {
                 description: `초기 ${voices.length}개 로드 완료. 나머지 음성들을 불러오고 있습니다.`,
               });
             }
-            // forceReload이면 모든 페이지 로드하고 DB에 저장
-            await autoLoadVoicesThrottled(100, 150, showToast, forceReload);
+            await autoLoadVoicesThrottled(100, 150, showToast);
           } else {
             // nextToken이 없으면 이미 모든 음성 로드 완료
             setVoiceLoadingProgress(100);
@@ -2381,20 +2372,6 @@ const PublicVoiceGenerator = () => {
                 title: "모든 음성 로드 완료",
                 description: `총 ${voices.length}개의 음성을 불러왔습니다.`,
               });
-            }
-            // forceReload이면 즉시 DB에 저장
-            if (forceReload && voices.length > 0) {
-              console.log(`모든 음성 ${voices.length}개를 DB에 저장합니다...`);
-              const success = await dbService.syncVoiceCatalog(voices, true);
-              if (success) {
-                console.log(`✅ 모든 음성 ${voices.length}개 DB 저장 완료`);
-                if (showToast) {
-                  toast({
-                    title: "DB 저장 완료",
-                    description: `${voices.length}개의 음성이 DB에 저장되었습니다.`,
-                  });
-                }
-              }
             }
           }
           
@@ -2574,7 +2551,7 @@ const PublicVoiceGenerator = () => {
 
   const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
 
-  const autoLoadVoicesThrottled = async (maxPages = 5, delayMs = 300, showToast = false, forceSaveToDB = false) => {
+  const autoLoadVoicesThrottled = async (maxPages = 5, delayMs = 300, showToast = false) => {
     if (isAutoLoadingRef.current) return;
     isAutoLoadingRef.current = true;
     try {
@@ -2623,34 +2600,26 @@ const PublicVoiceGenerator = () => {
           }, 500);
         }
         
-        // 모든 음성 로드 완료 후 DB에 저장 (forceSaveToDB=true일 때만)
-        if (forceSaveToDB) {
-          // 상태 업데이트 완료 후 최신 allVoices를 가져오기 위해 약간의 딜레이
-          await sleep(300);
-          // 함수형 업데이트로 최신 allVoices 상태 사용
-          setAllVoices((currentVoices) => {
-            if (currentVoices.length > 0) {
-              console.log(`모든 음성 ${currentVoices.length}개를 DB에 저장합니다...`);
-              // 비동기 작업을 별도로 실행
-              dbService.syncVoiceCatalog(currentVoices, true).then((success) => {
-                if (success) {
-                  console.log(`✅ 모든 음성 ${currentVoices.length}개 DB 저장 완료`);
-                  if (showToast) {
-                    toast({
-                      title: "DB 저장 완료",
-                      description: `${currentVoices.length}개의 음성이 DB에 저장되었습니다.`,
-                    });
-                  }
-                } else {
-                  console.warn("음성 카탈로그 DB 저장 실패");
-                }
-              }).catch(err => {
-                console.error("DB 저장 중 오류:", err);
-              });
+        // 모든 음성 로드 완료 후 DB에 저장 (forceSync=true로 강제 저장)
+        // 현재 상태의 allVoices를 사용 (상태 업데이트가 완료된 후)
+        setTimeout(async () => {
+          const currentVoices = allVoices.length > 0 ? allVoices : [];
+          if (currentVoices.length > 0) {
+            console.log(`모든 음성 ${currentVoices.length}개를 DB에 저장합니다...`);
+            const success = await dbService.syncVoiceCatalog(currentVoices, true); // forceSync=true
+            if (success) {
+              console.log(`✅ 모든 음성 ${currentVoices.length}개 DB 저장 완료`);
+              if (showToast) {
+                toast({
+                  title: "DB 저장 완료",
+                  description: `${currentVoices.length}개의 음성이 DB에 저장되었습니다.`,
+                });
+              }
+            } else {
+              console.warn("음성 카탈로그 DB 저장 실패");
             }
-            return currentVoices; // 상태 변경 없음
-          });
-        }
+          }
+        }, 500); // 상태 업데이트 대기
       } else if (showToast && token) {
         // maxPages에 도달했지만 아직 더 있음
         const currentCount = allVoices.length;
@@ -3987,8 +3956,7 @@ const PublicVoiceGenerator = () => {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => fetchVoices(true, true)}
-                    disabled={isLoadingVoices}
+                    onClick={() => fetchVoices()}
                   >
                     모든 음성가져오기
                   </Button>

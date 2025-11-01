@@ -3987,8 +3987,7 @@ const PublicVoiceGenerator = () => {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => fetchVoices(true, true)}
-                    disabled={isLoadingVoices}
+                    onClick={() => fetchVoices()}
                   >
                     모든 음성가져오기
                   </Button>
