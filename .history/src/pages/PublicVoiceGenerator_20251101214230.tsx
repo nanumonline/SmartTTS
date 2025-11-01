@@ -2442,28 +2442,12 @@ const PublicVoiceGenerator = () => {
       if (response?.ok) {
         const data = await response.json();
         const results = data.items || (Array.isArray(data) ? data : (data.voices || data.data || []));
-        // 마스터 목록 갱신 (중복 제거)
-        setAllVoices((prev) => {
-          const existingIds = new Set(prev.map((v: any) => v.voice_id));
-          const newVoices = results.filter((v: any) => !existingIds.has(v.voice_id));
-          return [...prev, ...newVoices];
-        });
-        setAvailableVoices((prev) => {
-          const existingIds = new Set(prev.map((v: any) => v.voice_id));
-          const newVoices = results.filter((v: any) => !existingIds.has(v.voice_id));
-          return [...prev, ...newVoices];
-        });
-        
-        // 클라이언트 필터링은 allVoices 전체에서 적용 (useCase 같은 필터를 위해)
-        // 상태 업데이트를 기다리기 위해 setTimeout 사용
-        setTimeout(() => {
-          setAllVoices((currentAllVoices) => {
-            const filtered = applyClientFilters(currentAllVoices, voiceFilters);
-            setVoiceSearchResults(filtered);
-            return currentAllVoices;
-          });
-        }, 0);
-        
+        // 마스터 목록 갱신 후 필터 적용
+        setAllVoices(results);
+        setAvailableVoices(results);
+        // 클라이언트 필터링 적용
+        const filtered = applyClientFilters(results, voiceFilters);
+        setVoiceSearchResults(filtered);
         const nextToken = data.nextPageToken || data.next_page_token || data.next_token || null;
         setVoiceNextToken(nextToken || null);
         const total = data.total || data.totalCount || null;
@@ -2478,31 +2462,12 @@ const PublicVoiceGenerator = () => {
         }
       } else if (response) {
         console.warn("음성 검색 실패(프록시):", await response.text());
-        // API 실패 시에도 allVoices 전체에서 필터링 시도
-        setAllVoices((currentAllVoices) => {
-          if (currentAllVoices.length > 0) {
-            const filtered = applyClientFilters(currentAllVoices, voiceFilters);
-            setVoiceSearchResults(filtered);
-          } else {
-            setVoiceSearchResults([]);
-          }
-          return currentAllVoices;
-        });
+        setVoiceSearchResults([]);
       }
     } catch (error: any) {
       if (error?.name !== "AbortError") {
-        console.warn("음성 검색 예외(프록시):", error.message);
-        // 에러 발생 시에도 allVoices 전체에서 필터링 시도
-        setAllVoices((currentAllVoices) => {
-          if (currentAllVoices.length > 0) {
-            const filtered = applyClientFilters(currentAllVoices, voiceFilters);
-            setVoiceSearchResults(filtered);
-          } else {
-            setVoiceSearchResults([]);
-          }
-          return currentAllVoices;
-        });
-      }
+      console.warn("음성 검색 예외(프록시):", error.message);
+    }
     } finally {
       setIsSearchingVoices(false);
     }
