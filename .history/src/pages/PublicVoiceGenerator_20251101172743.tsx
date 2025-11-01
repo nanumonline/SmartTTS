@@ -2453,10 +2453,7 @@ const PublicVoiceGenerator = () => {
       const finalDuration = audioResult.duration ?? predictedDuration ?? estimatedDuration;
       const roundedDuration = Math.round(finalDuration * 100) / 100;
 
-      // blob에서 blob URL 생성
-      const audioUrl = URL.createObjectURL(audioResult.blob);
-      
-      setGeneratedAudio(audioUrl);
+      setGeneratedAudio(audioResult.audioUrl);
       setGeneratedDuration(roundedDuration);
       setPredictedDuration(roundedDuration);
 
@@ -2490,17 +2487,12 @@ const PublicVoiceGenerator = () => {
         pitchShift,
         textPreview: trimmedText.slice(0, 120),
         textLength: trimmedText.length,
-        audioUrl, // 새로 생성한 blob URL
+        audioUrl: audioResult.audioUrl,
       });
       setIsSaveNameDialogOpen(true);
 
-      // 캐시에 blob 데이터 저장
-      cacheRef.current.set(cacheKey, {
-        blob: audioResult.blob,
-        duration: audioResult.duration,
-        mimeType: audioResult.mimeType,
-        _audioUrl: audioUrl,
-      });
+      // 캐시에 저장
+      cacheRef.current.set(cacheKey, audioResult);
       // pushHistory는 이름 저장 다이얼로그에서 처리
     } catch (error: any) {
       console.error("음성 생성 오류:", error);
