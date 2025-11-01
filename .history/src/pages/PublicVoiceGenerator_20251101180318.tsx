@@ -2164,19 +2164,13 @@ const PublicVoiceGenerator = () => {
     if (favoriteVoiceIds.size === 0) return;
     
     try {
-      // 현재 상태에서 누락된 즐겨찾기 음성 ID 찾기
-      const currentAllVoices = allVoices;
-      const currentAvailableVoices = availableVoices;
-      
+      // 누락된 즐겨찾기 음성 ID 찾기
       const missingVoiceIds = Array.from(favoriteVoiceIds).filter((vid) => {
-        return !currentAvailableVoices.find((v: any) => v.voice_id === vid) && 
-               !currentAllVoices.find((v: any) => v.voice_id === vid);
+        return !availableVoices.find((v: any) => v.voice_id === vid) && 
+               !allVoices.find((v: any) => v.voice_id === vid);
       });
       
-      if (missingVoiceIds.length === 0) {
-        console.log("✅ 모든 즐겨찾기 음성이 이미 로드되어 있습니다.");
-        return;
-      }
+      if (missingVoiceIds.length === 0) return;
       
       console.log(`즐겨찾기된 음성 ${missingVoiceIds.length}개를 로드합니다.`);
       
@@ -2192,22 +2186,14 @@ const PublicVoiceGenerator = () => {
           setAllVoices((prev) => {
             const existingIds = new Set(prev.map((v: any) => v.voice_id));
             const newVoices = favoriteVoices.filter((v: any) => !existingIds.has(v.voice_id));
-            if (newVoices.length > 0) {
-              console.log(`✅ 즐겨찾기 음성 ${newVoices.length}개를 allVoices에 추가`);
-              return [...prev, ...newVoices];
-            }
-            return prev;
+            return [...prev, ...newVoices];
           });
           
           // availableVoices에도 추가 (없는 경우만)
           setAvailableVoices((prev) => {
             const existingIds = new Set(prev.map((v: any) => v.voice_id));
             const newVoices = favoriteVoices.filter((v: any) => !existingIds.has(v.voice_id));
-            if (newVoices.length > 0) {
-              console.log(`✅ 즐겨찾기 음성 ${newVoices.length}개를 availableVoices에 추가`);
-              return [...prev, ...newVoices];
-            }
-            return prev;
+            return [...prev, ...newVoices];
           });
           
           console.log(`✅ 즐겨찾기 음성 ${favoriteVoices.length}개 로드 완료`);
@@ -2216,20 +2202,13 @@ const PublicVoiceGenerator = () => {
             description: `${favoriteVoices.length}개의 즐겨찾기 음성을 불러왔습니다.`,
           });
         } else {
-          console.warn(`⚠️ 즐겨찾기된 음성 ${missingVoiceIds.length}개를 찾을 수 없습니다:`, missingVoiceIds);
+          console.warn(`⚠️ 즐겨찾기된 음성 ${missingVoiceIds.length}개를 찾을 수 없습니다.`);
           toast({
             title: "즐겨찾기 음성 로드 실패",
-            description: "일부 즐겨찾기된 음성을 찾을 수 없습니다. 음성 ID가 변경되었을 수 있습니다.",
+            description: "일부 즐겨찾기된 음성을 찾을 수 없습니다.",
             variant: "destructive",
           });
         }
-      } else {
-        console.warn("즐겨찾기 음성 로드 API 실패:", response?.status);
-        toast({
-          title: "즐겨찾기 음성 로드 실패",
-          description: "음성 목록을 불러올 수 없습니다.",
-          variant: "destructive",
-        });
       }
     } catch (e: any) {
       console.warn("즐겨찾기 음성 로드 실패:", e.message);
@@ -2239,7 +2218,7 @@ const PublicVoiceGenerator = () => {
         variant: "destructive",
       });
     }
-  }, [favoriteVoiceIds, fetchWithSupabaseProxy]);
+  }, [favoriteVoiceIds, availableVoices, allVoices]);
 
   // 컴포넌트 마운트 시 음성 목록 로드
   useEffect(() => {
