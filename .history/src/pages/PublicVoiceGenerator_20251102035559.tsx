@@ -1494,53 +1494,17 @@ const PublicVoiceGenerator = () => {
       const dbHistory = await dbService.loadGenerations(user.id, 100);
       if (dbHistory.length > 0) {
         const normalized = dbHistory.map((item: any) => {
-          // Blob URL 복원 (우선순위: audioBlob > cacheRef > audioUrl)
+          // Blob URL 복원
           let audioUrl: string | null = null;
-          let cacheKey = item.cacheKey || `${item.id}_${Date.now()}`;
-          
-          // 1. DB에 audioBlob이 있으면 항상 사용 (가장 확실)
           if (item.audioBlob) {
-            try {
-              const blob = dbService.arrayBufferToBlob(item.audioBlob);
-              audioUrl = URL.createObjectURL(blob);
-              // cacheRef에도 저장 (다음 복원을 위해)
-              cacheRef.current.set(cacheKey, { 
-                blob, 
-                duration: item.duration || null, 
-                mimeType: item.mimeType || "audio/mpeg",
-                _audioUrl: audioUrl 
-              });
-            } catch (e) {
-              console.warn(`Blob 복원 실패 (id: ${item.id}):`, e);
+            const blob = dbService.arrayBufferToBlob(item.audioBlob);
+            audioUrl = URL.createObjectURL(blob);
+            // cacheRef에도 저장
+            if (item.cacheKey) {
+              cacheRef.current.set(item.cacheKey, { blob, duration: item.duration || null, _audioUrl: audioUrl });
             }
-          }
-          
-          // 2. cacheRef에서 blob 데이터 확인
-          if (!audioUrl && cacheKey) {
-            const cached = cacheRef.current.get(cacheKey);
-            if (cached?.blob) {
-              try {
-                // 기존 blob URL이 있으면 먼저 해제
-                if (cached._audioUrl) {
-                  URL.revokeObjectURL(cached._audioUrl);
-                }
-                audioUrl = URL.createObjectURL(cached.blob);
-                cacheRef.current.set(cacheKey, { ...cached, _audioUrl: audioUrl });
-              } catch (e) {
-                console.warn(`CacheRef blob URL 생성 실패 (key: ${cacheKey}):`, e);
-              }
-            }
-          }
-          
-          // 3. audioUrl이 blob: URL이 아니면 사용 (외부 URL 등)
-          if (!audioUrl && item.audioUrl && !item.audioUrl.startsWith('blob:')) {
+          } else if (item.audioUrl) {
             audioUrl = item.audioUrl;
-          }
-          
-          // 4. 만료된 blob: URL이면 null로 설정 (나중에 복원)
-          if (!audioUrl && item.audioUrl && item.audioUrl.startsWith('blob:')) {
-            console.warn(`만료된 blob URL 감지 (id: ${item.id}), 복원 시도 필요`);
-            // 나중에 복원을 위해 cacheKey 유지
           }
 
           return {
@@ -1555,19 +1519,12 @@ const PublicVoiceGenerator = () => {
             hasAudio: item.hasAudio !== false,
             language: item.language || "",
             textPreview: item.textPreview || "",
-            cacheKey: cacheKey, // 항상 cacheKey 설정 (복원을 위해)
+            cacheKey: item.cacheKey || "",
             savedName: item.savedName || null,
             audioUrl,
           };
         });
         setGenerationHistory(normalized);
-        
-        // 복원되지 않은 항목이 있으면 로그
-        const restoredCount = normalized.filter((n: any) => n.audioUrl).length;
-        const totalCount = normalized.length;
-        if (restoredCount < totalCount) {
-          console.warn(`일부 음원 복원 실패: ${restoredCount}/${totalCount} 복원됨`);
-        }
       }
 
       // 즐겨찾기

@@ -1555,19 +1555,12 @@ const PublicVoiceGenerator = () => {
             hasAudio: item.hasAudio !== false,
             language: item.language || "",
             textPreview: item.textPreview || "",
-            cacheKey: cacheKey, // 항상 cacheKey 설정 (복원을 위해)
+            cacheKey: item.cacheKey || "",
             savedName: item.savedName || null,
             audioUrl,
           };
         });
         setGenerationHistory(normalized);
-        
-        // 복원되지 않은 항목이 있으면 로그
-        const restoredCount = normalized.filter((n: any) => n.audioUrl).length;
-        const totalCount = normalized.length;
-        if (restoredCount < totalCount) {
-          console.warn(`일부 음원 복원 실패: ${restoredCount}/${totalCount} 복원됨`);
-        }
       }
 
       // 즐겨찾기
