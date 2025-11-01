@@ -174,7 +174,10 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <AppShell>
-                    <MixPresetsPage />
+                    <div className="space-y-4">
+                      <h1 className="text-2xl font-semibold">프리셋</h1>
+                      <p className="text-muted-foreground">믹싱 프리셋을 관리합니다.</p>
+                    </div>
                   </AppShell>
                 </ProtectedRoute>
               } 
@@ -206,7 +209,10 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <AppShell>
-                    <SendAudiencePage />
+                    <div className="space-y-4">
+                      <h1 className="text-2xl font-semibold">대상자 관리</h1>
+                      <p className="text-muted-foreground">전송 대상자를 관리합니다.</p>
+                    </div>
                   </AppShell>
                 </ProtectedRoute>
               } 
@@ -239,7 +245,10 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <AppShell>
-                    <ManageJobsPage />
+                    <div className="space-y-4">
+                      <h1 className="text-2xl font-semibold">작업 큐</h1>
+                      <p className="text-muted-foreground">작업 큐를 관리합니다.</p>
+                    </div>
                   </AppShell>
                 </ProtectedRoute>
               } 
@@ -249,7 +258,10 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <AppShell>
-                    <ManageCompliancePage />
+                    <div className="space-y-4">
+                      <h1 className="text-2xl font-semibold">승인·컴플라이언스</h1>
+                      <p className="text-muted-foreground">승인 및 컴플라이언스를 관리합니다.</p>
+                    </div>
                   </AppShell>
                 </ProtectedRoute>
               } 
@@ -259,7 +271,10 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <AppShell>
-                    <ManageAuditPage />
+                    <div className="space-y-4">
+                      <h1 className="text-2xl font-semibold">감사로그</h1>
+                      <p className="text-muted-foreground">감사 로그를 확인합니다.</p>
+                    </div>
                   </AppShell>
                 </ProtectedRoute>
               } 
@@ -291,7 +306,10 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <AppShell>
-                    <ReportsQualityPage />
+                    <div className="space-y-4">
+                      <h1 className="text-2xl font-semibold">품질 리포트</h1>
+                      <p className="text-muted-foreground">음원 품질 통계를 확인합니다.</p>
+                    </div>
                   </AppShell>
                 </ProtectedRoute>
               } 

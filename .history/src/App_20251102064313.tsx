@@ -291,7 +291,10 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <AppShell>
-                    <ReportsQualityPage />
+                    <div className="space-y-4">
+                      <h1 className="text-2xl font-semibold">품질 리포트</h1>
+                      <p className="text-muted-foreground">음원 품질 통계를 확인합니다.</p>
+                    </div>
                   </AppShell>
                 </ProtectedRoute>
               } 
