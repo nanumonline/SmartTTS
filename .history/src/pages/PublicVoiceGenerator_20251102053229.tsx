@@ -7582,40 +7582,23 @@ const PublicVoiceGenerator = () => {
 
                 {/* 미리듣기 버튼 및 플레이어 */}
                 <div className="space-y-2">
-                  <div className="flex gap-2">
-                    <Button
-                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
-                      disabled={!clonePreviewText[clone.id]?.trim() || isGeneratingCloneTuning[clone.id]}
-                      onClick={() => handleCloneTuningPreview(clone.id)}
-                    >
-                      {isGeneratingCloneTuning[clone.id] ? (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                          생성 중...
-                        </>
-                      ) : (
-                        <>
-                          <Play className="w-4 h-4 mr-2" />
-                          튜닝 미리듣기
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="border-gray-600 hover:bg-gray-800 hover:text-white"
-                      style={{ color: '#E5E7EB' }}
-                      onClick={() => {
-                        // 튜닝 설정을 클론 음성에 저장 (DB에 저장 가능하도록)
-                        toast({
-                          title: "튜닝 설정 저장",
-                          description: "튜닝 설정이 저장되었습니다. 다음에 동일한 설정으로 사용할 수 있습니다.",
-                        });
-                      }}
-                      title="튜닝 설정을 저장하여 다음에 사용"
-                    >
-                      <Settings className="w-4 h-4" />
-                    </Button>
-                  </div>
+                  <Button
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                    disabled={!clonePreviewText[clone.id]?.trim() || isGeneratingCloneTuning[clone.id]}
+                    onClick={() => handleCloneTuningPreview(clone.id)}
+                  >
+                    {isGeneratingCloneTuning[clone.id] ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        튜닝 미리듣기 생성 중...
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-4 h-4 mr-2" />
+                        튜닝 미리듣기 생성
+                      </>
+                    )}
+                  </Button>
                   
                   {cloneTuningPreviewAudio[clone.id] && (
                     <div className="space-y-2">
@@ -7708,11 +7691,10 @@ const PublicVoiceGenerator = () => {
                       height={150}
                       color="#3b82f6"
                       backgroundColor="#111827"
-                      showGrid={true}
                     />
                   ) : (
                     <div className="h-32 bg-gray-800/50 rounded border border-gray-700 flex items-center justify-center text-gray-400">
-                      {waveformData?.originalUrl ? "원본 음성 파형 데이터를 불러오는 중..." : "원본 음성 샘플을 찾을 수 없습니다."}
+                      원본 음성 파형 데이터를 불러오는 중...
                     </div>
                   )}
                 </div>
@@ -7739,7 +7721,6 @@ const PublicVoiceGenerator = () => {
                       height={150}
                       color="#10b981"
                       backgroundColor="#111827"
-                      showGrid={true}
                     />
                   ) : (
                     <div className="h-32 bg-gray-800/50 rounded border border-gray-700 flex items-center justify-center text-gray-400">
@@ -7747,21 +7728,9 @@ const PublicVoiceGenerator = () => {
                         <div className="text-center space-y-2">
                           <p>클론 음성 파형 데이터가 없습니다.</p>
                           <p className="text-xs">미리듣기를 먼저 생성해주세요.</p>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="mt-2"
-                            onClick={() => handleClonePreview(clone)}
-                          >
-                            <Play className="w-3 h-3 mr-1" />
-                            미리듣기 생성
-                          </Button>
                         </div>
                       ) : (
-                        <div className="text-center space-y-2">
-                          <p>클론 음성 파형 데이터를 불러오는 중...</p>
-                          <p className="text-xs text-gray-500">또는 미리듣기 텍스트를 입력해주세요.</p>
-                        </div>
+                        "클론 음성 파형 데이터를 불러오는 중..."
                       )}
                     </div>
                   )}

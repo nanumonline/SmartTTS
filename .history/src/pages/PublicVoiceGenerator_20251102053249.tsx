@@ -7708,11 +7708,10 @@ const PublicVoiceGenerator = () => {
                       height={150}
                       color="#3b82f6"
                       backgroundColor="#111827"
-                      showGrid={true}
                     />
                   ) : (
                     <div className="h-32 bg-gray-800/50 rounded border border-gray-700 flex items-center justify-center text-gray-400">
-                      {waveformData?.originalUrl ? "원본 음성 파형 데이터를 불러오는 중..." : "원본 음성 샘플을 찾을 수 없습니다."}
+                      원본 음성 파형 데이터를 불러오는 중...
                     </div>
                   )}
                 </div>
@@ -7739,7 +7738,6 @@ const PublicVoiceGenerator = () => {
                       height={150}
                       color="#10b981"
                       backgroundColor="#111827"
-                      showGrid={true}
                     />
                   ) : (
                     <div className="h-32 bg-gray-800/50 rounded border border-gray-700 flex items-center justify-center text-gray-400">
@@ -7747,21 +7745,9 @@ const PublicVoiceGenerator = () => {
                         <div className="text-center space-y-2">
                           <p>클론 음성 파형 데이터가 없습니다.</p>
                           <p className="text-xs">미리듣기를 먼저 생성해주세요.</p>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="mt-2"
-                            onClick={() => handleClonePreview(clone)}
-                          >
-                            <Play className="w-3 h-3 mr-1" />
-                            미리듣기 생성
-                          </Button>
                         </div>
                       ) : (
-                        <div className="text-center space-y-2">
-                          <p>클론 음성 파형 데이터를 불러오는 중...</p>
-                          <p className="text-xs text-gray-500">또는 미리듣기 텍스트를 입력해주세요.</p>
-                        </div>
+                        "클론 음성 파형 데이터를 불러오는 중..."
                       )}
                     </div>
                   )}
