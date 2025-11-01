@@ -154,7 +154,11 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <AppShell>
-                    <MixBoardPage />
+                    <div className="space-y-4">
+                      <h1 className="text-2xl font-semibold">믹스 보드</h1>
+                      <p className="text-muted-foreground">오디오 믹싱 보드입니다.</p>
+                      {/* TODO: 믹스 보드 컴포넌트 추가 (PublicVoiceGenerator의 믹싱 기능 분리) */}
+                    </div>
                   </AppShell>
                 </ProtectedRoute>
               } 
