@@ -19,9 +19,7 @@ const AudioPlayer = ({
   title = "생성된 음성", 
   duration = 0,
   onDownload,
-  className,
-  onError,
-  cacheKey
+  className 
 }: AudioPlayerProps) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -42,10 +40,6 @@ const AudioPlayer = ({
       // blob URL이 만료되었을 수 있음
       if (audioUrl.startsWith('blob:')) {
         console.warn('Blob URL may have expired:', audioUrl);
-        // onError 콜백이 있으면 호출 (부모에서 복원 시도)
-        if (onError) {
-          onError();
-        }
       }
     };
 

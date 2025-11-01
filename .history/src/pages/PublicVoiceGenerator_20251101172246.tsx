@@ -3848,29 +3848,57 @@ const PublicVoiceGenerator = () => {
                     const isExpanded = expandedGenerationId === entry.id;
                     const isEditing = editingGenerationId === entry.id;
                     
-                    // audioUrl 복원: cacheKey가 있으면 cacheRef에서 blob 데이터로부터 새 blob URL 생성
+                    // audioUrl 복원 및 검증
                     let audioUrl = entry.audioUrl;
                     
-                    if (entry.cacheKey) {
+                    // audioUrl이 없거나 blob URL이 만료되었을 수 있음
+                    if (!audioUrl || (audioUrl.startsWith('blob:') && entry.cacheKey)) {
+                      // cacheKey로부터 복원 시도
                       const cached = cacheRef.current.get(entry.cacheKey);
-                      if (cached?.blob) {
-                        // blob 데이터가 있으면 새 blob URL 생성
-                        if (!cached._audioUrl) {
-                          const newUrl = URL.createObjectURL(cached.blob);
-                          cacheRef.current.set(entry.cacheKey, { ...cached, _audioUrl: newUrl });
-                          audioUrl = newUrl;
-                          // generationHistory 업데이트
+                      if (cached?.audioUrl) {
+                        // cacheRef의 URL이 유효한지 확인 (blob URL인 경우)
+                        if (cached.audioUrl.startsWith('blob:')) {
+                          // blob URL이 만료되었을 수 있으므로, fetch로 확인
+                          fetch(cached.audioUrl)
+                            .then(response => {
+                              if (!response.ok) {
+                                // blob URL이 만료됨 - 오류 처리 (나중에 복원 시도)
+                                console.warn('Blob URL expired:', cached.audioUrl);
+                                return null;
+                              }
+                              return response.blob();
+                            })
+                            .then(blob => {
+                              if (blob) {
+                                // 유효한 blob이면 새 URL 생성
+                                const newUrl = URL.createObjectURL(blob);
+                                setGenerationHistory((prev) => 
+                                  prev.map((g) => 
+                                    g.id === entry.id ? { ...g, audioUrl: newUrl } : g
+                                  )
+                                );
+                              }
+                            })
+                            .catch(() => {
+                              // blob URL이 만료된 경우 - 나중에 복원 시도
+                              console.warn('Failed to restore blob URL for entry:', entry.id);
+                            });
+                          
+                          // 일단 cacheRef의 URL 사용 (만료되었을 수 있지만 시도)
+                          audioUrl = cached.audioUrl;
+                        } else {
+                          // 일반 URL이면 그대로 사용
+                          audioUrl = cached.audioUrl;
+                        }
+                        
+                        // generationHistory 업데이트
+                        if (!entry.audioUrl || entry.audioUrl !== audioUrl) {
                           setGenerationHistory((prev) => 
                             prev.map((g) => 
-                              g.id === entry.id ? { ...g, audioUrl: newUrl } : g
+                              g.id === entry.id ? { ...g, audioUrl } : g
                             )
                           );
-                        } else {
-                          audioUrl = cached._audioUrl;
                         }
-                      } else if (cached?._audioUrl) {
-                        // blob 데이터는 없지만 audioUrl이 있는 경우
-                        audioUrl = cached._audioUrl;
                       }
                     }
                     return (

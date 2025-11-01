@@ -202,8 +202,7 @@ const PublicVoiceGenerator = () => {
   const [voiceTotalCount, setVoiceTotalCount] = useState<number | null>(null);
   const isAutoLoadingRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
-  // cacheRef: blob 데이터를 저장하여 blob URL 만료 문제 해결
-  const cacheRef = useRef<Map<string, { blob: Blob; duration: number | null; mimeType?: string; _audioUrl?: string }>>(new Map());
+  const cacheRef = useRef<Map<string, { audioUrl: string; duration: number | null; mimeType?: string }>>(new Map());
   const cloneTimeoutsRef = useRef<number[]>([]);
   const [generationHistory, setGenerationHistory] = useState<any[]>([]);
   const [metaOverrides, setMetaOverrides] = useState<{ language: string; style: string; model: string }>({ language: "", style: "", model: "" });
@@ -1405,25 +1404,10 @@ const PublicVoiceGenerator = () => {
               textPreview: item.textPreview || item.text || "",
               cacheKey: item.cacheKey || item.key || "",
               savedName: item.savedName || null,
-              audioUrl: (() => {
-                // cacheKey가 있으면 cacheRef에서 blob 데이터로부터 새 blob URL 생성
-                if (item.cacheKey || item.key) {
-                  const cached = cacheRef.current.get(item.cacheKey || item.key || "");
-                  if (cached?.blob) {
-                    // blob 데이터가 있으면 새 blob URL 생성
-                    if (!cached._audioUrl) {
-                      const newUrl = URL.createObjectURL(cached.blob);
-                      cacheRef.current.set(item.cacheKey || item.key || "", { ...cached, _audioUrl: newUrl });
-                      return newUrl;
-                    }
-                    return cached._audioUrl;
-                  }
-                  // blob 데이터가 없으면 기존 audioUrl 사용 (구형 호환)
-                  if (cached?._audioUrl) return cached._audioUrl;
-                }
-                // cacheKey가 없거나 cacheRef에 없으면 기존 audioUrl 사용
-                return item.audioUrl || null;
-              })(),
+              audioUrl: item.audioUrl || (item.cacheKey || item.key ? (() => {
+                const cached = cacheRef.current.get(item.cacheKey || item.key || "");
+                return cached?.audioUrl || null;
+              })() : null),
             };
           });
           setGenerationHistory(normalized);
@@ -3847,30 +3831,19 @@ const PublicVoiceGenerator = () => {
                     const languageKo = languageCodeToKo(entry.language);
                     const isExpanded = expandedGenerationId === entry.id;
                     const isEditing = editingGenerationId === entry.id;
-                    
-                    // audioUrl 복원: cacheKey가 있으면 cacheRef에서 blob 데이터로부터 새 blob URL 생성
                     let audioUrl = entry.audioUrl;
-                    
-                    if (entry.cacheKey) {
+                    if (!audioUrl && entry.cacheKey) {
                       const cached = cacheRef.current.get(entry.cacheKey);
-                      if (cached?.blob) {
-                        // blob 데이터가 있으면 새 blob URL 생성
-                        if (!cached._audioUrl) {
-                          const newUrl = URL.createObjectURL(cached.blob);
-                          cacheRef.current.set(entry.cacheKey, { ...cached, _audioUrl: newUrl });
-                          audioUrl = newUrl;
-                          // generationHistory 업데이트
+                      if (cached?.audioUrl) {
+                        audioUrl = cached.audioUrl;
+                        // generationHistory도 업데이트
+                        if (!entry.audioUrl) {
                           setGenerationHistory((prev) => 
                             prev.map((g) => 
-                              g.id === entry.id ? { ...g, audioUrl: newUrl } : g
+                              g.id === entry.id ? { ...g, audioUrl } : g
                             )
                           );
-                        } else {
-                          audioUrl = cached._audioUrl;
                         }
-                      } else if (cached?._audioUrl) {
-                        // blob 데이터는 없지만 audioUrl이 있는 경우
-                        audioUrl = cached._audioUrl;
                       }
                     }
                     return (
