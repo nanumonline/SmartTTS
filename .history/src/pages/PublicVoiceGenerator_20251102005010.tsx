@@ -2390,40 +2390,26 @@ const PublicVoiceGenerator = () => {
               description: `총 ${voices.length}개의 음성을 불러왔습니다.`,
             });
           }
-          // forceReload이거나 업데이트 필요하면 즉시 DB에 저장
-          if (forceReload) {
-            if (voices.length > 0) {
-              console.log(`모든 음성 ${voices.length}개를 DB에 저장합니다...`);
-              const success = await dbService.syncVoiceCatalog(voices, true);
-              if (success) {
-                console.log(`✅ 모든 음성 ${voices.length}개 DB 저장 완료`);
-                if (showToast) {
-                  toast({
-                    title: "DB 저장 완료",
-                    description: `${voices.length}개의 음성이 DB에 저장되었습니다.`,
-                  });
-                }
-              }
-            }
-          } else {
-            // forceReload이 아니면 일별 동기화 체크 후 저장
-            const needsUpdate = await dbService.shouldUpdateCatalog();
-            if (needsUpdate && voices.length > 0) {
-              console.log(`오늘 업데이트 필요: 모든 음성 ${voices.length}개를 DB에 저장합니다...`);
-              const success = await dbService.syncVoiceCatalog(voices, false);
-              if (success) {
-                console.log(`✅ 모든 음성 ${voices.length}개 DB 저장 완료`);
+          // forceReload이면 즉시 DB에 저장
+          if (forceReload && voices.length > 0) {
+            console.log(`모든 음성 ${voices.length}개를 DB에 저장합니다...`);
+            const success = await dbService.syncVoiceCatalog(voices, true);
+            if (success) {
+              console.log(`✅ 모든 음성 ${voices.length}개 DB 저장 완료`);
+              if (showToast) {
+                toast({
+                  title: "DB 저장 완료",
+                  description: `${voices.length}개의 음성이 DB에 저장되었습니다.`,
+                });
               }
             }
           }
         }
         
-        // forceReload이 아니면 일별 동기화 (백그라운드) - 샘플 음원 포함
-        if (!forceReload) {
-          dbService.syncVoiceCatalog(voices, false).catch(err => 
-            console.error("음성 카탈로그 동기화 실패:", err)
-          );
-        }
+        // 음성 카탈로그 동기화 (일별, 백그라운드) - 샘플 음원 포함
+        dbService.syncVoiceCatalog(voices, false).catch(err => 
+          console.error("음성 카탈로그 동기화 실패:", err)
+        );
       } else if (response) {
         console.warn("음성 목록 로드 실패(프록시):", await response.text());
         setVoiceLoadingProgress(0);
