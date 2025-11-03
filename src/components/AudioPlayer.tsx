@@ -12,6 +12,7 @@ interface AudioPlayerProps {
   className?: string;
   onError?: () => void; // blob URL 복원을 위한 콜백
   cacheKey?: string; // 복원을 위한 cacheKey
+  mimeType?: string; // 재생 소스 타입 힌트
 }
 
 const AudioPlayer = ({ 
@@ -21,22 +22,39 @@ const AudioPlayer = ({
   onDownload,
   className,
   onError,
-  cacheKey
+  cacheKey,
+  mimeType
 }: AudioPlayerProps) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [actualDuration, setActualDuration] = useState<number | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const guessedType = (() => {
+    if (mimeType && typeof mimeType === 'string') return mimeType;
+    const lower = (audioUrl || '').toLowerCase();
+    if (lower.endsWith('.wav')) return 'audio/wav';
+    if (lower.endsWith('.mp3') || lower.startsWith('blob:')) return 'audio/mpeg';
+    return 'audio/mpeg';
+  })();
 
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
 
     // audioUrl이 변경되면 src 업데이트
-    if (audio.src !== audioUrl) {
-      audio.src = audioUrl || '';
-      audio.load(); // 새 소스 로드
+    // null이거나 빈 문자열인 경우 src를 명시적으로 비워서 브라우저가 접근하지 않도록 함
+    if (audioUrl && audioUrl.trim() !== '') {
+      if (audio.src !== audioUrl) {
+        audio.src = audioUrl;
+        audio.load(); // 새 소스 로드
+      }
+    } else {
+      // audioUrl이 null이면 src를 빈 문자열로 설정하여 브라우저가 접근하지 않도록 함
+      if (audio.src) {
+        audio.src = '';
+        audio.load();
+      }
     }
 
     const updateTime = () => {
@@ -181,7 +199,10 @@ const AudioPlayer = ({
   return (
     <Card className={`border-primary/20 bg-primary/5 ${className}`}>
       <CardContent className="p-4">
-        <audio ref={audioRef} src={audioUrl} preload="metadata" />
+        <audio key={audioUrl} ref={audioRef} preload="metadata">
+          {/* type 지정으로 NotSupportedError 감소 */}
+          {audioUrl ? <source src={audioUrl} type={guessedType} /> : null}
+        </audio>
         
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">

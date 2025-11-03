@@ -21,21 +21,17 @@ import {
   Repeat
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSearchParams } from "react-router-dom";
 import * as dbService from "@/services/dbService";
 import { useToast } from "@/components/ui/use-toast";
-// formatDateTime 함수 정의
-const formatDateTimeLocal = (dateString: string): string => {
-  try {
-    const date = new Date(dateString);
-    return date.toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
-  } catch {
-    return dateString;
-  }
-};
+import { formatDateTime } from "@/lib/pageUtils";
+import PageHeader from "@/components/layout/PageHeader";
+import PageContainer from "@/components/layout/PageContainer";
 
 export default function ScheduleManagerPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [schedules, setSchedules] = useState<dbService.ScheduleRequestEntry[]>([]);
   const [generations, setGenerations] = useState<dbService.GenerationEntry[]>([]);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -54,6 +50,15 @@ export default function ScheduleManagerPage() {
       loadGenerations();
     }
   }, [user?.id]);
+
+  // URL 파라미터에서 generation ID 읽기
+  useEffect(() => {
+    const generationId = searchParams.get("generation");
+    if (generationId && !newSchedule.generationId) {
+      setNewSchedule((prev) => ({ ...prev, generationId }));
+      setIsCreateDialogOpen(true);
+    }
+  }, [searchParams]);
 
   const loadSchedules = async () => {
     if (!user?.id) return;
@@ -145,19 +150,19 @@ export default function ScheduleManagerPage() {
   const selectedGen = generations.find((g) => g.id === newSchedule.generationId);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">스케줄 관리</h1>
-          <p className="text-muted-foreground mt-1">
-            방송 일정을 관리하고 자동화합니다.
-          </p>
-        </div>
-        <Button onClick={() => setIsCreateDialogOpen(true)}>
-          <Plus className="w-4 h-4 mr-2" />
-          새 스케줄
-        </Button>
-      </div>
+    <PageContainer maxWidth="wide">
+      <PageHeader
+        title="스케줄 관리"
+        description="방송 일정을 관리하고 자동화합니다"
+        icon={CalendarIcon}
+        action={{
+          label: "새 스케줄",
+          onClick: () => setIsCreateDialogOpen(true),
+          icon: Plus,
+        }}
+      />
+
+      <div className="space-y-6">
 
       {/* 스케줄 목록 */}
       <div className="grid gap-4">
@@ -183,7 +188,7 @@ export default function ScheduleManagerPage() {
                         <Radio className="w-4 h-4" />
                         <span>{schedule.targetChannel}</span>
                         <span>•</span>
-                        <span>{formatDateTimeLocal(schedule.scheduledTime)}</span>
+                        <span>{formatDateTime(schedule.scheduledTime)}</span>
                         {schedule.repeatOption && schedule.repeatOption !== "once" && (
                           <>
                             <span>•</span>
@@ -311,6 +316,7 @@ export default function ScheduleManagerPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </PageContainer>
   );
 }

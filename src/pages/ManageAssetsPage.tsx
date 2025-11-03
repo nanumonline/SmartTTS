@@ -166,6 +166,24 @@ export default function ManageAssetsPage() {
                     audioUrl={gen.audioUrl}
                     title={gen.savedName || "자산"}
                     duration={gen.duration || 0}
+                    mimeType={(gen as any).mimeType || "audio/mpeg"}
+                    onError={async () => {
+                      try {
+                        const uid = (gen as any).userId || user?.id;
+                        if (!uid || !gen.id) return;
+                        const res = await dbService.loadGenerationBlob(uid, String(gen.id));
+                        if (res?.audioBlob) {
+                          const blob = dbService.arrayBufferToBlob(res.audioBlob, res.mimeType || (gen as any).mimeType || "audio/mpeg");
+                          const newUrl = URL.createObjectURL(blob);
+                          // 간단히 선택 항목만 갱신
+                          if (selectedAsset === gen.id) {
+                            // 외부에서 리스트 상태를 관리한다면 setState로 반영 필요
+                          }
+                        }
+                      } catch (e) {
+                        console.error("자산 미리듣기 복원 실패:", e);
+                      }
+                    }}
                   />
                 </CardContent>
               )}

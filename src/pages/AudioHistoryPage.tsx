@@ -4,33 +4,36 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Download, Trash2, Play, Filter } from "lucide-react";
+import { Search, Download, Trash2, Play, Filter, Music2, Calendar, FileSearch } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/components/ui/use-toast";
+import { useNavigate } from "react-router-dom";
 import * as dbService from "@/services/dbService";
 import AudioPlayer from "@/components/AudioPlayer";
-
-// formatDateTime 함수 정의 (PublicVoiceGenerator에서 참조)
-const formatDateTime = (dateString: string): string => {
-  try {
-    const date = new Date(dateString);
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    const hours = String(date.getHours()).padStart(2, "0");
-    const minutes = String(date.getMinutes()).padStart(2, "0");
-    return `${year}-${month}-${day} ${hours}:${minutes}`;
-  } catch {
-    return dateString;
-  }
-};
+import { formatDateTime } from "@/lib/pageUtils";
+import PageHeader from "@/components/layout/PageHeader";
+import PageContainer from "@/components/layout/PageContainer";
 
 export default function AudioHistoryPage() {
   const { user } = useAuth();
+  const { toast } = useToast();
+  const navigate = useNavigate();
   const [generations, setGenerations] = useState<dbService.GenerationEntry[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterPurpose, setFilterPurpose] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [selectedGeneration, setSelectedGeneration] = useState<string | null>(null);
+
+  const resolveFormat = (entry: dbService.GenerationEntry) => {
+    if (entry.format) return entry.format;
+    const mime = entry.mimeType?.toLowerCase() || "";
+    if (mime.includes("wav") || mime.includes("wave")) return "wav";
+    if (mime.includes("ogg")) return "ogg";
+    if (mime.includes("flac")) return "flac";
+    if (mime.includes("aac")) return "aac";
+    if (mime.includes("m4a")) return "m4a";
+    return "mp3";
+  };
 
   useEffect(() => {
     if (user?.id) {
@@ -71,18 +74,16 @@ export default function AudioHistoryPage() {
   const purposes = Array.from(new Set(generations.map((g) => g.purpose)));
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">생성 내역</h1>
-          <p className="text-muted-foreground mt-1">
-            생성된 음원 목록을 확인하고 관리합니다.
-          </p>
-        </div>
-      </div>
+    <PageContainer maxWidth="wide">
+      <PageHeader
+        title="생성 내역"
+        description="생성된 음원 목록을 확인하고 관리합니다"
+        icon={FileSearch}
+      />
 
-      {/* 필터 및 검색 */}
-      <div className="flex items-center gap-4">
+      <div className="space-y-6">
+        {/* 필터 및 검색 */}
+        <div className="flex items-center gap-4 flex-wrap">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
           <Input
@@ -165,9 +166,39 @@ export default function AudioHistoryPage() {
                     >
                       <Play className="w-4 h-4" />
                     </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        navigate(`/mix/board?generation=${gen.id}`);
+                        toast({
+                          title: "믹싱 페이지로 이동",
+                          description: "선택한 음원을 믹싱할 수 있습니다.",
+                        });
+                      }}
+                      title="믹싱"
+                    >
+                      <Music2 className="w-4 h-4 mr-2" />
+                      믹싱
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        navigate(`/send/schedule?generation=${gen.id}`);
+                        toast({
+                          title: "스케줄 관리로 이동",
+                          description: "선택한 음원을 예약할 수 있습니다.",
+                        });
+                      }}
+                      title="예약"
+                    >
+                      <Calendar className="w-4 h-4 mr-2" />
+                      예약
+                    </Button>
                     {gen.audioUrl && (
                       <Button variant="ghost" size="icon" asChild>
-                        <a href={gen.audioUrl} download>
+                        <a href={gen.audioUrl} download={`${gen.savedName || formatDateTime(gen.createdAt)}.${resolveFormat(gen)}`}>
                           <Download className="w-4 h-4" />
                         </a>
                       </Button>
@@ -188,6 +219,25 @@ export default function AudioHistoryPage() {
                     audioUrl={gen.audioUrl}
                     title={gen.savedName || "생성된 음원"}
                     duration={gen.duration || 0}
+                    mimeType={(gen as any).mimeType || "audio/mpeg"}
+                    onError={async () => {
+                      try {
+                        // 단건 blob로 복원
+                        const uid = (gen as any).userId || user?.id;
+                        if (!uid || !gen.id) return;
+                        const res = await dbService.loadGenerationBlob(uid, String(gen.id));
+                        if (res?.audioBlob) {
+                          const blob = dbService.arrayBufferToBlob(res.audioBlob, res.mimeType || (gen as any).mimeType || "audio/mpeg");
+                          const newUrl = URL.createObjectURL(blob);
+                          // 로컬 상태에 반영 (간단히 선택된 항목만 업데이트)
+                          if (selectedGeneration === gen.id) {
+                            // 강제 리렌더를 위해 navigate state 대신 setState를 사용한다면 여기서 업데이트
+                          }
+                        }
+                      } catch (e) {
+                        console.error("생성내역 미리듣기 복원 실패:", e);
+                      }
+                    }}
                   />
                 </CardContent>
               )}
@@ -195,6 +245,7 @@ export default function AudioHistoryPage() {
           ))
         )}
       </div>
-    </div>
+      </div>
+    </PageContainer>
   );
 }

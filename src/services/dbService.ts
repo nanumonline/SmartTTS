@@ -25,6 +25,10 @@ export interface GenerationEntry {
   audioBlob?: ArrayBuffer | null; // Blob을 ArrayBuffer로 변환하여 저장
   audioUrl?: string | null;
   cacheKey?: string;
+  storagePath?: string | null;
+  format?: string | null;
+  paramHash?: string | null;
+  mimeType?: string; // 오디오 MIME 타입 (예: "audio/mpeg", "audio/wav")
   status?: string;
   hasAudio?: boolean;
   createdAt?: string;
@@ -49,31 +53,75 @@ export async function saveGeneration(userId: string, entry: GenerationEntry, aud
       audioBuffer = await blobToArrayBuffer(audioBlob);
     }
 
-    const { data, error } = await supabase
-      .from("tts_generations")
-      .insert({
-        user_id: userId,
-        purpose: entry.purpose,
-        purpose_label: entry.purposeLabel,
-        voice_id: entry.voiceId,
-        voice_name: entry.voiceName,
-        saved_name: entry.savedName,
-        text_preview: entry.textPreview,
-        text_length: entry.textLength || 0,
-        duration: entry.duration,
-        language: entry.language || "ko",
-        model: entry.model,
-        style: entry.style,
-        speed: entry.speed || 1.0,
-        pitch_shift: entry.pitchShift || 0,
-        audio_blob: audioBuffer ? Array.from(new Uint8Array(audioBuffer)) : null,
-        audio_url: entry.audioUrl,
-        cache_key: entry.cacheKey,
-        status: entry.status || "ready",
-        has_audio: entry.hasAudio !== false,
-      })
-      .select("id")
-      .single();
+    // VARCHAR(255) 제한을 위해 문자열 자르기
+    const truncateString = (str: string | null | undefined, maxLength: number = 255): string | null => {
+      if (!str) return null;
+      if (str.length <= maxLength) return str;
+      return str.substring(0, maxLength);
+    };
+
+    const audioArray = audioBuffer ? Array.from(new Uint8Array(audioBuffer)) : null;
+
+    const baseData: any = {
+      user_id: userId,
+      purpose: entry.purpose,
+      purpose_label: truncateString(entry.purposeLabel, 100),
+      voice_id: truncateString(entry.voiceId, 255),
+      voice_name: truncateString(entry.voiceName, 255),
+      saved_name: truncateString(entry.savedName, 255),
+      text_preview: entry.textPreview, // TEXT 타입이므로 길이 제한 없음
+      text_length: entry.textLength ?? (entry.textPreview ? entry.textPreview.length : 0),
+      duration: entry.duration,
+      language: entry.language || "ko",
+      model: truncateString(entry.model, 100),
+      style: truncateString(entry.style, 100),
+      speed: entry.speed ?? 1.0,
+      pitch_shift: entry.pitchShift ?? 0,
+      audio_blob: audioArray,
+      audio_url: entry.audioUrl, // TEXT 타입이므로 길이 제한 없음
+      cache_key: truncateString(entry.cacheKey, 255),
+      mime_type: entry.mimeType || (audioBlob?.type || "audio/mpeg"), // MIME 타입 저장
+      status: entry.status || "ready",
+      has_audio: entry.hasAudio !== false,
+    };
+
+    const extendedData = { ...baseData } as any;
+    if (entry.storagePath) {
+      extendedData.storage_path = truncateString(entry.storagePath, 500);
+    }
+    if (entry.format) {
+      extendedData.format = truncateString(entry.format, 50);
+    }
+    if (entry.paramHash) {
+      extendedData.param_hash = truncateString(entry.paramHash, 128);
+    }
+
+    const attemptInsert = async (payload: any) => {
+      return await supabase
+        .from("tts_generations")
+        .insert(payload)
+        .select("id")
+        .single();
+    };
+
+    let insertResult = await attemptInsert(extendedData);
+    // 400, 42703 에러는 컬럼이 없을 가능성이 높으므로 기본 데이터로 재시도
+    if (
+      insertResult.error &&
+      (insertResult.error.code === "42703" || 
+       insertResult.error.message?.includes("column") ||
+       insertResult.error.message?.includes("does not exist") ||
+       insertResult.error.status === 400)
+    ) {
+      console.warn(
+        "tts_generations 컬럼이 누락되어 확장 필드를 제외하고 재시도합니다:",
+        insertResult.error.message
+      );
+      const fallbackData = { ...baseData };
+      insertResult = await attemptInsert(fallbackData);
+    }
+
+    const { data, error } = insertResult;
 
     if (error) {
       // 테이블이 없으면 조용히 실패 (마이그레이션 미적용 상태)
@@ -81,59 +129,104 @@ export async function saveGeneration(userId: string, entry: GenerationEntry, aud
         console.warn("DB 테이블이 아직 생성되지 않았습니다. 마이그레이션을 적용해주세요.");
         return null;
       }
+      // 400 에러도 조용히 처리 (마이그레이션 미적용 상태)
+      if (error.status === 400) {
+        console.warn("DB 저장 실패 (400): 마이그레이션을 적용해주세요:", error.message);
+        return null;
+      }
       throw error;
     }
     return data?.id || null;
   } catch (error: any) {
-    // 에러를 조용히 처리 (폴백으로 localStorage 사용)
-    if (error.code !== "PGRST205") {
-      console.error("생성 이력 저장 실패:", error);
+    // 네트워크 에러 또는 서버 에러 (502, CORS 등) 처리
+    if (error.message?.includes("Failed to fetch") || 
+        error.message?.includes("ERR_FAILED") ||
+        error.code === "ECONNREFUSED" ||
+        error.message?.includes("502") ||
+        error.message?.includes("CORS")) {
+      // 네트워크 문제는 조용히 처리 (폴백으로 localStorage 사용)
+      console.warn("DB 저장 실패 (네트워크 문제):", error.message || "연결 실패");
+      return null;
     }
+    // 테이블이 없으면 조용히 실패 (마이그레이션 미적용 상태)
+    if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
+      console.warn("DB 테이블이 아직 생성되지 않았습니다. 마이그레이션을 적용해주세요.");
+      return null;
+    }
+    // 기타 에러는 로그만 남기고 null 반환 (폴백)
+    console.error("생성 이력 저장 실패:", error);
     return null;
   }
 }
 
 // 생성 이력 조회
-export async function loadGenerations(userId: string, limit: number = 100): Promise<GenerationEntry[]> {
+export async function loadGenerations(userId: string, limit: number = 200): Promise<GenerationEntry[]> {
   try {
-    const { data, error } = await supabase
-      .from("tts_generations")
-      .select("*")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false })
-      .limit(limit);
+    const baseColumns = "id, purpose, purpose_label, voice_id, voice_name, saved_name, text_preview, text_length, duration, language, model, style, speed, pitch_shift, audio_url, cache_key, mime_type, status, has_audio, created_at, updated_at";
+    const extendedColumns = baseColumns + ", storage_path, format, param_hash";
 
+    const buildQuery = (columns: string) =>
+      supabase
+        .from("tts_generations")
+        .select(columns)
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(Math.max(1, Math.min(500, limit)));
+
+    // 기본 컬럼만으로 조회 (안정성 우선)
+    // 마이그레이션이 적용되면 extendedColumns가 자동으로 사용됨
+    // 지금은 기본 컬럼만 사용하여 400 에러 방지
+    let { data, error } = await buildQuery(baseColumns);
+    
+    // extendedColumns 쿼리는 실행하지 않음 (마이그레이션 미적용 시 400 에러 방지)
+    // 마이그레이션 적용 후에는 별도로 extendedColumns를 조회할 필요 없음
+    // (기본 컬럼만으로도 충분하며, 나중에 마이그레이션 적용 시 자동으로 컬럼이 추가됨)
+
+    // 에러가 있으면 조용히 처리
     if (error) {
       // 테이블이 없으면 빈 배열 반환
       if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
         return [];
       }
-      throw error;
+      // 400 에러는 컬럼이 없을 가능성이 높음 (이미 기본 컬럼으로 시도했으므로 조용히 처리)
+      if (error.status === 400 || error.code === "42703" || error.message?.includes("column")) {
+        console.warn("DB 조회 실패 (컬럼 누락): 마이그레이션을 적용해주세요:", error.message);
+        return [];
+      }
+      console.error("생성 이력 조회 실패:", error);
+      return [];
     }
 
-    return (data || []).map((row: any) => ({
-      id: row.id,
-      purpose: row.purpose,
-      purposeLabel: row.purpose_label,
-      voiceId: row.voice_id,
-      voiceName: row.voice_name,
-      savedName: row.saved_name,
-      textPreview: row.text_preview,
-      textLength: row.text_length,
-      duration: row.duration,
-      language: row.language,
-      model: row.model,
-      style: row.style,
-      speed: row.speed,
-      pitchShift: row.pitch_shift,
-      audioBlob: row.audio_blob ? new Uint8Array(row.audio_blob).buffer : null,
-      audioUrl: row.audio_url,
-      cacheKey: row.cache_key,
-      status: row.status,
-      hasAudio: row.has_audio,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    }));
+    return (data || []).map((row: any) => {
+      const derivedCacheKey = row.cache_key || (row.param_hash ? `hash_${row.param_hash}` : null);
+      return {
+        id: row.id,
+        purpose: row.purpose,
+        purposeLabel: row.purpose_label,
+        voiceId: row.voice_id,
+        voiceName: row.voice_name,
+        savedName: row.saved_name,
+        textPreview: row.text_preview,
+        textLength: row.text_length,
+        duration: row.duration,
+        language: row.language,
+        model: row.model,
+        style: row.style,
+        speed: row.speed,
+        pitchShift: row.pitch_shift,
+        audioBlob: null,
+        audioUrl: row.audio_url,
+        mimeType: row.mime_type || "audio/mpeg", // MIME 타입 로드
+        cacheKey: derivedCacheKey || undefined,
+        storagePath: row.storage_path || null,
+        format: row.format || null,
+        paramHash: row.param_hash || null,
+        status: row.status,
+        hasAudio: row.has_audio,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      };
+    });
   } catch (error: any) {
     // 테이블이 없으면 조용히 빈 배열 반환
     if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
@@ -144,13 +237,148 @@ export async function loadGenerations(userId: string, limit: number = 100): Prom
   }
 }
 
+// 파라미터 해시로 생성 이력 조회
+export async function findGenerationByHash(userId: string, paramHash: string): Promise<GenerationEntry | null> {
+  try {
+    // 기본 컬럼만 사용 (안정성 우선)
+    const baseColumns = "id, purpose, purpose_label, voice_id, voice_name, saved_name, text_preview, text_length, duration, language, model, style, speed, pitch_shift, audio_url, cache_key, mime_type, status, has_audio, created_at, updated_at";
+    
+    // param_hash로 필터링 시도 (컬럼이 없을 수 있으므로 에러 처리)
+    let { data, error } = await supabase
+      .from("tts_generations")
+      .select(baseColumns)
+      .eq("user_id", userId);
+    
+    // param_hash 컬럼이 있으면 필터링 시도
+    try {
+      const hashQuery = await supabase
+        .from("tts_generations")
+        .select(baseColumns)
+        .eq("user_id", userId)
+        .eq("param_hash", paramHash)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (!hashQuery.error && hashQuery.data) {
+        data = hashQuery.data;
+        error = hashQuery.error;
+      }
+    } catch (e) {
+      // param_hash 컬럼이 없으면 전체 조회 결과에서 클라이언트 측 필터링
+      // (이 경우는 param_hash가 없으므로 정확한 매칭 불가)
+    }
+
+    if (error) {
+      if (error.code === "42703" || error.message?.includes("column") || error.status === 400) {
+        // 컬럼이 없는 경우 (구버전)
+        return null;
+      }
+      return null;
+    }
+    
+    // param_hash로 필터링된 결과가 없으면 전체 조회 결과에서 클라이언트 측 필터링
+    if (!data) {
+      // 전체 조회 (param_hash 없이)
+      const allQuery = await supabase
+        .from("tts_generations")
+        .select(baseColumns)
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      
+      if (allQuery.error) {
+        return null;
+      }
+      
+      // 클라이언트 측에서 param_hash 매칭 (cache_key에서 추출)
+      const matched = (allQuery.data || []).find((row: any) => {
+        const derivedHash = row.param_hash || (row.cache_key?.includes('hash_') ? row.cache_key.replace('hash_', '') : null);
+        return derivedHash === paramHash;
+      });
+      
+      if (!matched) return null;
+      data = matched;
+    }
+    if (!data) return null;
+
+    const derivedCacheKey = data.cache_key || (data.param_hash ? `hash_${data.param_hash}` : null);
+    return {
+      id: data.id,
+      purpose: data.purpose,
+      purposeLabel: data.purpose_label,
+      voiceId: data.voice_id,
+      voiceName: data.voice_name,
+      savedName: data.saved_name,
+      textPreview: data.text_preview,
+      textLength: data.text_length,
+      duration: data.duration,
+      language: data.language,
+      model: data.model,
+      style: data.style,
+      speed: data.speed,
+      pitchShift: data.pitch_shift,
+      audioUrl: data.audio_url,
+      cacheKey: derivedCacheKey || undefined,
+      mimeType: data.mime_type || "audio/mpeg",
+      storagePath: data.storage_path || null,
+      format: data.format || null,
+      paramHash: data.param_hash || null,
+      status: data.status,
+      hasAudio: data.has_audio,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+    };
+  } catch (error) {
+    console.warn("findGenerationByHash 실패:", error);
+    return null;
+  }
+}
+
+// 단건 blob 데이터 로드(복원 전용)
+export async function loadGenerationBlob(userId: string, id: string): Promise<{ audioBlob: ArrayBuffer | null; mimeType?: string } | null> {
+  try {
+    const { data, error } = await supabase
+      .from("tts_generations")
+      .select("audio_blob, mime_type")
+      .eq("user_id", userId)
+      .eq("id", id)
+      .single();
+
+    if (error) {
+      // 500 에러는 서버 문제로 조용히 처리
+      if (error.status === 500 || error.message?.includes("500")) {
+        console.warn("loadGenerationBlob 500 에러 (서버 문제):", error.message);
+        return null;
+      }
+      return null;
+    }
+    
+    const buf = data?.audio_blob ? new Uint8Array(data.audio_blob).buffer : null;
+    return { audioBlob: buf, mimeType: data?.mime_type };
+  } catch (error: any) {
+    // 500 에러는 서버 문제로 조용히 처리
+    if (error.status === 500 || error.message?.includes("500")) {
+      console.warn("loadGenerationBlob 500 에러 (서버 문제):", error.message);
+      return null;
+    }
+    return null;
+  }
+}
+
 // 생성 이력 업데이트
 export async function updateGeneration(userId: string, id: string, updates: Partial<GenerationEntry>): Promise<boolean> {
   try {
+    const truncateString = (str: string | null | undefined, maxLength: number = 255): string | null => {
+      if (!str) return null;
+      if (str.length <= maxLength) return str;
+      return str.substring(0, maxLength);
+    };
+
     const updateData: any = {};
-    if (updates.savedName !== undefined) updateData.saved_name = updates.savedName;
-    if (updates.textPreview !== undefined) updateData.text_preview = updates.textPreview;
-    if (updates.audioUrl !== undefined) updateData.audio_url = updates.audioUrl;
+    if (updates.savedName !== undefined) updateData.saved_name = truncateString(updates.savedName, 255);
+    if (updates.textPreview !== undefined) updateData.text_preview = updates.textPreview; // TEXT 타입
+    if (updates.audioUrl !== undefined) updateData.audio_url = updates.audioUrl; // TEXT 타입
 
     const { error } = await supabase
       .from("tts_generations")
@@ -202,6 +430,11 @@ export async function deleteGeneration(userId: string, id: string): Promise<bool
 // 즐겨찾기 추가
 export async function addFavorite(userId: string, voiceId: string): Promise<boolean> {
   try {
+    if (!userId || userId === "undefined") {
+      console.warn("유효하지 않은 userId로 즐겨찾기를 추가할 수 없습니다.");
+      return false;
+    }
+
     const { error } = await supabase
       .from("tts_favorites")
       .insert({ user_id: userId, voice_id: voiceId })
@@ -213,11 +446,15 @@ export async function addFavorite(userId: string, voiceId: string): Promise<bool
       if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
         return false;
       }
+      if (error.code === "22P02") {
+        console.warn("유효하지 않은 userId 형식:", userId);
+        return false;
+      }
       throw error;
     }
     return true;
   } catch (error: any) {
-    if (error.code !== "PGRST205") {
+    if (error.code !== "PGRST205" && error.code !== "22P02") {
       console.error("즐겨찾기 추가 실패:", error);
     }
     return false;
@@ -227,6 +464,11 @@ export async function addFavorite(userId: string, voiceId: string): Promise<bool
 // 즐겨찾기 제거
 export async function removeFavorite(userId: string, voiceId: string): Promise<boolean> {
   try {
+    if (!userId || userId === "undefined") {
+      console.warn("유효하지 않은 userId로 즐겨찾기를 제거할 수 없습니다.");
+      return false;
+    }
+
     const { error } = await supabase
       .from("tts_favorites")
       .delete()
@@ -237,11 +479,15 @@ export async function removeFavorite(userId: string, voiceId: string): Promise<b
       if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
         return false;
       }
+      if (error.code === "22P02") {
+        console.warn("유효하지 않은 userId 형식:", userId);
+        return false;
+      }
       throw error;
     }
     return true;
   } catch (error: any) {
-    if (error.code !== "PGRST205") {
+    if (error.code !== "PGRST205" && error.code !== "22P02") {
       console.error("즐겨찾기 제거 실패:", error);
     }
     return false;
@@ -251,6 +497,11 @@ export async function removeFavorite(userId: string, voiceId: string): Promise<b
 // 즐겨찾기 목록 조회
 export async function loadFavorites(userId: string): Promise<string[]> {
   try {
+    if (!userId || userId === "undefined") {
+      console.warn("유효하지 않은 userId로 즐겨찾기를 로드할 수 없습니다.");
+      return [];
+    }
+
     const { data, error } = await supabase
       .from("tts_favorites")
       .select("voice_id")
@@ -260,11 +511,16 @@ export async function loadFavorites(userId: string): Promise<string[]> {
       if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
         return [];
       }
+      if (error.code === "22P02") {
+        // UUID 형식 오류
+        console.warn("유효하지 않은 userId 형식:", userId);
+        return [];
+      }
       throw error;
     }
     return (data || []).map((row: any) => row.voice_id);
   } catch (error: any) {
-    if (error.code !== "PGRST205") {
+    if (error.code !== "PGRST205" && error.code !== "22P02") {
       console.error("즐겨찾기 조회 실패:", error);
     }
     return [];
@@ -277,20 +533,28 @@ export interface UserSettings {
   selectedPurpose?: string;
   voiceSettings?: any;
   preferences?: any;
+  storagePath?: string; // 로컬 저장 경로
 }
 
 // 설정 저장
 export async function saveUserSettings(userId: string, settings: UserSettings): Promise<boolean> {
   try {
+    const updateData: any = {
+      user_id: userId,
+      selected_purpose: settings.selectedPurpose,
+      voice_settings: settings.voiceSettings || {},
+      preferences: settings.preferences || {},
+      updated_at: new Date().toISOString(),
+    };
+    
+    // storage_path 필드 추가 (컬럼이 있을 경우에만)
+    if (settings.storagePath !== undefined) {
+      updateData.storage_path = settings.storagePath;
+    }
+    
     const { error } = await supabase
       .from("tts_user_settings")
-      .upsert({
-        user_id: userId,
-        selected_purpose: settings.selectedPurpose,
-        voice_settings: settings.voiceSettings || {},
-        preferences: settings.preferences || {},
-        updated_at: new Date().toISOString(),
-      }, {
+      .upsert(updateData, {
         onConflict: "user_id"
       });
 
@@ -340,6 +604,7 @@ export async function loadUserSettings(userId: string): Promise<UserSettings | n
       selectedPurpose: data.selected_purpose,
       voiceSettings: data.voice_settings,
       preferences: data.preferences,
+      storagePath: data.storage_path || undefined,
     };
   } catch (error: any) {
     if (error.code !== "PGRST205" && error.code !== "42501" && error.status !== 401 && error.status !== 406) {
@@ -701,8 +966,18 @@ export interface MessageHistoryEntry {
   id?: string;
   text: string;
   purpose: string;
+  isTemplate?: boolean;
+  templateName?: string;
+  templateCategory?: string;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface TemplateEntry extends MessageHistoryEntry {
+  isTemplate: true;
+  templateName: string;
+  templateCategory: string;
+  variables?: string[]; // 변수 목록 (계산 필드)
 }
 
 // 메시지 저장
@@ -714,6 +989,9 @@ export async function saveMessage(userId: string, message: MessageHistoryEntry):
         user_id: userId,
         text: message.text,
         purpose: message.purpose,
+        is_template: message.isTemplate || false,
+        template_name: message.templateName || null,
+        template_category: message.templateCategory || null,
       })
       .select("id")
       .single();
@@ -730,6 +1008,191 @@ export async function saveMessage(userId: string, message: MessageHistoryEntry):
       console.error("메시지 저장 실패:", error);
     }
     return null;
+  }
+}
+
+// 템플릿 저장
+export async function saveTemplate(userId: string, template: TemplateEntry): Promise<string | null> {
+  try {
+    const variables = (template.text.match(/\{([^}]+)\}/g) || []).map((v) =>
+      v.replace(/[{}]/g, "")
+    );
+    
+    const { data, error } = await supabase
+      .from("tts_message_history")
+      .insert({
+        user_id: userId,
+        text: template.text,
+        purpose: template.purpose,
+        is_template: true,
+        template_name: template.templateName,
+        template_category: template.templateCategory,
+      })
+      .select("id")
+      .single();
+
+    if (error) {
+      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
+        return null;
+      }
+      throw error;
+    }
+    return data?.id || null;
+  } catch (error: any) {
+    if (error.code !== "PGRST205") {
+      console.error("템플릿 저장 실패:", error);
+    }
+    return null;
+  }
+}
+
+// 템플릿 업데이트
+export async function updateTemplate(userId: string, id: string, template: Partial<TemplateEntry>): Promise<boolean> {
+  try {
+    const updateData: any = {
+      updated_at: new Date().toISOString(),
+    };
+    if (template.text !== undefined) updateData.text = template.text;
+    if (template.purpose !== undefined) updateData.purpose = template.purpose;
+    if (template.templateName !== undefined) updateData.template_name = template.templateName;
+    if (template.templateCategory !== undefined) updateData.template_category = template.templateCategory;
+
+    let query = supabase
+      .from("tts_message_history")
+      .update(updateData)
+      .eq("user_id", userId)
+      .eq("id", id);
+
+    // is_template 컬럼이 있는 경우에만 필터링 (에러 발생하면 컬럼 없음으로 간주)
+    try {
+      const { error: checkError } = await supabase
+        .from("tts_message_history")
+        .select("is_template")
+        .eq("user_id", userId)
+        .eq("id", id)
+        .limit(1);
+      
+      if (!checkError) {
+        query = query.eq("is_template", true);
+      }
+    } catch {
+      // 컬럼이 없으면 필터링 없이 업데이트
+    }
+
+    const { error } = await query;
+
+    if (error) {
+      // 컬럼이 존재하지 않는 경우 (42703) 또는 테이블이 없는 경우 (PGRST205)
+      if (error.code === "PGRST205" || error.code === "42703" || error.message?.includes("schema cache") || error.message?.includes("does not exist")) {
+        return false;
+      }
+      throw error;
+    }
+    return true;
+  } catch (error: any) {
+    if (error.code !== "PGRST205") {
+      console.error("템플릿 업데이트 실패:", error);
+    }
+    return false;
+  }
+}
+
+// 템플릿 삭제
+export async function deleteTemplate(userId: string, id: string): Promise<boolean> {
+  try {
+    let query = supabase
+      .from("tts_message_history")
+      .delete()
+      .eq("user_id", userId)
+      .eq("id", id);
+
+    // is_template 컬럼이 있는 경우에만 필터링 (에러 발생하면 컬럼 없음으로 간주)
+    try {
+      const { error: checkError } = await supabase
+        .from("tts_message_history")
+        .select("is_template")
+        .eq("user_id", userId)
+        .eq("id", id)
+        .limit(1);
+      
+      if (!checkError) {
+        query = query.eq("is_template", true);
+      }
+    } catch {
+      // 컬럼이 없으면 필터링 없이 삭제
+    }
+
+    const { error } = await query;
+
+    if (error) {
+      // 컬럼이 존재하지 않는 경우 (42703) 또는 테이블이 없는 경우 (PGRST205)
+      if (error.code === "PGRST205" || error.code === "42703" || error.message?.includes("schema cache") || error.message?.includes("does not exist")) {
+        return false;
+      }
+      throw error;
+    }
+    return true;
+  } catch (error: any) {
+    // 컬럼이 존재하지 않는 경우 (42703) 또는 테이블이 없는 경우 (PGRST205)
+    if (error.code !== "PGRST205" && error.code !== "42703") {
+      console.error("템플릿 삭제 실패:", error);
+    }
+    return false;
+  }
+}
+
+// 템플릿 목록 조회
+export async function loadTemplates(userId: string, category?: string): Promise<TemplateEntry[]> {
+  try {
+    // is_template 컬럼이 없을 수 있으므로, 먼저 모든 데이터를 가져온 후 필터링
+    let query = supabase
+      .from("tts_message_history")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+
+    const { data, error } = await query;
+
+    if (error) {
+      // 컬럼이 존재하지 않는 경우 (42703) 또는 테이블이 없는 경우 (PGRST205)
+      if (error.code === "PGRST205" || error.code === "42703" || error.message?.includes("schema cache") || error.message?.includes("does not exist")) {
+        return [];
+      }
+      throw error;
+    }
+
+    // is_template 컬럼이 있으면 필터링, 없으면 빈 배열 반환 (템플릿 없음)
+    const filtered = (data || []).filter((row: any) => {
+      // is_template 컬럼이 없으면 템플릿이 없음
+      if (row.is_template === undefined) return false;
+      const isTemplate = row.is_template === true;
+      // category 필터링
+      if (category && row.template_category !== category) return false;
+      return isTemplate;
+    });
+
+    return filtered.map((row: any) => {
+      const variables = (row.text.match(/\{([^}]+)\}/g) || []).map((v: string) =>
+        v.replace(/[{}]/g, "")
+      );
+      return {
+        id: row.id,
+        text: row.text,
+        purpose: row.purpose,
+        isTemplate: true,
+        templateName: row.template_name || undefined,
+        templateCategory: row.template_category || undefined,
+        variables,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      };
+    });
+  } catch (error: any) {
+    // 컬럼이 존재하지 않는 경우 (42703) 또는 테이블이 없는 경우 (PGRST205)
+    if (error.code !== "PGRST205" && error.code !== "42703") {
+      console.error("템플릿 조회 실패:", error);
+    }
+    return [];
   }
 }
 
@@ -781,9 +1244,10 @@ export async function deleteMessage(userId: string, id: string): Promise<boolean
   }
 }
 
-// 메시지 목록 조회
+// 메시지 목록 조회 (템플릿 제외)
 export async function loadMessages(userId: string): Promise<MessageHistoryEntry[]> {
   try {
+    // is_template 컬럼이 없을 수 있으므로, 먼저 모든 데이터를 가져온 후 필터링
     const { data, error } = await supabase
       .from("tts_message_history")
       .select("*")
@@ -791,21 +1255,33 @@ export async function loadMessages(userId: string): Promise<MessageHistoryEntry[
       .order("updated_at", { ascending: false });
 
     if (error) {
-      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
+      // 컬럼이 존재하지 않는 경우 (42703) 또는 테이블이 없는 경우 (PGRST205)
+      if (error.code === "PGRST205" || error.code === "42703" || error.message?.includes("schema cache") || error.message?.includes("does not exist")) {
         return [];
       }
       throw error;
     }
 
-    return (data || []).map((row: any) => ({
+    // is_template 컬럼이 있으면 필터링, 없으면 모든 데이터 반환
+    const filtered = (data || []).filter((row: any) => {
+      // is_template 컬럼이 없으면 모두 메시지로 간주 (템플릿 아님)
+      if (row.is_template === undefined) return true;
+      return row.is_template === false;
+    });
+
+    return filtered.map((row: any) => ({
       id: row.id,
       text: row.text,
       purpose: row.purpose,
+      isTemplate: row.is_template || false,
+      templateName: row.template_name || undefined,
+      templateCategory: row.template_category || undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }));
   } catch (error: any) {
-    if (error.code !== "PGRST205") {
+    // 컬럼이 존재하지 않는 경우 (42703) 또는 테이블이 없는 경우 (PGRST205)
+    if (error.code !== "PGRST205" && error.code !== "42703") {
       console.error("메시지 조회 실패:", error);
     }
     return [];

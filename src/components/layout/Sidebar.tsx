@@ -19,7 +19,6 @@ import {
   Database,
   CheckCircle2,
   BookOpen,
-  Volume2,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -42,7 +41,8 @@ export const navItems: NavItem[] = [
     href: "/scripts",
     icon: FileText,
     children: [
-      { title: "문구 관리", href: "/scripts", icon: ClipboardList },
+      { title: "문구 목록", href: "/scripts", icon: ClipboardList },
+      { title: "문구 관리", href: "/scripts/messages", icon: FileText },
       { title: "템플릿", href: "/scripts/templates", icon: BookOpen },
     ],
   },
@@ -51,7 +51,6 @@ export const navItems: NavItem[] = [
     href: "/audio",
     icon: Mic2,
     children: [
-      { title: "음성 스타일", href: "/audio/styles", icon: Volume2 },
       { title: "TTS 생성", href: "/audio/tts", icon: Play },
       { title: "클로닝", href: "/audio/cloning", icon: Mic2 },
       { title: "생성 내역", href: "/audio/history", icon: FileSearch },

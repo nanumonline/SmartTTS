@@ -8,7 +8,10 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "deploy:functions": "supabase functions deploy",
+    "deploy:supertone": "supabase functions deploy supertone-proxy",
+    "deploy:openai": "supabase functions deploy openai-text-generation"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

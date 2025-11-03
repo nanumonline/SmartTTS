@@ -187,99 +187,121 @@ export async function exportMixToWav(
     bgmTotalLen = settings.fadeIn + settings.bgmOffset + ttsLen + (settings.bgmOffsetAfterTts || 0) + settings.fadeOut;
     const minBgmLen = ttsLen + (settings.fadeIn || 0) + (settings.fadeOut || 0);
     bgmTotalLen = Math.max(bgmTotalLen, minBgmLen);
+  } else {
+    // BGM이 없는 경우: TTS 길이 + fadeIn + fadeOut + bgmOffset + bgmOffsetAfterTts
+    bgmTotalLen = ttsLen + (settings.fadeIn || 0) + (settings.fadeOut || 0) + (settings.bgmOffset || 0) + (settings.bgmOffsetAfterTts || 0);
   }
   
   const effectLen = effectBuffer ? effectBuffer.duration : 0;
-  // BGM이 항상 가장 길어야 함
+  // 렌더링 길이는 BGM 전체 길이, TTS 길이, 효과음 길이 중 가장 긴 것
   let renderDur = Math.max(bgmTotalLen, ttsLen, effectLen);
+  
+  // 최소 길이 보장 (최소 1프레임 이상)
+  // 모든 길이가 0이거나 음수인 경우 최소 1초 보장
+  if (renderDur <= 0 || !isFinite(renderDur)) {
+    renderDur = 1.0;
+  }
+  
+  // 최소 1프레임 보장 (sampleRate / 1000 = 44.1프레임, 약 1ms)
+  const minLength = Math.max(1, Math.ceil(renderDur * sampleRate));
+  const ctx = new OfflineAudioContext({ numberOfChannels: 2, length: minLength, sampleRate });
 
-  const length = Math.ceil(renderDur * sampleRate);
-  const ctx = new OfflineAudioContext({ numberOfChannels: 2, length, sampleRate });
+  // 값 검증 및 정규화 헬퍼 함수
+  const clamp = (value: number, min: number, max: number, defaultValue: number): number => {
+    if (!isFinite(value) || isNaN(value)) return defaultValue;
+    return Math.max(min, Math.min(max, value));
+  };
 
   // 마스터 게인
   const master = ctx.createGain();
-  master.gain.value = settings.masterGain;
+  master.gain.value = clamp(settings.masterGain, 0, 10, 1.0);
 
-  // BGM 경로 with EQ
-  const lowShelf = ctx.createBiquadFilter();
-  lowShelf.type = "lowshelf";
-  lowShelf.frequency.value = 100;
-  lowShelf.gain.value = settings.lowShelf;
+  // BGM 경로 with EQ (BGM이 있을 때만 생성)
+  let lowShelf: BiquadFilterNode | null = null;
+  let midPeaking: BiquadFilterNode | null = null;
+  let highShelf: BiquadFilterNode | null = null;
+  let bgmGain: GainNode | null = null;
 
-  const midPeaking = ctx.createBiquadFilter();
-  midPeaking.type = "peaking";
-  midPeaking.frequency.value = 1000;
-  midPeaking.Q.value = 1;
-  midPeaking.gain.value = settings.midPeaking;
+  if (bgmBuffer) {
+    lowShelf = ctx.createBiquadFilter();
+    lowShelf.type = "lowshelf";
+    lowShelf.frequency.value = 100;
+    lowShelf.gain.value = clamp(settings.lowShelf, -40, 40, 0);
 
-  const highShelf = ctx.createBiquadFilter();
-  highShelf.type = "highshelf";
-  highShelf.frequency.value = 8000;
-  highShelf.gain.value = settings.highShelf;
+    midPeaking = ctx.createBiquadFilter();
+    midPeaking.type = "peaking";
+    midPeaking.frequency.value = 1000;
+    midPeaking.Q.value = 1;
+    midPeaking.gain.value = clamp(settings.midPeaking ?? 0, -40, 40, 0);
 
-  const bgmGain = ctx.createGain();
-  bgmGain.gain.value = settings.bgmGain;
+    highShelf = ctx.createBiquadFilter();
+    highShelf.type = "highshelf";
+    highShelf.frequency.value = 8000;
+    highShelf.gain.value = clamp(settings.highShelf, -40, 40, 0);
 
-  lowShelf.connect(midPeaking);
-  midPeaking.connect(highShelf);
-  highShelf.connect(bgmGain);
+    bgmGain = ctx.createGain();
+    bgmGain.gain.value = clamp(settings.bgmGain, 0, 10, 0.5);
+  }
 
   // TTS 경로 (페이드 없음)
   const ttsGain = ctx.createGain();
-  ttsGain.gain.value = settings.ttsGain;
+  ttsGain.gain.value = clamp(settings.ttsGain, 0, 10, 1.0);
 
   // 효과음 경로
   const effectGain = ctx.createGain();
-  effectGain.gain.value = settings.effectGain;
+  effectGain.gain.value = clamp(settings.effectGain, 0, 10, 0);
 
   // BGM에만 페이드 적용 (TTS는 페이드 없음)
   // BGM은 항상 0초부터 시작하므로 페이드인도 0초부터
   // 음원증감 비율 적용: 50%가 기본값(원래 볼륨), 0-50%는 감소, 50-100%는 증가
-  if (bgmBuffer && settings.fadeIn > 0) {
+  if (bgmBuffer && bgmGain && lowShelf && midPeaking && highShelf && settings.fadeIn > 0) {
     const bgmFadeInGain = ctx.createGain();
-    const fadeInRatio = (settings.fadeInRatio ?? 50) / 100; // 0-100을 0-1로 변환 (50%가 중앙 = 기본 볼륨)
+    const fadeInRatio = clamp(settings.fadeInRatio ?? 50, 0, 100, 50) / 100; // 0-100을 0-1로 변환 (50%가 중앙 = 기본 볼륨)
     // 50% = 기본 볼륨 (bgmGain * 1.0), 0% = 0 볼륨, 100% = bgmGain * 2.0
-    const fadeInTargetGain = settings.bgmGain * (fadeInRatio * 2); // 중앙 기준 증감
+    const bgmGainValue = clamp(settings.bgmGain, 0, 10, 0.5);
+    const fadeInTargetGain = clamp(bgmGainValue * (fadeInRatio * 2), 0.0001, 10, bgmGainValue); // 중앙 기준 증감
     bgmFadeInGain.gain.setValueAtTime(0.0001, bgmStartTime);
-    bgmFadeInGain.gain.exponentialRampToValueAtTime(fadeInTargetGain, bgmStartTime + Math.max(0.01, settings.fadeIn));
+    bgmFadeInGain.gain.exponentialRampToValueAtTime(fadeInTargetGain, bgmStartTime + Math.max(0.01, clamp(settings.fadeIn, 0, 60, 0.3)));
     lowShelf.connect(midPeaking);
     midPeaking.connect(highShelf);
     highShelf.connect(bgmFadeInGain);
     bgmFadeInGain.connect(bgmGain);
     bgmGain.gain.value = fadeInTargetGain; // 페이드인 후 유지
-  } else {
+  } else if (bgmBuffer && bgmGain && lowShelf && midPeaking && highShelf) {
     // 페이드인 없이 바로 연결
     lowShelf.connect(midPeaking);
     midPeaking.connect(highShelf);
     highShelf.connect(bgmGain);
-    bgmGain.gain.value = settings.bgmGain;
+    bgmGain.gain.value = clamp(settings.bgmGain, 0, 10, 0.5);
   }
 
   // BGM 종료 시 페이드아웃 적용
   // bgmTotalLen이 이미 계산되어 있음 (위에서 계산)
   // 음원증감 비율 적용: 50%가 기본값(원래 볼륨), 0-50%는 감소, 50-100%는 증가
-  const bgmEndTime = bgmTotalLen || renderDur;
-  if (bgmBuffer && settings.fadeOut > 0) {
+  if (bgmBuffer && bgmGain && settings.fadeOut > 0) {
+    const bgmEndTime = bgmTotalLen || renderDur;
     const bgmFadeOutGain = ctx.createGain();
-    const fadeOutRatio = (settings.fadeOutRatio ?? 50) / 100; // 0-100을 0-1로 변환 (50%가 중앙 = 기본 볼륨)
+    const fadeOutRatio = clamp(settings.fadeOutRatio ?? 50, 0, 100, 50) / 100; // 0-100을 0-1로 변환 (50%가 중앙 = 기본 볼륨)
     // 50% = 기본 볼륨 (bgmGain * 1.0), 0% = 0 볼륨, 100% = bgmGain * 2.0
-    const fadeOutStartGain = settings.bgmGain * (fadeOutRatio * 2); // 중앙 기준 증감
-    bgmFadeOutGain.gain.setValueAtTime(fadeOutStartGain, bgmEndTime - Math.max(0.01, settings.fadeOut));
+    const bgmGainValue = clamp(settings.bgmGain, 0, 10, 0.5);
+    const fadeOutStartGain = clamp(bgmGainValue * (fadeOutRatio * 2), 0.0001, 10, bgmGainValue); // 중앙 기준 증감
+    const fadeOutDuration = clamp(settings.fadeOut, 0, 60, 0.5);
+    bgmFadeOutGain.gain.setValueAtTime(fadeOutStartGain, bgmEndTime - Math.max(0.01, fadeOutDuration));
     bgmFadeOutGain.gain.exponentialRampToValueAtTime(0.0001, bgmEndTime);
     bgmGain.connect(bgmFadeOutGain);
     bgmFadeOutGain.connect(master);
-  } else {
+  } else if (bgmBuffer && bgmGain) {
     bgmGain.connect(master);
   }
 
   // TTS는 페이드 없이 바로 연결 (음량 유지)
   ttsGain.connect(master);
   effectGain.connect(master);
-  master.gain.value = settings.masterGain; // 마스터 게인은 상수로 유지
+  master.gain.value = clamp(settings.masterGain, 0, 10, 1.0); // 마스터 게인은 상수로 유지
   master.connect(ctx.destination);
 
   // 소스 생성 및 시작
-  if (bgmBuffer) {
+  if (bgmBuffer && lowShelf) {
     const bgmSrc = ctx.createBufferSource();
     bgmSrc.buffer = bgmBuffer;
     bgmSrc.connect(lowShelf);

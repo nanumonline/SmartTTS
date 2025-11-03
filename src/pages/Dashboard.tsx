@@ -1,11 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/contexts/AuthContext";
-import { Link } from "react-router-dom";
-// import HomeButton from "@/components/HomeButton"; // AppShell에서 Navigation 처리
+import { useNavigate } from "react-router-dom";
+import PageContainer from "@/components/layout/PageContainer";
+import PageHeader from "@/components/layout/PageHeader";
+import * as dbService from "@/services/dbService";
 import { 
   Mic2, 
   Radio, 
@@ -23,14 +25,140 @@ import {
   Building2,
   Plus,
   Download,
-  Eye
+  Eye,
+  FileText,
+  ClipboardList,
+  FileSearch,
+  LayoutDashboard,
 } from "lucide-react";
+
+type UsageStats = {
+  totalCalls: number;
+  totalDuration: number;
+  callsThisMonth: number;
+  durationThisMonth: number;
+  lastUpdated: string;
+};
+
+type CreditBalance = {
+  balance: number;
+  currency: string;
+  lastUpdated: string;
+};
+
+type OperationLog = {
+  id: number;
+  type: "error" | "warning" | "success" | "info";
+  message: string;
+  timestamp: string;
+  context?: any;
+  resolved?: boolean;
+};
 
 const Dashboard = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [recentGenerations, setRecentGenerations] = useState([]);
   const [scheduledBroadcasts, setScheduledBroadcasts] = useState([]);
   const { user } = useAuth();
+  const navigate = useNavigate();
+
+  // 사용량 & 크레딧 모니터링 상태
+  const [usageStats, setUsageStats] = useState<UsageStats>({
+    totalCalls: 0,
+    totalDuration: 0,
+    callsThisMonth: 0,
+    durationThisMonth: 0,
+    lastUpdated: new Date().toISOString(),
+  });
+  const [creditBalance, setCreditBalance] = useState<CreditBalance>({
+    balance: 0,
+    currency: "KRW",
+    lastUpdated: new Date().toISOString(),
+  });
+  const [operationLogs, setOperationLogs] = useState<OperationLog[]>([]);
+  const [isMonitoringPanelOpen, setIsMonitoringPanelOpen] = useState(false);
+  const usagePollingRef = useRef<number | null>(null);
+
+  // 고유 ID 생성
+  const generateUniqueId = (): number => {
+    const base = Date.now();
+    const random = Math.floor(Math.random() * 10000);
+    return base * 10000 + random;
+  };
+
+  const addOperationLog = (type: OperationLog["type"], message: string, context?: any) => {
+    const log: OperationLog = {
+      id: generateUniqueId(),
+      type,
+      message,
+      timestamp: new Date().toISOString(),
+      context,
+      resolved: false,
+    };
+    setOperationLogs((prev) => [log, ...prev].slice(0, 50)); // 최대 50개 유지
+  };
+
+  const fetchUsageStats = async () => {
+    try {
+      // Mock 데이터 (실제로는 Supabase Edge Function 호출)
+      const mockUsage: UsageStats = {
+        totalCalls: 1250,
+        totalDuration: 18750,
+        callsThisMonth: 450,
+        durationThisMonth: 6750,
+        lastUpdated: new Date().toISOString(),
+      };
+      setUsageStats(mockUsage);
+      addOperationLog("success", "사용량 데이터 업데이트 완료");
+    } catch (error: any) {
+      addOperationLog("error", `사용량 조회 실패: ${error.message}`);
+    }
+  };
+
+  const fetchCreditBalance = async () => {
+    try {
+      // Mock 데이터 (실제로는 Supabase Edge Function 호출)
+      const mockCredit: CreditBalance = {
+        balance: 45000,
+        currency: "KRW",
+        lastUpdated: new Date().toISOString(),
+      };
+      setCreditBalance(mockCredit);
+      // 임계치 체크
+      if (mockCredit.balance < 10000) {
+        addOperationLog("warning", "크레딧 잔액이 부족합니다. 충전이 필요합니다.");
+      } else if (mockCredit.balance < 50000) {
+        addOperationLog("info", "크레딧 잔액이 50% 이하입니다.");
+      }
+    } catch (error: any) {
+      addOperationLog("error", `크레딧 조회 실패: ${error.message}`);
+    }
+  };
+
+  const startUsagePolling = () => {
+    if (usagePollingRef.current) return; // 이미 실행 중이면 중복 방지
+    fetchUsageStats();
+    fetchCreditBalance();
+    // 30초마다 갱신
+    usagePollingRef.current = window.setInterval(() => {
+      fetchUsageStats();
+      fetchCreditBalance();
+    }, 30000);
+  };
+
+  const stopUsagePolling = () => {
+    if (usagePollingRef.current) {
+      window.clearInterval(usagePollingRef.current);
+      usagePollingRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    startUsagePolling();
+    return () => {
+      stopUsagePolling();
+    };
+  }, []);
 
   // 실제 통계 데이터
   const stats = {
@@ -108,8 +236,7 @@ const Dashboard = () => {
   };
 
   const handleCreateNewVoice = () => {
-    // 음성 생성 페이지로 이동
-    window.location.href = "/voice-generator";
+    navigate("/audio/tts");
   };
 
   const recentBroadcasts = [
@@ -141,87 +268,116 @@ const Dashboard = () => {
 
   const quickActions = [
     {
-      title: "음성 생성",
-      description: "새로운 방송 음성을 생성합니다",
+      title: "음원 바로 만들기",
+      description: "목적 선택부터 음원 생성까지",
       icon: Mic2,
       color: "text-blue-500",
       bgColor: "bg-blue-50",
-      href: "/voice-generator"
+      onClick: () => navigate("/audio/tts"),
     },
     {
-      title: "스케줄 관리",
-      description: "방송 스케줄을 관리합니다",
-      icon: Calendar,
-      color: "text-green-500",
-      bgColor: "bg-green-50",
-      href: "/schedule"
-    },
-    {
-      title: "통계 보기",
-      description: "방송 통계를 확인합니다",
-      icon: BarChart3,
+      title: "템플릿에서 시작",
+      description: "저장된 템플릿 사용",
+      icon: FileText,
       color: "text-purple-500",
       bgColor: "bg-purple-50",
-      href: "/analytics"
+      onClick: () => navigate("/scripts/templates"),
     },
     {
-      title: "설정",
-      description: "계정 및 서비스 설정",
-      icon: Settings,
-      color: "text-gray-500",
-      bgColor: "bg-gray-50",
-      href: "/settings"
-    }
+      title: "저장된 문구로",
+      description: "문구 목록에서 선택",
+      icon: ClipboardList,
+      color: "text-green-500",
+      bgColor: "bg-green-50",
+      onClick: () => navigate("/scripts"),
+    },
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
-      {/* Header */}
-      <div className="border-b border-border bg-background/80 backdrop-blur-lg">
-        <div className="container mx-auto px-4 py-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold gradient-text">대시보드</h1>
-              <p className="text-muted-foreground mt-1">AI 음성 방송 시스템 관리</p>
-              {user && (
-                <div className="mt-2 space-y-1">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Building2 className="w-4 h-4" />
-                    <span>{user.organization}</span>
-                    {user.department && <span>• {user.department}</span>}
-                    {user.position && <span>• {user.position}</span>}
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Users className="w-3 h-3" />
-                    <span>{user.name}님</span>
-                    <span>•</span>
-                    <span>{user.email}</span>
-                    <span>•</span>
-                    <Badge variant="outline" className="text-xs">
-                      {user.plan === 'basic' ? '기본' : 
-                       user.plan === 'standard' ? '표준' : 
-                       user.plan === 'premium' ? '프리미엄' : 
-                       user.plan === 'custom' ? '맞춤형' : user.plan}
-                    </Badge>
-                  </div>
-                </div>
-              )}
-            </div>
-            <div className="flex items-center gap-4">
-              <Badge variant="outline" className="px-3 py-1">
-                <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
-                서비스 정상
-              </Badge>
-              <Button variant="outline" size="sm">
-                <Settings className="w-4 h-4 mr-2" />
-                설정
-              </Button>
-            </div>
+    <PageContainer maxWidth="wide">
+      <PageHeader
+        title="대시보드"
+        description="AI 음성 방송 시스템 관리"
+        icon={LayoutDashboard}
+        showBreadcrumb={false}
+        action={{
+          label: "설정",
+          onClick: () => navigate("/settings"),
+          icon: Settings,
+        }}
+      />
+
+      {user && (
+        <div className="mb-6 space-y-2 p-4 bg-muted/30 rounded-lg">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Building2 className="w-4 h-4" />
+            <span>{user.organization}</span>
+            {user.department && <span>• {user.department}</span>}
+            {user.position && <span>• {user.position}</span>}
+          </div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Users className="w-3 h-3" />
+            <span>{user.name}님</span>
+            <span>•</span>
+            <span>{user.email}</span>
+            <span>•</span>
+            <Badge variant="outline" className="text-xs">
+              {user.plan === 'basic' ? '기본' : 
+               user.plan === 'standard' ? '표준' : 
+               user.plan === 'premium' ? '프리미엄' : 
+               user.plan === 'custom' ? '맞춤형' : user.plan}
+            </Badge>
           </div>
         </div>
-      </div>
+      )}
 
-      <div className="container mx-auto px-4 py-8">
+      <div className="space-y-8">
+        {/* 사용량 & 크레딧 모니터링 패널 (TTS 생성 페이지에서 이동) */}
+        <div className="mb-8 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-muted-foreground">이번 달 생성</span>
+                  <Badge variant="outline">{usageStats.callsThisMonth}회</Badge>
+                </div>
+                <div className="text-2xl font-bold">{Math.round(usageStats.durationThisMonth / 60)}분</div>
+                <div className="text-xs text-muted-foreground">전체: {usageStats.totalCalls}회 / {Math.round(usageStats.totalDuration / 3600)}시간</div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <div className="space-y-2">
+                <span className="text-sm font-medium text-muted-foreground">크레딧 잔액</span>
+                <div className={`text-2xl font-bold ${creditBalance.balance < 50000 ? "text-red-600" : creditBalance.balance < 100000 ? "text-orange-600" : "text-green-600"}`}>
+                  ₩{creditBalance.balance.toLocaleString()}
+                </div>
+                <div className="w-full bg-muted h-2 rounded-full overflow-hidden">
+                  <div className={`h-full transition-all ${creditBalance.balance < 50000 ? "bg-red-600" : "bg-green-600"}`} style={{ width: `${Math.min((creditBalance.balance / 500000) * 100, 100)}%` }} />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-muted-foreground">최근 로그</span>
+                  <Button size="sm" variant="ghost" onClick={() => setIsMonitoringPanelOpen(!isMonitoringPanelOpen)}>자세히</Button>
+                </div>
+                <div className="text-xs space-y-1">
+                  {operationLogs.slice(0, 3).map((log) => (
+                    <div key={log.id} className={`text-[11px] ${log.type === "error" ? "text-red-600" : log.type === "warning" ? "text-orange-600" : log.type === "success" ? "text-green-600" : "text-muted-foreground"}`}>
+                      • {log.message}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
         {/* Stats Overview */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <Card>
@@ -295,47 +451,49 @@ const Dashboard = () => {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <Button
-                  variant="gradient"
-                  className="w-full justify-start h-auto p-4"
-                  onClick={handleCreateNewVoice}
-                >
-                  <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center mr-3">
-                    <Plus className="w-5 h-5 text-primary" />
-                  </div>
-                  <div className="text-left">
-                    <p className="font-medium">새 음성 생성</p>
-                    <p className="text-sm text-primary-foreground/80">지금 바로 음성을 생성하세요</p>
-                  </div>
-                </Button>
+                {quickActions.map((action, idx) => (
+                  <Button
+                    key={idx}
+                    variant={idx === 0 ? "default" : "outline"}
+                    className={`w-full justify-start h-auto p-4 ${idx === 0 ? "bg-gradient-to-r from-primary to-accent text-white hover:opacity-90" : ""}`}
+                    onClick={action.onClick}
+                  >
+                    <div className={`w-10 h-10 ${idx === 0 ? "bg-white/20" : action.bgColor} rounded-lg flex items-center justify-center mr-3`}>
+                      <action.icon className={`w-5 h-5 ${idx === 0 ? "text-white" : action.color}`} />
+                    </div>
+                    <div className="text-left">
+                      <p className="font-medium">{action.title}</p>
+                      <p className={`text-sm ${idx === 0 ? "text-white/80" : "text-muted-foreground"}`}>{action.description}</p>
+                    </div>
+                  </Button>
+                ))}
                 
-                <Button
-                  variant="outline"
-                  className="w-full justify-start h-auto p-4"
-                  onClick={() => window.location.href = "/voice-cloning"}
-                >
-                  <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center mr-3">
-                    <Users className="w-5 h-5 text-blue-500" />
-                  </div>
-                  <div className="text-left">
-                    <p className="font-medium">보이스 클로닝</p>
-                    <p className="text-sm text-muted-foreground">커스텀 화자 생성</p>
-                  </div>
-                </Button>
-
-                <Button
-                  variant="outline"
-                  className="w-full justify-start h-auto p-4"
-                  onClick={() => window.location.href = "/schedule"}
-                >
-                  <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center mr-3">
-                    <Calendar className="w-5 h-5 text-green-500" />
-                  </div>
-                  <div className="text-left">
-                    <p className="font-medium">스케줄 관리</p>
-                    <p className="text-sm text-muted-foreground">방송 일정 관리</p>
-                  </div>
-                </Button>
+                <div className="pt-2 border-t">
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start"
+                    onClick={() => navigate("/audio/cloning")}
+                  >
+                    <Users className="w-4 h-4 mr-2" />
+                    보이스 클로닝
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start"
+                    onClick={() => navigate("/send/schedule")}
+                  >
+                    <Calendar className="w-4 h-4 mr-2" />
+                    스케줄 관리
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start"
+                    onClick={() => navigate("/audio/history")}
+                  >
+                    <FileSearch className="w-4 h-4 mr-2" />
+                    생성 내역
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -461,7 +619,7 @@ const Dashboard = () => {
           </Card>
         </div>
       </div>
-    </div>
+    </PageContainer>
   );
 };
 

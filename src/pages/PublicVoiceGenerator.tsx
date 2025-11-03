@@ -42,7 +42,9 @@ import {
   X,
   Minus,
   Activity,
-  BarChart3
+  BarChart3,
+  Music2,
+  AlertCircle
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -50,7 +52,9 @@ import { supabase } from "@/integrations/supabase/client";
 import AudioPlayer from "@/components/AudioPlayer";
 import WaveformCanvas from "@/components/WaveformCanvas";
 import { correctKoreanPostpositions } from "@/lib/koreanPostposition";
+import { removeMarkdown } from "@/lib/textUtils";
 import * as dbService from "@/services/dbService";
+import * as fileStorageService from "@/services/fileStorageService";
 import {
   exportMixToWav,
   decodeUrlToBuffer,
@@ -59,33 +63,12 @@ import {
   type MixingSettings,
   DEFAULT_MIXING_SETTINGS,
 } from "@/lib/audioMixer";
+import PageContainer from "@/components/layout/PageContainer";
+import { formatDateTime, purposeOptions, getPurposeMeta } from "@/lib/pageUtils";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { Stepper } from "@/components/ui/stepper";
 
-type CloneFormState = {
-  targetName: string;
-  baseVoiceId: string;
-  language: string;
-  memo: string;
-  sampleFile: File | null;
-  sampleName?: string;
-  youtubeUrl?: string;
-  sampleType?: "file" | "youtube";
-};
-
-type CloneRequest = {
-  id: number;
-  targetName: string;
-  baseVoiceId: string;
-  baseVoiceName: string;
-  language: string;
-  status: "processing" | "completed" | "failed";
-  createdAt: string;
-  completedAt?: string;
-  memo?: string;
-  sampleName?: string;
-  voiceId: string;
-  voiceName: string;
-  gender?: string;
-};
+// CloneFormState and CloneRequest 타입은 VoiceCloning.tsx로 이동됨
 
 type MixingAsset = {
   id: string;
@@ -143,36 +126,26 @@ type ReviewState = {
   updatedAt: string;
 };
 
-type UsageStats = {
-  totalCalls: number;
-  totalDuration: number;
-  callsThisMonth: number;
-  durationThisMonth: number;
-  lastUpdated: string;
-};
-
-type CreditBalance = {
-  balance: number;
-  currency: string;
-  lastUpdated: string;
-};
-
-type OperationLog = {
-  id: number;
-  type: "error" | "warning" | "success" | "info";
-  message: string;
-  timestamp: string;
-  context?: any;
-  resolved?: boolean;
-};
+// 사용량 및 크레딧 모니터링 타입 정의 제거 (Dashboard에서 관리)
+// type UsageStats = ...
+// type CreditBalance = ...
+// type OperationLog = ...
 
 const PublicVoiceGenerator = () => {
   const { user } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [selectedTemplate, setSelectedTemplate] = useState("");
   const [customText, setCustomText] = useState("");
   const [templateVariables, setTemplateVariables] = useState<Record<string, string>>({});
   const [selectedTemplateObj, setSelectedTemplateObj] = useState<any>(null);
+  const [dbTemplates, setDbTemplates] = useState<{ greeting: dbService.TemplateEntry[]; announcement: dbService.TemplateEntry[]; policy: dbService.TemplateEntry[] }>({
+    greeting: [],
+    announcement: [],
+    policy: [],
+  });
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
   const [openAIPrompt, setOpenAIPrompt] = useState("");
   const [openAIInstruction, setOpenAIInstruction] = useState("");
   const [lastAIPrompt, setLastAIPrompt] = useState("");
@@ -213,33 +186,21 @@ const PublicVoiceGenerator = () => {
   const [voiceTotalCount, setVoiceTotalCount] = useState<number | null>(null);
   const isAutoLoadingRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
+  const isInitialMountRef = useRef(true);
+  const loadFavoriteVoicesRef = useRef<boolean>(false); // 중복 호출 방지
+  const favoriteCheckTimerRef = useRef<number | null>(null);
   // cacheRef: blob 데이터를 저장하여 blob URL 만료 문제 해결
   const cacheRef = useRef<Map<string, { blob: Blob; duration: number | null; mimeType?: string; _audioUrl?: string }>>(new Map());
-  const cloneTimeoutsRef = useRef<number[]>([]);
   const [generationHistory, setGenerationHistory] = useState<any[]>([]);
   const [metaOverrides, setMetaOverrides] = useState<{ language: string; style: string; model: string }>({ language: "", style: "", model: "" });
   const [favoriteVoiceIds, setFavoriteVoiceIds] = useState<Set<string>>(new Set());
   const [selectedPurpose, setSelectedPurpose] = useState<string>("announcement");
-  const [cloneRequests, setCloneRequests] = useState<CloneRequest[]>([]);
-  const [isCloneModalOpen, setIsCloneModalOpen] = useState(false);
   const [alertDialog, setAlertDialog] = useState<{ open: boolean; title: string; message: string; onConfirm?: () => void }>({ open: false, title: "", message: "" });
   const [templateVariableWarning, setTemplateVariableWarning] = useState<{ open: boolean; variables: string[]; text: string }>({ open: false, variables: [], text: "" });
   
   // 끊어읽기 구간 추가 다이얼로그
   const [isPauseSegmentDialogOpen, setIsPauseSegmentDialogOpen] = useState(false);
   const [newPauseSegment, setNewPauseSegment] = useState({ position: 0, duration: 0.5 });
-  const createCloneForm = useCallback((overrides?: Partial<CloneFormState>): CloneFormState => ({
-    targetName: "",
-    baseVoiceId: "",
-    language: "ko",
-    memo: "",
-    sampleFile: null,
-    sampleName: undefined,
-    youtubeUrl: undefined,
-    sampleType: "file",
-    ...overrides,
-  }), []);
-  const [cloneForm, setCloneForm] = useState<CloneFormState>(() => createCloneForm());
 
   // Phase 3: 믹싱, 예약, 검수 상태 관리
   const [mixingStates, setMixingStates] = useState<Map<number, MixingState>>(new Map());
@@ -256,63 +217,26 @@ const PublicVoiceGenerator = () => {
   const [saveNameInput, setSaveNameInput] = useState("");
   const [pendingGeneration, setPendingGeneration] = useState<any>(null);
   const [uploadedBgmFile, setUploadedBgmFile] = useState<File | null>(null);
-  const [expandedGenerationId, setExpandedGenerationId] = useState<number | null>(null);
-  const [editingGenerationId, setEditingGenerationId] = useState<number | null>(null);
+  const [expandedGenerationId, setExpandedGenerationId] = useState<string | null>(null);
+  const [editingGenerationId, setEditingGenerationId] = useState<string | null>(null);
   const [editNameInput, setEditNameInput] = useState("");
   const [mixingPreviewAudio, setMixingPreviewAudio] = useState<HTMLAudioElement | null>(null);
   const [isMixingPreviewPlaying, setIsMixingPreviewPlaying] = useState(false);
   const [mixingPreviewProgress, setMixingPreviewProgress] = useState(0);
   // 실시간 미리듣기 오디오 소스 추적 (정지 시 명시적으로 중지하기 위해)
   const mixingAudioSourcesRef = useRef<{ ttsSource?: AudioBufferSourceNode; bgmSource?: AudioBufferSourceNode; intervalId?: number }>({});
-  // 클론 음성 미리듣기 관련 상태
-  const [clonePreviewText, setClonePreviewText] = useState<Record<number, string>>({}); // clone.id -> preview text
-  const [clonePreviewAudio, setClonePreviewAudio] = useState<Record<number, string | null>>({}); // clone.id -> preview audio URL
-  const [isGeneratingClonePreview, setIsGeneratingClonePreview] = useState<Record<number, boolean>>({}); // clone.id -> is generating
   // 정렬 관련 상태
   const [voiceSortBy, setVoiceSortBy] = useState<"name" | "language" | "gender" | "none">("none");
   const [voiceSortOrder, setVoiceSortOrder] = useState<"asc" | "desc">("asc");
   const [searchResultSortBy, setSearchResultSortBy] = useState<"name" | "language" | "gender" | "none">("none");
   const [searchResultSortOrder, setSearchResultSortOrder] = useState<"asc" | "desc">("asc");
-  const [cloneBaseVoiceSortBy, setCloneBaseVoiceSortBy] = useState<"name" | "language" | "gender" | "none">("none");
-  const [cloneBaseVoiceSortOrder, setCloneBaseVoiceSortOrder] = useState<"asc" | "desc">("asc");
-  // 클론 음성 튜닝 관련 상태
-  const [selectedCloneForTuning, setSelectedCloneForTuning] = useState<number | null>(null);
-  const [isCloneTuningModalOpen, setIsCloneTuningModalOpen] = useState(false);
-  const [cloneTuningSettings, setCloneTuningSettings] = useState<Record<number, {
-    speed: number;
-    pitch: number;
-    style: string;
-    language: string;
-    emotion?: string;
-  }>>({});
-  const [cloneTuningPreviewAudio, setCloneTuningPreviewAudio] = useState<Record<number, string | null>>({});
-  const [isGeneratingCloneTuning, setIsGeneratingCloneTuning] = useState<Record<number, boolean>>({});
-  // 파형 비교 관련 상태
-  const [isWaveformComparisonOpen, setIsWaveformComparisonOpen] = useState(false);
-  const [selectedCloneForWaveform, setSelectedCloneForWaveform] = useState<number | null>(null);
-  const [waveformComparisonData, setWaveformComparisonData] = useState<Record<number, {
-    original?: AudioBuffer;
-    cloned?: AudioBuffer;
-    originalUrl?: string;
-    clonedUrl?: string;
-  }>>({});
 
-  // Phase 4: 사용량 및 크레딧 모니터링
-  const [usageStats, setUsageStats] = useState<UsageStats>({
-    totalCalls: 0,
-    totalDuration: 0,
-    callsThisMonth: 0,
-    durationThisMonth: 0,
-    lastUpdated: new Date().toISOString(),
-  });
-  const [creditBalance, setCreditBalance] = useState<CreditBalance>({
-    balance: 0,
-    currency: "KRW",
-    lastUpdated: new Date().toISOString(),
-  });
-  const [operationLogs, setOperationLogs] = useState<OperationLog[]>([]);
-  const [isMonitoringPanelOpen, setIsMonitoringPanelOpen] = useState(false);
-  const usagePollingRef = useRef<number | null>(null);
+  // Phase 4: 사용량 및 크레딧 모니터링 (제거: Dashboard에서 관리)
+  // const [usageStats, setUsageStats] = useState<UsageStats>({...});
+  // const [creditBalance, setCreditBalance] = useState<CreditBalance>({...});
+  // const [operationLogs, setOperationLogs] = useState<OperationLog[]>([]);
+  // const [isMonitoringPanelOpen, setIsMonitoringPanelOpen] = useState(false);
+  // const usagePollingRef = useRef<number | null>(null);
 
   // 믹싱 자산 라이브러리 (사전정의 - 비어있음, 사용자 업로드만 사용)
   const mixingAssetLibrary: MixingAsset[] = [];
@@ -513,36 +437,7 @@ const PublicVoiceGenerator = () => {
     return genderOptions.filter(opt => foundGenders.has(opt.value));
   }, [allVoices]);
 
-  const purposeOptions = [
-    {
-      id: "announcement",
-      label: "공지",
-      description: "긴급 안내·재난 알림 등 즉시 전파가 필요한 방송",
-      checklist: ["대상과 지역을 명확히 언급했는가?", "비상 연락처를 포함했는가?", "지시 사항이 명확한가?"],
-      optimizedPrompt: "공지 목적에 맞는 방송문을 작성하세요. 대상과 지역을 명확히 언급하고, 비상 연락처를 포함하며, 지시 사항을 명확하게 전달해야 합니다.",
-    },
-    {
-      id: "event",
-      label: "행사 축사",
-      description: "시장·도지사 등 주요 인사의 행사 축사",
-      checklist: ["행사명/일시/장소를 포함했는가?", "감사 인사와 기대 메시지가 있는가?", "기관 identity가 드러나는가?"],
-      optimizedPrompt: "행사 축사 목적에 맞는 방송문을 작성하세요. 행사명, 일시, 장소를 포함하고, 감사 인사와 기대 메시지를 담으며, 기관 identity가 드러나도록 작성해야 합니다.",
-    },
-    {
-      id: "promotion",
-      label: "홍보/광고",
-      description: "관광·정책·캠페인 홍보 방송",
-      checklist: ["핵심 메시지가 3문장 이내로 명확한가?", "콜 투 액션이 있는가?", "대상 채널에 맞는 톤인가?"],
-      optimizedPrompt: "홍보/광고 목적에 맞는 방송문을 작성하세요. 핵심 메시지를 3문장 이내로 명확하게 전달하고, 콜 투 액션을 포함하며, 대상 채널에 맞는 톤으로 작성해야 합니다.",
-    },
-    {
-      id: "service",
-      label: "서비스 안내",
-      description: "민원·공공서비스 이용 안내",
-      checklist: ["접수 방법과 운영시간을 포함했는가?", "필수 서류/준비물을 안내했는가?", "문의 경로를 제시했는가?"],
-      optimizedPrompt: "서비스 안내 목적에 맞는 방송문을 작성하세요. 접수 방법과 운영시간을 포함하고, 필수 서류/준비물을 안내하며, 문의 경로를 명확하게 제시해야 합니다.",
-    },
-  ];
+  // purposeOptions는 pageUtils에서 가져옴
 
   // Supertone API 엔드포인트 (공식 레퍼런스: https://docs.supertoneapi.com/en/api-reference/introduction)
   const SUPABASE_PROXY_BASE_URL = "https://gxxralruivyhdxyftsrg.supabase.co/functions/v1/supertone-proxy";
@@ -582,7 +477,7 @@ const PublicVoiceGenerator = () => {
     "빠름": "1.3"
   };
 
-  const getPurposeMeta = (purposeId: string) => purposeOptions.find((p) => p.id === purposeId) || purposeOptions[0];
+  // getPurposeMeta는 pageUtils에서 가져옴
 
   const getVoiceMeta = (voiceId: string) => {
     if (!voiceId) return null;
@@ -596,59 +491,7 @@ const PublicVoiceGenerator = () => {
     return meta?.name || voiceId || "-";
   };
 
-  const registerCloneVoice = (clone: CloneRequest) => {
-    if (!clone?.voiceId) return;
-    const base = getVoiceMeta(clone.baseVoiceId);
-    const baseLanguages = base?.language
-      ? (Array.isArray(base.language) ? base.language : [base.language])
-      : [clone.language || "ko"];
-    const baseStyles = base?.styles
-      ? (Array.isArray(base.styles) ? base.styles : [base.styles])
-      : ["neutral"];
-    const gender = clone.gender || (base as any)?.gender || "neutral";
-    const samples = base?.samples || [];
-    const newVoice = {
-      voice_id: clone.voiceId,
-      name: clone.voiceName,
-      language: baseLanguages,
-      styles: baseStyles,
-      gender,
-      samples,
-      is_clone: true,
-      clone_of: clone.baseVoiceId,
-    };
-    setAllVoices((prev) => {
-      const exists = prev.some((v: any) => v.voice_id === clone.voiceId);
-      if (exists) return prev;
-      return [...prev, newVoice];
-    });
-    setAvailableVoices((prev) => {
-      const exists = prev.some((v: any) => v.voice_id === clone.voiceId);
-      if (exists) return prev;
-      return [...prev, newVoice];
-    });
-    
-    // 즐겨찾기에 클론 음성이 있고, allVoices에 추가된 경우 즐겨찾기 드롭다운에 표시되도록 함
-    if (favoriteVoiceIds.has(clone.voiceId)) {
-      // 이미 즐겨찾기에 있으므로 자동으로 표시됨
-      console.log(`클론 음성 즐겨찾기 등록: ${clone.voiceId} (${clone.voiceName})`);
-    }
-  };
-
-  const openCloneModal = (baseVoiceId?: string) => {
-    const base = baseVoiceId ? getVoiceMeta(baseVoiceId) : getVoiceMeta(selectedVoice);
-    const baseId = (base as any)?.voice_id || baseVoiceId || selectedVoice || "";
-    const firstLanguage = base
-      ? normalizeLanguage(Array.isArray(base.language) ? base.language[0] : base.language)
-      : cloneForm.language;
-    setCloneForm(createCloneForm({
-      baseVoiceId: baseId,
-      targetName: base?.name ? `${base.name} 클론` : "",
-      language: firstLanguage || cloneForm.language,
-      memo: "",
-    }));
-    setIsCloneModalOpen(true);
-  };
+  // registerCloneVoice와 openCloneModal은 VoiceCloning.tsx로 이동됨
 
   const openMixingModal = (generation: any) => {
     if (!generation?.id) {
@@ -932,7 +775,7 @@ const PublicVoiceGenerator = () => {
       mixingAudioSourcesRef.current.intervalId = progressInterval;
 
     } catch (error: any) {
-      console.error("실시간 미리듣기 오류:", error);
+      // 실시간 미리듣기 오류 (무시 가능)
       toast({
         title: "미리듣기 실패",
         description: error.message || "실시간 미리듣기 중 오류가 발생했습니다.",
@@ -981,7 +824,7 @@ const PublicVoiceGenerator = () => {
         mixingPreviewAudio.currentTime = 0;
       }
     } catch (e) {
-      console.warn("미리듣기 중지 중 오류:", e);
+      // 미리듣기 중지 중 오류 (무시 가능)
     } finally {
       setIsMixingPreviewPlaying(false);
       setMixingPreviewProgress(0);
@@ -1060,7 +903,7 @@ const PublicVoiceGenerator = () => {
         description: "믹싱된 음원이 생성되었습니다.",
       });
     } catch (error: any) {
-      console.error("믹싱 오류:", error);
+      // 믹싱 오류 (무시 가능)
       toast({
         title: "믹싱 실패",
         description: error.message || "믹싱 중 오류가 발생했습니다.",
@@ -1183,73 +1026,6 @@ const PublicVoiceGenerator = () => {
     toast({ title: "검수 상태 변경", description: `상태: ${newStatus}` });
   };
 
-  const addOperationLog = (type: OperationLog["type"], message: string, context?: any) => {
-    const log: OperationLog = {
-      id: generateUniqueId(),
-      type,
-      message,
-      timestamp: new Date().toISOString(),
-      context,
-      resolved: false,
-    };
-    setOperationLogs((prev) => [log, ...prev].slice(0, 50)); // 최대 50개 유지
-  };
-
-  const fetchUsageStats = async () => {
-    try {
-      // Mock 데이터 (실제로는 Supabase Edge Function 호출)
-      const mockUsage: UsageStats = {
-        totalCalls: 1250,
-        totalDuration: 18750,
-        callsThisMonth: 450,
-        durationThisMonth: 6750,
-        lastUpdated: new Date().toISOString(),
-      };
-      setUsageStats(mockUsage);
-      addOperationLog("success", "사용량 데이터 업데이트 완료");
-    } catch (error: any) {
-      addOperationLog("error", `사용량 조회 실패: ${error.message}`);
-    }
-  };
-
-  const fetchCreditBalance = async () => {
-    try {
-      // Mock 데이터 (실제로는 Supabase Edge Function 호출)
-      const mockCredit: CreditBalance = {
-        balance: 45000,
-        currency: "KRW",
-        lastUpdated: new Date().toISOString(),
-      };
-      setCreditBalance(mockCredit);
-      // 임계치 체크
-      if (mockCredit.balance < 10000) {
-        addOperationLog("warning", "크레딧 잔액이 부족합니다. 충전이 필요합니다.");
-      } else if (mockCredit.balance < 50000) {
-        addOperationLog("info", "크레딧 잔액이 50% 이하입니다.");
-      }
-    } catch (error: any) {
-      addOperationLog("error", `크레딧 조회 실패: ${error.message}`);
-    }
-  };
-
-  const startUsagePolling = () => {
-    if (usagePollingRef.current) return; // 이미 실행 중이면 중복 방지
-    fetchUsageStats();
-    fetchCreditBalance();
-    // 30초마다 갱신
-    usagePollingRef.current = window.setInterval(() => {
-      fetchUsageStats();
-      fetchCreditBalance();
-    }, 30000);
-  };
-
-  const stopUsagePolling = () => {
-    if (usagePollingRef.current) {
-      window.clearInterval(usagePollingRef.current);
-      usagePollingRef.current = null;
-    }
-  };
-
   // 데이터 검증 헬퍼 함수
   const validateText = (text: string): { valid: boolean; error?: string } => {
     if (!text || !text.trim()) return { valid: false, error: "텍스트를 입력해주세요" };
@@ -1280,35 +1056,7 @@ const PublicVoiceGenerator = () => {
     return { valid: true };
   };
 
-  const validateCloneForm = (): { valid: boolean; error?: string } => {
-    if (!cloneForm.targetName.trim()) {
-      return { valid: false, error: "클론 대상 이름을 입력해주세요 (2~100자)" };
-    }
-    if (cloneForm.targetName.length < 2 || cloneForm.targetName.length > 100) {
-      return { valid: false, error: "이름은 2~100자 사이여야 합니다" };
-    }
-    if (!cloneForm.baseVoiceId) {
-      return { valid: false, error: "기준 음성을 선택해주세요" };
-    }
-    
-    // 파일 또는 유튜브 링크 중 하나는 필수
-    if (cloneForm.sampleType === "youtube") {
-      if (!cloneForm.youtubeUrl) {
-        return { valid: false, error: "유튜브 링크를 입력해주세요" };
-      }
-      const youtubeCheck = validateYoutubeUrl(cloneForm.youtubeUrl);
-      if (!youtubeCheck.valid) return youtubeCheck;
-    } else {
-      if (!cloneForm.sampleFile && !cloneForm.sampleName) {
-        return { valid: false, error: "샘플 음성 파일을 업로드해주세요" };
-      }
-      if (cloneForm.sampleFile) {
-        const fileCheck = validateFile(cloneForm.sampleFile);
-        if (!fileCheck.valid) return fileCheck;
-      }
-    }
-    return { valid: true };
-  };
+  // validateCloneForm은 VoiceCloning.tsx로 이동됨
 
   const validateScheduleForm = (form: any): { valid: boolean; error?: string } => {
     if (!form.channel) return { valid: false, error: "전송 채널을 선택해주세요" };
@@ -1319,78 +1067,12 @@ const PublicVoiceGenerator = () => {
     return { valid: true };
   };
 
-  const handleCloneSubmit = () => {
-    const validation = validateCloneForm();
-    if (!validation.valid) {
-      toast({ title: "입력 오류", description: validation.error, variant: "destructive" });
-      addOperationLog("warning", `클론 요청 실패: ${validation.error}`);
-      return;
-    }
-
-    const base = getVoiceMeta(cloneForm.baseVoiceId);
-    // 유튜브 비디오 ID 추출
-    const extractYoutubeVideoId = (url: string): string => {
-      const patterns = [
-        /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([^&\n?#]+)/,
-        /youtube\.com\/watch\?.*v=([^&\n?#]+)/
-      ];
-      for (const pattern of patterns) {
-        const match = url.match(pattern);
-        if (match && match[1]) return match[1];
-      }
-      return 'video';
-    };
-    const sampleName = cloneForm.sampleType === "youtube" 
-      ? `youtube_${cloneForm.youtubeUrl ? extractYoutubeVideoId(cloneForm.youtubeUrl) : 'video'}.mp3`
-      : (cloneForm.sampleFile?.name || cloneForm.sampleName || "sample.wav");
-    const id = generateUniqueId();
-    const voiceId = `clone_${id}`;
-    const voiceName = `${cloneForm.targetName.trim()} (클론)`;
-    const newClone: CloneRequest = {
-      id,
-      targetName: cloneForm.targetName.trim(),
-      baseVoiceId: cloneForm.baseVoiceId,
-      baseVoiceName: base?.name || getVoiceDisplayName(cloneForm.baseVoiceId),
-      language: cloneForm.language || "ko",
-      status: "processing",
-      createdAt: new Date().toISOString(),
-      memo: cloneForm.memo,
-      sampleName,
-      voiceId,
-      voiceName,
-      gender: (base as any)?.gender || "neutral",
-    };
-
-    setCloneRequests((prev) => [newClone, ...prev]);
-    setIsCloneModalOpen(false);
-    setCloneForm(createCloneForm({ language: cloneForm.language }));
-
-    toast({ title: "클로닝 요청 접수", description: `${voiceName}를 분석 중입니다.` });
-    addOperationLog("info", `클론 생성 시작: ${voiceName}`);
-
-    const timer = window.setTimeout(() => {
-      const completionTime = new Date().toISOString();
-      const completedClone: CloneRequest = { ...newClone, status: "completed", completedAt: completionTime };
-      setCloneRequests((prev) => prev.map((cl) => (cl.id === newClone.id ? completedClone : cl)));
-      registerCloneVoice(completedClone);
-      toast({ title: "클로닝 완료", description: `${completedClone.voiceName} 음성이 추가되었습니다.` });
-      addOperationLog("success", `클론 생성 완료: ${voiceName}`);
-    }, 1500);
-
-    cloneTimeoutsRef.current.push(timer);
-  };
+  // handleCloneSubmit은 VoiceCloning.tsx로 이동됨
 
 
   const purposeMeta = getPurposeMeta(selectedPurpose);
 
-  const formatDateTime = (iso?: string) => {
-    if (!iso) return "-";
-    try {
-      return new Date(iso).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
-    } catch {
-      return iso;
-    }
-  };
+  // formatDateTime은 pageUtils에서 가져옴
 
   // 고유 ID 생성 (중복 방지)
   const generateUniqueId = (): number => {
@@ -1607,12 +1289,12 @@ const PublicVoiceGenerator = () => {
         const normalized = dbHistory.map((item: any) => {
           // Blob URL 복원 (우선순위: audioBlob > cacheRef > audioUrl)
           let audioUrl: string | null = null;
-          let cacheKey = item.cacheKey || `${item.id}_${Date.now()}`;
-          
+          let cacheKey = item.cacheKey || (item.paramHash ? `hash_${item.paramHash}` : `${item.id}_${Date.now()}`);
+
           // 1. DB에 audioBlob이 있으면 항상 사용 (가장 확실)
           if (item.audioBlob) {
             try {
-              const blob = dbService.arrayBufferToBlob(item.audioBlob);
+              const blob = dbService.arrayBufferToBlob(item.audioBlob, item.mimeType || "audio/mpeg");
               audioUrl = URL.createObjectURL(blob);
               // cacheRef에도 저장 (다음 복원을 위해)
               cacheRef.current.set(cacheKey, { 
@@ -1622,10 +1304,10 @@ const PublicVoiceGenerator = () => {
                 _audioUrl: audioUrl 
               });
             } catch (e) {
-              console.warn(`Blob 복원 실패 (id: ${item.id}):`, e);
+              // Blob 복원 실패 (무시 가능)
             }
           }
-          
+
           // 2. cacheRef에서 blob 데이터 확인
           if (!audioUrl && cacheKey) {
             const cached = cacheRef.current.get(cacheKey);
@@ -1638,21 +1320,29 @@ const PublicVoiceGenerator = () => {
                 audioUrl = URL.createObjectURL(cached.blob);
                 cacheRef.current.set(cacheKey, { ...cached, _audioUrl: audioUrl });
               } catch (e) {
-                console.warn(`CacheRef blob URL 생성 실패 (key: ${cacheKey}):`, e);
+                // CacheRef blob URL 생성 실패 (무시 가능)
               }
             }
           }
-          
+
           // 3. audioUrl이 blob: URL이 아니면 사용 (외부 URL 등)
           if (!audioUrl && item.audioUrl && !item.audioUrl.startsWith('blob:')) {
             audioUrl = item.audioUrl;
           }
-          
-          // 4. 만료된 blob: URL이면 null로 설정 (나중에 복원)
-          if (!audioUrl && item.audioUrl && item.audioUrl.startsWith('blob:')) {
-            console.warn(`만료된 blob URL 감지 (id: ${item.id}), 복원 시도 필요`);
-            // 나중에 복원을 위해 cacheKey 유지
+
+          // 4. 만료된 blob URL은 null로 설정 (복원 불가능한 경우)
+          // audioBlob이 null이고 cacheRef에도 없으면 blob URL을 null로 설정하여 브라우저가 접근 시도하지 않도록 함
+          if (item.audioUrl && item.audioUrl.startsWith('blob:') && !audioUrl) {
+            // audioBlob이 없고 cacheRef에도 없으면 복원 불가능 - null로 설정
+            audioUrl = null;
           }
+          
+          // 5. audioBlob이 null이고 audioUrl이 blob: URL인 경우 명시적으로 null 설정
+          if (!item.audioBlob && item.audioUrl && item.audioUrl.startsWith('blob:') && !cacheRef.current.has(cacheKey)) {
+            audioUrl = null;
+          }
+
+          const format = item.format || (item.mimeType?.includes('wav') ? 'wav' : 'mp3');
 
           return {
             id: item.id || generateUniqueId(),
@@ -1665,11 +1355,19 @@ const PublicVoiceGenerator = () => {
             status: item.status || "ready",
             hasAudio: item.hasAudio !== false,
             language: item.language || "",
+            model: item.model || "",
+            style: item.style || "",
+            speed: item.speed ?? 1.0,
+            pitchShift: item.pitchShift ?? 0,
             textPreview: item.textPreview || "",
+            textLength: item.textLength ?? (item.textPreview ? item.textPreview.length : 0),
             cacheKey: cacheKey, // 항상 cacheKey 설정 (복원을 위해)
             savedName: item.savedName || null,
             audioUrl,
             mimeType: item.mimeType || "audio/mpeg",
+            storagePath: item.storagePath || null,
+            format,
+            paramHash: item.paramHash || null,
           };
         });
         setGenerationHistory(normalized);
@@ -1678,7 +1376,7 @@ const PublicVoiceGenerator = () => {
         const restoredCount = normalized.filter((n: any) => n.audioUrl).length;
         const totalCount = normalized.length;
         if (restoredCount < totalCount) {
-          console.warn(`일부 음원 복원 실패: ${restoredCount}/${totalCount} 복원됨`);
+          // 일부 음원 복원 실패
         }
       }
 
@@ -1697,29 +1395,7 @@ const PublicVoiceGenerator = () => {
         // voiceSettings는 나중에 적용
       }
 
-      // 클론 요청
-      const clones = await dbService.loadCloneRequests(user.id);
-      if (clones.length > 0) {
-        const normalized: CloneRequest[] = clones.map((item: any) => ({
-          id: parseInt(item.id?.replace(/-/g, "").substring(0, 10) || `${Date.now()}`),
-          targetName: item.targetName,
-          baseVoiceId: item.baseVoiceId,
-          baseVoiceName: item.baseVoiceName,
-          language: item.language || "ko",
-          status: item.status === "processing" ? "processing" : "completed",
-          createdAt: item.createdAt || new Date().toISOString(),
-          completedAt: item.completedAt,
-          memo: item.memo || "",
-          sampleName: item.sampleName || "",
-          voiceId: item.voiceId || `clone_${item.id}`,
-          voiceName: item.voiceName || `${item.baseVoiceName} 클론`,
-          gender: item.gender,
-        }));
-        setCloneRequests(normalized);
-        normalized
-          .filter((clone) => clone.status === "completed")
-          .forEach((clone) => registerCloneVoice({ ...clone, status: "completed" }));
-      }
+      // 클론 요청은 VoiceCloning.tsx에서 로드함
 
       // 믹싱 상태
       const mixingMap = await dbService.loadMixingStates(user.id);
@@ -1781,7 +1457,7 @@ const PublicVoiceGenerator = () => {
         setMessageHistory(normalized.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()));
       }
     } catch (error: any) {
-      console.error("DB에서 데이터 로드 실패:", error);
+      // DB에서 데이터 로드 실패 (무시 가능)
     }
   }, [user?.id]);
 
@@ -1796,7 +1472,7 @@ const PublicVoiceGenerator = () => {
         return;
       }
 
-      console.log("LocalStorage에서 DB로 데이터 마이그레이션 시작...");
+      // LocalStorage에서 DB로 데이터 마이그레이션 시작
 
       // 생성 이력 마이그레이션
       const historyRaw = localStorage.getItem(HISTORY_STORAGE_KEY);
@@ -1893,14 +1569,14 @@ const PublicVoiceGenerator = () => {
       // 마이그레이션 완료 플래그 설정
       localStorage.setItem(MIGRATION_FLAG_KEY, "true");
       setHasMigratedLocalStorage(true);
-      console.log("LocalStorage 마이그레이션 완료");
+      // LocalStorage 마이그레이션 완료
       
       toast({
         title: "데이터베이스 마이그레이션 완료",
         description: "모든 데이터가 안전하게 저장되었습니다.",
       });
     } catch (error: any) {
-      console.error("마이그레이션 실패:", error);
+      // 마이그레이션 실패 (무시 가능)
     }
   }, [user?.id, hasMigratedLocalStorage]);
 
@@ -1965,7 +1641,8 @@ const PublicVoiceGenerator = () => {
       if (cloneRaw) {
         const parsed = JSON.parse(cloneRaw);
         if (Array.isArray(parsed)) {
-          const normalized: CloneRequest[] = parsed.map((item: any, index: number) => {
+          // CloneRequest 타입은 VoiceCloning.tsx로 이동했으므로 any[] 사용
+          const normalized: any[] = parsed.map((item: any, index: number) => {
             const id = item.id || generateUniqueId() + index;
             const baseId = item.baseVoiceId || item.base_voice_id || "";
             const baseName = item.baseVoiceName || item.base_voice_name || getVoiceDisplayName(baseId);
@@ -1986,10 +1663,7 @@ const PublicVoiceGenerator = () => {
               gender: item.gender || undefined,
             };
           });
-          setCloneRequests(normalized);
-          normalized
-            .filter((clone) => clone.status === "completed" || !clone.status)
-            .forEach((clone) => registerCloneVoice({ ...clone, status: "completed" }));
+          // 클론 요청은 VoiceCloning.tsx에서 처리함
         }
       }
     } catch {}
@@ -1998,7 +1672,7 @@ const PublicVoiceGenerator = () => {
   useEffect(() => {
     if (user?.id && selectedPurpose) {
       // DB에 저장
-      dbService.saveUserSettings(user.id, { selectedPurpose }).catch(err => console.error("설정 저장 실패:", err));
+      dbService.saveUserSettings(user.id, { selectedPurpose }).catch(() => {});
     }
     // localStorage도 업데이트 (폴백)
     try {
@@ -2008,11 +1682,7 @@ const PublicVoiceGenerator = () => {
     } catch {}
   }, [selectedPurpose, user?.id]);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(CLONE_STORAGE_KEY, JSON.stringify(cloneRequests));
-    } catch {}
-  }, [cloneRequests]);
+  // cloneRequests는 VoiceCloning.tsx에서 관리함
 
   useEffect(() => {
     try {
@@ -2056,20 +1726,79 @@ const PublicVoiceGenerator = () => {
     } catch {}
   }, [mixingStates, scheduleRequests, reviewStates]);
 
-  const pushHistory = async (entry: any) => {
+  const pushHistory = async (entry: any): Promise<any> => {
     if (!user?.id) {
       // 로그인하지 않은 경우 localStorage에만 저장 (임시)
       try {
         const next = [entry, ...generationHistory].slice(0, 100);
         setGenerationHistory(next);
         localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(next));
+        return { ...entry, id: entry.id || generateUniqueId() };
       } catch {}
-      return;
+      return { ...entry, id: entry.id || generateUniqueId() };
     }
 
     try {
       // DB에 저장
-      const audioBlob = entry.cacheKey ? cacheRef.current.get(entry.cacheKey)?.blob : null;
+      // cacheKey에서 blob 가져오기 (우선순위)
+      let audioBlob: Blob | null = null;
+      if (entry.cacheKey) {
+        const cached = cacheRef.current.get(entry.cacheKey);
+        audioBlob = cached?.blob || null;
+      }
+      
+      // finalCacheKey 결정 (entry.cacheKey가 있으면 사용, 없으면 생성)
+      let finalCacheKey = entry.cacheKey || `saved_${entry.id || Date.now()}_${generateUniqueId()}`;
+      
+      // cacheKey가 없거나 blob이 없으면 audioUrl에서 가져오기 시도
+      if (!audioBlob && entry.audioUrl && entry.audioUrl.startsWith('blob:')) {
+        try {
+          const response = await fetch(entry.audioUrl);
+          if (response.ok) {
+            audioBlob = await response.blob();
+            // blob을 cacheRef에 저장 (다음 복원을 위해)
+            cacheRef.current.set(finalCacheKey, {
+              blob: audioBlob,
+              duration: entry.duration || null,
+              mimeType: entry.mimeType || audioBlob.type || "audio/mpeg",
+              _audioUrl: entry.audioUrl,
+            });
+            // entry에 cacheKey 업데이트
+            entry.cacheKey = finalCacheKey;
+          }
+        } catch (e) {
+          console.warn("audioUrl에서 blob 가져오기 실패:", e);
+        }
+      }
+      
+      // mimeType 정보 포함
+      const mimeType = entry.mimeType || (audioBlob?.type || "audio/mpeg");
+      
+      // 실제 파일 저장 (로컬 파일 시스템)
+      let actualStoragePath = entry.storagePath || null;
+      if (audioBlob && entry.storagePath) {
+        try {
+          // 사용자 설정에서 저장 경로 가져오기
+          const userSettings = await dbService.loadUserSettings(user.id);
+          const rootPath = userSettings?.storagePath || null;
+          
+          // 파일 저장
+          const savedFilePath = await fileStorageService.saveAudioFile(
+            entry.storagePath,
+            audioBlob,
+            rootPath
+          );
+          
+          // 저장된 전체 경로 사용 (Electron) 또는 상대 경로 유지 (브라우저)
+          if (savedFilePath) {
+            actualStoragePath = savedFilePath;
+          }
+        } catch (fileError) {
+          console.warn("파일 저장 실패 (DB는 저장됨):", fileError);
+          // 파일 저장 실패해도 DB 저장은 계속 진행
+        }
+      }
+      
       const dbEntry: dbService.GenerationEntry = {
         purpose: entry.purpose || "announcement",
         purposeLabel: entry.purposeLabel,
@@ -2077,45 +1806,74 @@ const PublicVoiceGenerator = () => {
         voiceName: entry.voiceName,
         savedName: entry.savedName || null,
         textPreview: entry.textPreview || "",
-        textLength: entry.textPreview?.length || 0,
-        duration: entry.duration || null,
+        textLength: entry.textLength ?? entry.textPreview?.length ?? 0,
+        duration: entry.duration ?? null,
         language: entry.language || "ko",
-        cacheKey: entry.cacheKey || "",
+        model: entry.model,
+        style: entry.style,
+        speed: entry.speed,
+        pitchShift: entry.pitchShift,
+        cacheKey: finalCacheKey,
         audioUrl: entry.audioUrl || null,
+        storagePath: actualStoragePath, // 실제 저장된 경로 사용
+        format: entry.format || null,
+        paramHash: entry.paramHash || null,
         status: entry.status || "ready",
         hasAudio: entry.hasAudio !== false,
+        mimeType: mimeType,
       };
+
       const dbId = await dbService.saveGeneration(user.id, dbEntry, audioBlob);
-      
-      // 로컬 상태 업데이트
-      const next = [{ ...entry, id: dbId || entry.id }, ...generationHistory].slice(0, 100);
+
+      // 로컬 상태 업데이트 (cacheKey와 mimeType 포함)
+      const savedEntry = { 
+        ...entry, 
+        id: dbId || entry.id || generateUniqueId(),
+        cacheKey: finalCacheKey,
+        mimeType: mimeType,
+        storagePath: entry.storagePath || null,
+        format: entry.format || null,
+        paramHash: entry.paramHash || null,
+        textLength: dbEntry.textLength,
+      };
+      const next = [savedEntry, ...generationHistory.filter((g) => String(g.id) !== String(savedEntry.id))].slice(0, 100);
       setGenerationHistory(next);
+
+      // 성공 토스트
+      console.log(`음원 저장 완료: ${savedEntry.id}, blob: ${audioBlob ? '있음' : '없음'}`);
+
+      return savedEntry;
     } catch (error: any) {
-      console.error("생성 이력 저장 실패:", error);
+      console.error("pushHistory 저장 실패:", error);
+      // 생성 이력 저장 실패 (무시 가능)
       // 실패 시 localStorage에 저장 (폴백)
       try {
-        const next = [entry, ...generationHistory].slice(0, 100);
+        const savedEntry = { ...entry, id: entry.id || generateUniqueId() };
+        const next = [savedEntry, ...generationHistory].slice(0, 100);
         setGenerationHistory(next);
         localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(next));
-      } catch {}
+        return savedEntry;
+      } catch {
+        return { ...entry, id: entry.id || generateUniqueId() };
+      }
     }
   };
 
   // 음원 삭제 확인
-  const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{ open: boolean; id: number | null }>({ open: false, id: null });
+  const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{ open: boolean; id: string | null }>({ open: false, id: null });
 
   // 음원 삭제
-  const deleteGeneration = async (id: number) => {
+  const deleteGeneration = async (id: string) => {
     if (user?.id) {
       // DB에서 삭제
-      const entry = generationHistory.find((g) => g.id === id);
-      if (entry && typeof entry.id === "string") {
-        await dbService.deleteGeneration(user.id, entry.id);
+      const entry = generationHistory.find((g) => String(g.id || '') === String(id));
+      if (entry && entry.id) {
+        await dbService.deleteGeneration(user.id, String(entry.id));
       }
     }
 
     // 로컬 상태 업데이트
-    const updated = generationHistory.filter((g) => g.id !== id);
+    const updated = generationHistory.filter((g) => String(g.id || '') !== String(id));
     setGenerationHistory(updated);
     
     // localStorage도 업데이트 (폴백)
@@ -2131,18 +1889,18 @@ const PublicVoiceGenerator = () => {
   };
 
   // 음원 이름 편집
-  const editGenerationName = async (id: number, newName: string | null) => {
+  const editGenerationName = async (id: string, newName: string | null) => {
     if (user?.id) {
       // DB에서 업데이트
-      const entry = generationHistory.find((g) => g.id === id);
-      if (entry && typeof entry.id === "string") {
-        await dbService.updateGeneration(user.id, entry.id, { savedName: newName });
+      const entry = generationHistory.find((g) => String(g.id || '') === String(id));
+      if (entry && entry.id) {
+        await dbService.updateGeneration(user.id, String(entry.id), { savedName: newName });
       }
     }
 
     // 로컬 상태 업데이트
     const updated = generationHistory.map((g) =>
-      g.id === id ? { ...g, savedName: newName } : g
+      String(g.id || '') === String(id) ? { ...g, savedName: newName } : g
     );
     setGenerationHistory(updated);
     
@@ -2196,7 +1954,8 @@ const PublicVoiceGenerator = () => {
       const url = URL.createObjectURL(downloadBlob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${entry.savedName || formatDateTime(entry.createdAt)}.mp3`;
+      const extension = entry.format || guessExtensionFromMime(downloadBlob.type || entry.mimeType);
+      a.download = `${entry.savedName || formatDateTime(entry.createdAt)}.${extension}`;
       a.click();
       URL.revokeObjectURL(url);
 
@@ -2213,17 +1972,62 @@ const PublicVoiceGenerator = () => {
     }
   };
 
-  const buildGenerationKey = (params: {
-    text: string;
-    voiceId: string;
-    language: string;
-    model: string;
-    style: string;
-    speed: number;
-    pitchShift: number;
-  }) => {
-    const { text, voiceId, language, model, style, speed, pitchShift } = params;
-    return [voiceId, language, model, style, speed.toFixed(2), pitchShift, text].join("::");
+  const canonicalizeValue = (value: any): any => {
+    if (Array.isArray(value)) {
+      return value.map(canonicalizeValue);
+    }
+    if (value && typeof value === "object") {
+      const sortedKeys = Object.keys(value).sort();
+      const result: Record<string, any> = {};
+      sortedKeys.forEach((key) => {
+        result[key] = canonicalizeValue(value[key]);
+      });
+      return result;
+    }
+    return value;
+  };
+
+  const stableStringify = (payload: Record<string, any>) => JSON.stringify(canonicalizeValue(payload));
+
+  const computeGenerationHash = async (payload: Record<string, any>): Promise<string> => {
+    const canonical = stableStringify(payload);
+    try {
+      if (typeof window !== "undefined" && window.crypto?.subtle) {
+        const data = new TextEncoder().encode(canonical);
+        const hashBuffer = await window.crypto.subtle.digest("SHA-256", data);
+        return Array.from(new Uint8Array(hashBuffer))
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join("");
+      }
+    } catch (error) {
+      console.warn("crypto.subtle digest 실패, 폴백 해시 사용:", error);
+    }
+    let hash = 0;
+    for (let i = 0; i < canonical.length; i++) {
+      hash = (hash << 5) - hash + canonical.charCodeAt(i);
+      hash |= 0;
+    }
+    return Math.abs(hash).toString(16);
+  };
+
+  const buildGenerationKey = (params: Record<string, any>) => stableStringify(params);
+
+  const guessExtensionFromMime = (mimeType?: string | null) => {
+    if (!mimeType) return "mp3";
+    const lower = mimeType.toLowerCase();
+    if (lower.includes("wav") || lower.includes("wave")) return "wav";
+    if (lower.includes("ogg")) return "ogg";
+    if (lower.includes("flac")) return "flac";
+    return "mp3";
+  };
+
+  const buildStoragePath = (voiceId: string | undefined, paramHash: string, extension: string, createdAt: Date = new Date()) => {
+    const year = createdAt.getFullYear();
+    const month = String(createdAt.getMonth() + 1).padStart(2, "0");
+    const day = String(createdAt.getDate()).padStart(2, "0");
+    const safeVoiceId = (voiceId || "voice").replace(/[^a-zA-Z0-9_-]/g, "_");
+    const hashSegment = paramHash.slice(0, 12);
+    return `/audio/tts/${year}/${month}${day}/${safeVoiceId}_${hashSegment}.${extension}`;
   };
 
   const toggleFavorite = async (voiceId: string) => {
@@ -2235,13 +2039,13 @@ const PublicVoiceGenerator = () => {
         next.delete(voiceId);
         // DB에서 제거
         if (user?.id) {
-          dbService.removeFavorite(user.id, voiceId).catch(err => console.error("즐겨찾기 제거 실패:", err));
+          dbService.removeFavorite(user.id, voiceId).catch(() => {});
         }
       } else {
         next.add(voiceId);
         // DB에 추가
         if (user?.id) {
-          dbService.addFavorite(user.id, voiceId).catch(err => console.error("즐겨찾기 추가 실패:", err));
+          dbService.addFavorite(user.id, voiceId).catch(() => {});
         }
       }
       
@@ -2273,7 +2077,7 @@ const PublicVoiceGenerator = () => {
     } catch (error: any) {
       // AbortError는 정상 흐름(이전 요청 취소)으로 간주하고 로그를 남기지 않음
       if (error?.name !== "AbortError") {
-      console.warn("Supabase 프록시 호출 실패:", error);
+      // Supabase 프록시 호출 실패 (무시 가능)
       }
       return null;
     }
@@ -2284,7 +2088,7 @@ const PublicVoiceGenerator = () => {
       try {
         URL.revokeObjectURL(url);
       } catch (error) {
-        console.warn("blob URL 해제 실패:", error);
+        // blob URL 해제 실패 (무시 가능)
       }
     }
   };
@@ -2450,55 +2254,99 @@ const PublicVoiceGenerator = () => {
       replaced = correctKoreanPostpositions(replaced);
     } catch (e) {
       // 조사 교정 실패해도 원본 텍스트 반환
-      console.warn("한국어 조사 교정 실패:", e);
+      // 한국어 조사 교정 실패 (무시 가능)
     }
     
     return replaced;
   };
 
   const handleTemplateSelect = (template: any) => {
-    setSelectedTemplate(template.id);
-    setSelectedTemplateObj(template);
-    
-    // 템플릿에서 변수 추출
-    const variables = extractVariables(template.template);
-    
-    // 기본값 설정
-    const defaultValues: Record<string, string> = {
-      "기관명": user?.organization || "강원특별자치도청",
-      "담당자명": (user as any)?.full_name || (user as any)?.name || (user as any)?.email?.split("@")[0] || "김철수",
-      "부서명": user?.department || "관계 부서",
-      "연락처": "",
-      "홈페이지": "",
-      "이벤트명": "",
-      "정책명": "",
-      "정책목표": "",
-      "정책내용": "",
-      "적용대상": "",
-      "상황설명": "",
-      "대응방안": "",
-      "행동지침": "",
-      "일시": new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }),
-      "장소": "",
-      "연구분야": "",
-      "서비스명": "",
-      "변경사항": "",
-      "운영시간": "",
-      "행사명": "",
-      "행사내용": "",
-    };
-    
-    // 추출된 변수들의 기본값 설정
-    const initialVariables: Record<string, string> = {};
-    variables.forEach(v => {
-      initialVariables[v] = defaultValues[v] || "";
-    });
-    
-    setTemplateVariables(initialVariables);
-    
-    // 초기 텍스트 생성
-    const replaced = replaceTemplateWithVariables(template.template, initialVariables);
-    setCustomText(replaced);
+    // DB 템플릿인 경우
+    if (template.id && typeof template.id === "string" && template.isTemplate) {
+      setSelectedTemplate(template.id);
+      setSelectedTemplateObj({ ...template, template: template.text });
+      
+      // 템플릿에서 변수 추출
+      const variables = extractVariables(template.text);
+      
+      // 기본값 설정
+      const defaultValues: Record<string, string> = {
+        "기관명": user?.organization || "강원특별자치도청",
+        "담당자명": (user as any)?.full_name || (user as any)?.name || (user as any)?.email?.split("@")[0] || "김철수",
+        "부서명": user?.department || "관계 부서",
+        "연락처": "",
+        "홈페이지": "",
+        "이벤트명": "",
+        "정책명": "",
+        "정책목표": "",
+        "정책내용": "",
+        "적용대상": "",
+        "상황설명": "",
+        "대응방안": "",
+        "행동지침": "",
+        "일시": new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }),
+        "장소": "",
+        "연구분야": "",
+        "서비스명": "",
+        "변경사항": "",
+        "운영시간": "",
+        "행사명": "",
+        "행사내용": "",
+        "내용": "",
+        "날짜": new Date().toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" }),
+      };
+      
+      // 추출된 변수들의 기본값 설정
+      const initialVariables: Record<string, string> = {};
+      variables.forEach(v => {
+        initialVariables[v] = defaultValues[v] || "";
+      });
+      
+      setTemplateVariables(initialVariables);
+      
+      // 초기 텍스트 생성
+      const replaced = replaceTemplateWithVariables(template.text, initialVariables);
+      setCustomText(replaced);
+    } else {
+      // 기존 하드코딩된 템플릿 (레거시 지원)
+      setSelectedTemplate(template.id);
+      setSelectedTemplateObj(template);
+      
+      const variables = extractVariables(template.template);
+      
+      const defaultValues: Record<string, string> = {
+        "기관명": user?.organization || "강원특별자치도청",
+        "담당자명": (user as any)?.full_name || (user as any)?.name || (user as any)?.email?.split("@")[0] || "김철수",
+        "부서명": user?.department || "관계 부서",
+        "연락처": "",
+        "홈페이지": "",
+        "이벤트명": "",
+        "정책명": "",
+        "정책목표": "",
+        "정책내용": "",
+        "적용대상": "",
+        "상황설명": "",
+        "대응방안": "",
+        "행동지침": "",
+        "일시": new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }),
+        "장소": "",
+        "연구분야": "",
+        "서비스명": "",
+        "변경사항": "",
+        "운영시간": "",
+        "행사명": "",
+        "행사내용": "",
+      };
+      
+      const initialVariables: Record<string, string> = {};
+      variables.forEach(v => {
+        initialVariables[v] = defaultValues[v] || "";
+      });
+      
+      setTemplateVariables(initialVariables);
+      const replaced = replaceTemplateWithVariables(template.template, initialVariables);
+      setCustomText(replaced);
+    }
   };
 
   // 변수 값 변경 핸들러
@@ -2508,8 +2356,11 @@ const PublicVoiceGenerator = () => {
     
     // 템플릿 재생성
     if (selectedTemplateObj) {
-      const replaced = replaceTemplateWithVariables(selectedTemplateObj.template, updated);
-      setCustomText(replaced);
+      const templateText = selectedTemplateObj.template || selectedTemplateObj.text;
+      if (templateText) {
+        const replaced = replaceTemplateWithVariables(templateText, updated);
+        setCustomText(replaced);
+      }
     }
   };
 
@@ -2528,7 +2379,7 @@ const PublicVoiceGenerator = () => {
     try {
       // forceReload가 true이면 DB 체크 건너뛰고 API에서 직접 가져오기
       if (forceReload) {
-        console.log("강제 재로드: API에서 모든 음성을 가져옵니다...");
+        // 강제 재로드 모드
       } else {
         // 먼저 DB에서 음성 카탈로그 로드 시도 (샘플 음원 포함)
         const dbVoices = await dbService.loadVoiceCatalog();
@@ -2537,37 +2388,34 @@ const PublicVoiceGenerator = () => {
         
         // DB에 음성이 있고, 개수가 충분하고 (20개 이상), 오늘 이미 업데이트했으면 DB에서 사용
         if (dbVoices && dbVoices.length > 0 && dbCount >= 20 && !needsUpdate) {
-          console.log(`✅ DB에서 음성 카탈로그 로드: ${dbVoices.length}개 (오늘 이미 업데이트됨)`);
           setAllVoices(dbVoices);
           setAvailableVoices(dbVoices);
           setVoiceLoadingProgress(100);
-        voicesLoaded = true;
+          voicesLoaded = true;
           
           if (showToast) {
             toast({
               title: "음성 목록 로드 완료",
-              description: `DB에서 ${dbVoices.length}개의 음성을 불러왔습니다. (샘플 음원 포함)`,
+              description: `DB에서 ${dbVoices.length}개의 음성을 불러왔습니다.`,
             });
           }
           
-        setIsLoadingVoices(false);
+          setIsLoadingVoices(false);
           return; // DB에서 로드 완료했으면 함수 종료
         }
         
         // DB 음성 수가 적거나 (20개 미만) 업데이트가 필요하면 API에서 가져오기
         if (dbVoices && dbVoices.length > 0 && (dbCount < 20 || needsUpdate)) {
-          console.log(`⚠️ DB 음성 수 부족(${dbCount}개) 또는 업데이트 필요. API에서 전체 로드합니다...`);
           if (showToast && needsUpdate) {
             toast({
-              title: "음성 목록 업데이트 필요",
-              description: "오늘 업데이트되지 않았거나 음성 수가 부족합니다. API에서 가져오는 중...",
+              title: "음성 목록 업데이트 중",
+              description: "최신 음성 목록을 불러오고 있습니다...",
             });
           }
         }
       }
       
       // DB에 음성이 없거나 forceReload=true이면 API에서 가져오기
-      console.log("DB에 음성 카탈로그가 없어 API에서 가져옵니다.");
       const response = await fetchWithSupabaseProxy("/voices?limit=100", { method: "GET" });
       if (response?.ok) {
             const data = await response.json();
@@ -2579,8 +2427,7 @@ const PublicVoiceGenerator = () => {
         setVoiceNextToken(nextToken || null);
         const total = data.total || data.totalCount || null;
         setVoiceTotalCount(total);
-        console.log(`✅ 음성 목록 로드 성공(프록시): ${voices.length}개`);
-            voicesLoaded = true;
+        voicesLoaded = true;
         
         // 진행률 계산 (초기 로드 완료)
         if (total && total > 0) {
@@ -2610,41 +2457,29 @@ const PublicVoiceGenerator = () => {
             });
           }
           // forceReload이거나 업데이트 필요하면 즉시 DB에 저장
-          if (forceReload) {
-            if (voices.length > 0) {
-              console.log(`모든 음성 ${voices.length}개를 DB에 저장합니다...`);
-              const success = await dbService.syncVoiceCatalog(voices, true);
-              if (success) {
-                console.log(`✅ 모든 음성 ${voices.length}개 DB 저장 완료`);
-                if (showToast) {
-                  toast({
-                    title: "DB 저장 완료",
-                    description: `${voices.length}개의 음성이 DB에 저장되었습니다.`,
-                  });
-                }
-              }
+          if (forceReload && voices.length > 0) {
+            await dbService.syncVoiceCatalog(voices, true).catch(() => {});
+            if (showToast) {
+              toast({
+                title: "DB 저장 완료",
+                description: `${voices.length}개의 음성이 DB에 저장되었습니다.`,
+              });
             }
           } else {
             // forceReload이 아니면 일별 동기화 체크 후 저장
             const needsUpdate = await dbService.shouldUpdateCatalog();
             if (needsUpdate && voices.length > 0) {
-              console.log(`오늘 업데이트 필요: 모든 음성 ${voices.length}개를 DB에 저장합니다...`);
-              const success = await dbService.syncVoiceCatalog(voices, false);
-              if (success) {
-                console.log(`✅ 모든 음성 ${voices.length}개 DB 저장 완료`);
-              }
+              await dbService.syncVoiceCatalog(voices, false).catch(() => {});
             }
           }
         }
         
-        // forceReload이 아니면 일별 동기화 (백그라운드) - 샘플 음원 포함
+        // forceReload이 아니면 일별 동기화 (백그라운드)
         if (!forceReload) {
-          dbService.syncVoiceCatalog(voices, false).catch(err => 
-            console.error("음성 카탈로그 동기화 실패:", err)
-          );
+          dbService.syncVoiceCatalog(voices, false).catch(() => {});
         }
       } else if (response) {
-        console.warn("음성 목록 로드 실패(프록시):", await response.text());
+        // 조용히 실패 처리
         setVoiceLoadingProgress(0);
         if (showToast) {
           toast({
@@ -2655,7 +2490,7 @@ const PublicVoiceGenerator = () => {
         }
       }
     } catch (e: any) {
-      console.warn("음성 목록 로드 예외:", e.message);
+      // 조용히 실패 처리
       setVoiceLoadingProgress(0);
       if (showToast) {
         toast({
@@ -2667,7 +2502,6 @@ const PublicVoiceGenerator = () => {
     }
 
     if (!voicesLoaded) {
-      console.warn("⚠️ 음성 목록을 가져올 수 없어 기본 목록을 사용합니다.");
       setAvailableVoices([]);
       setVoiceLoadingProgress(0);
     }
@@ -2731,7 +2565,6 @@ const PublicVoiceGenerator = () => {
         setVoiceNextToken(nextToken || null);
         const total = data.total || data.totalCount || null;
         setVoiceTotalCount(total);
-        console.log(`✅ 음성 검색 성공(프록시): ${results.length}개`);
         // 모든 필터가 전체이면 즉시 전체 로드하여 개수 일치시키기
         if (nextToken && isAllFilters(voiceFilters)) {
           await autoLoadVoicesThrottled(50, 0);
@@ -2754,7 +2587,6 @@ const PublicVoiceGenerator = () => {
       }
     } catch (error: any) {
       if (error?.name !== "AbortError") {
-      console.warn("음성 검색 예외(프록시):", error.message);
         // 에러 발생 시에도 allVoices 전체에서 필터링 시도
         setAllVoices((currentAllVoices) => {
           if (currentAllVoices.length > 0) {
@@ -2974,7 +2806,7 @@ const PublicVoiceGenerator = () => {
     if (allVoices.length > 0 && isVoiceFinderOpen) {
       const filtered = applyClientFilters(allVoices, voiceFilters);
       setVoiceSearchResults(filtered);
-      console.log(`필터 적용: ${filtered.length}/${allVoices.length}개 (useCase: ${voiceFilters.useCase || "없음"})`);
+      // 필터 적용됨
     }
     // 필터 변경 시 완화된 배경 로드
     if (isVoiceFinderOpen && voiceNextToken) {
@@ -3035,275 +2867,63 @@ const PublicVoiceGenerator = () => {
         abortRef.current.abort();
         abortRef.current = null;
       }
-      cloneTimeoutsRef.current.forEach((timer) => window.clearTimeout(timer));
-      cloneTimeoutsRef.current = [];
-      stopUsagePolling();
+      // cloneTimeoutsRef는 VoiceCloning.tsx로 이동됨
+      // 사용량 폴링은 Dashboard에서 관리하므로 여기서는 정리 불필요
     };
   }, []);
 
 
-  // 클론 음성 튜닝 미리듣기 생성 함수
-  const handleCloneTuningPreview = async (cloneId: number) => {
-    const clone = cloneRequests.find(c => c.id === cloneId);
-    if (!clone || clone.status !== "completed") {
-      toast({
-        title: "튜닝 불가",
-        description: "완료된 클론 음성만 튜닝이 가능합니다.",
-        variant: "destructive",
-      });
-      return;
-    }
+  // handleClonePreview와 handleCloneTuningPreview는 VoiceCloning.tsx로 이동됨
 
-    const tuning = cloneTuningSettings[cloneId];
-    if (!tuning) {
-      toast({
-        title: "튜닝 설정 없음",
-        description: "튜닝 설정을 먼저 조정해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const previewText = clonePreviewText[clone.id]?.trim();
-    if (!previewText) {
-      toast({
-        title: "텍스트 입력 필요",
-        description: "미리듣기할 텍스트를 입력해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const baseVoiceId = clone.baseVoiceId;
-    if (!baseVoiceId) {
-      toast({
-        title: "기준 음성 없음",
-        description: "기준 음성 정보가 없어 튜닝 미리듣기를 생성할 수 없습니다.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsGeneratingCloneTuning(prev => ({ ...prev, [cloneId]: true }));
-
-    try {
-      // 기존 미리듣기 오디오 정리
-      if (cloneTuningPreviewAudio[cloneId]) {
-        URL.revokeObjectURL(cloneTuningPreviewAudio[cloneId]!);
-      }
-
-      // 튜닝 설정을 적용하여 TTS 생성
-      const requestBody = {
-        text: previewText,
-        language: tuning.language || clone.language || "ko",
-        style: tuning.style || "neutral",
-        model: "sona_speech_1",
-        voice_settings: {
-          speed: tuning.speed || 1.0,
-          pitch_shift: tuning.pitch || 0,
-          pitch_variance: 1,
-        },
-      };
-
-      const proxyResponse = await fetchWithSupabaseProxy(`/text-to-speech/${baseVoiceId}?output_format=mp3`, {
-        method: "POST",
-        body: JSON.stringify({ ...requestBody, voice_id: baseVoiceId }),
-      });
-
-      if (!proxyResponse?.ok) {
-        let errorMsg = `TTS 생성 실패 (${proxyResponse?.status || 'unknown'})`;
-        try {
-          const errorJson = await proxyResponse.clone().json();
-          const detail = errorJson?.error?.message || errorJson?.error || errorJson?.message || errorJson?.detail;
-          if (detail) errorMsg += `: ${formatErrorDetail(detail)}`;
-        } catch {
-          const text = await proxyResponse.text();
-          if (text) errorMsg += `: ${text}`;
-        }
-        throw new Error(errorMsg);
-      }
-
-      const audioResult = await parseSupertoneResponse(proxyResponse);
-      if (!audioResult?.blob) {
-        throw new Error("오디오 데이터를 받을 수 없습니다.");
-      }
-
-      const audioUrl = URL.createObjectURL(audioResult.blob);
-      setCloneTuningPreviewAudio(prev => ({ ...prev, [cloneId]: audioUrl }));
-
-      toast({
-        title: "튜닝 미리듣기 생성 완료",
-        description: `${clone.voiceName} 음성으로 튜닝된 미리듣기가 생성되었습니다.`,
-      });
-    } catch (error: any) {
-      console.error("클론 음성 튜닝 미리듣기 오류:", error);
-      toast({
-        title: "튜닝 미리듣기 생성 실패",
-        description: error?.message || "튜닝 미리듣기를 생성할 수 없습니다.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsGeneratingCloneTuning(prev => ({ ...prev, [cloneId]: false }));
-    }
-  };
-
-  // 클론 음성 미리듣기 생성 함수 (기준 음성을 사용)
-  const handleClonePreview = async (clone: CloneRequest) => {
-    if (clone.status !== "completed") {
-      toast({
-        title: "미리듣기 불가",
-        description: "완료된 클론 음성만 미리듣기가 가능합니다.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const previewText = clonePreviewText[clone.id]?.trim();
-    if (!previewText) {
-      toast({
-        title: "텍스트 입력 필요",
-        description: "미리듣기할 텍스트를 입력해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // 클론 음성은 기준 음성을 사용 (클론 voice_id는 가짜이므로)
-    const baseVoiceId = clone.baseVoiceId;
-    if (!baseVoiceId) {
-      toast({
-        title: "기준 음성 없음",
-        description: "기준 음성 정보가 없어 미리듣기를 생성할 수 없습니다.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsGeneratingClonePreview(prev => ({ ...prev, [clone.id]: true }));
-
-    try {
-      // 기존 미리듣기 오디오 정리
-      if (clonePreviewAudio[clone.id]) {
-        URL.revokeObjectURL(clonePreviewAudio[clone.id]!);
-      }
-
-      // 기준 음성으로 TTS 생성 (클론 음성은 기준 음성을 사용)
-      const requestBody = {
-        text: previewText,
-        language: clone.language || "ko",
-        style: "neutral",
-        model: "sona_speech_1",
-        voice_settings: {
-          speed: 1.0,
-          pitch_shift: 0,
-          pitch_variance: 1,
-        },
-      };
-
-      const proxyResponse = await fetchWithSupabaseProxy(`/text-to-speech/${baseVoiceId}?output_format=mp3`, {
-        method: "POST",
-        body: JSON.stringify({ ...requestBody, voice_id: baseVoiceId }),
-      });
-
-      if (!proxyResponse?.ok) {
-        let errorMsg = `TTS 생성 실패 (${proxyResponse?.status || 'unknown'})`;
-        try {
-          const errorJson = await proxyResponse.clone().json();
-          const detail = errorJson?.error?.message || errorJson?.error || errorJson?.message || errorJson?.detail;
-          if (detail) errorMsg += `: ${formatErrorDetail(detail)}`;
-        } catch {
-          const text = await proxyResponse.text();
-          if (text) errorMsg += `: ${text}`;
-        }
-        throw new Error(errorMsg);
-      }
-
-      const audioResult = await parseSupertoneResponse(proxyResponse);
-      if (!audioResult?.blob) {
-        throw new Error("오디오 데이터를 받을 수 없습니다.");
-      }
-
-      const audioUrl = URL.createObjectURL(audioResult.blob);
-      setClonePreviewAudio(prev => ({ ...prev, [clone.id]: audioUrl }));
-
-      toast({
-        title: "미리듣기 생성 완료",
-        description: `${clone.voiceName} 음성으로 미리듣기가 생성되었습니다.`,
-      });
-    } catch (error: any) {
-      console.error("클론 음성 미리듣기 오류:", error);
-      toast({
-        title: "미리듣기 생성 실패",
-        description: error?.message || "미리듣기를 생성할 수 없습니다.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsGeneratingClonePreview(prev => ({ ...prev, [clone.id]: false }));
-    }
-  };
-
-  // 즐겨찾기된 음성들을 로드하는 함수 (allVoices와 availableVoices를 직접 참조)
+  // 즐겨찾기된 음성들을 로드하는 함수 (함수형 업데이트로 최신 상태 참조)
   const loadFavoriteVoices = useCallback(async () => {
     if (favoriteVoiceIds.size === 0) return;
-    
-    // 클론 음성도 즐겨찾기에 포함될 수 있으므로 cloneRequests에서 찾기
-    const favoriteCloneVoices = cloneRequests
-      .filter((clone) => clone.status === "completed" && favoriteVoiceIds.has(clone.voiceId))
-      .map((clone) => {
-        // 클론 음성이 아직 allVoices에 등록되지 않았으면 등록
-        const existing = allVoices.find((v: any) => v.voice_id === clone.voiceId);
-        if (!existing) {
-          registerCloneVoice(clone);
-          // registerCloneVoice는 비동기이므로 다시 찾기
-          return null; // 다음 사이클에서 찾을 수 있도록
-        }
-        return existing;
-      })
-      .filter(Boolean);
-
-    // 클론 음성이 있으면 availableVoices에도 추가
-    if (favoriteCloneVoices.length > 0) {
-      setAvailableVoices((prev) => {
-        const existingIds = new Set(prev.map((v: any) => v.voice_id));
-        const newVoices = favoriteCloneVoices.filter((v: any) => v && !existingIds.has(v.voice_id));
-        if (newVoices.length > 0) {
-          console.log(`✅ 클론 음성 즐겨찾기 ${newVoices.length}개를 availableVoices에 추가`);
-          return [...prev, ...newVoices];
-        }
-        return prev;
-      });
-    }
-    
-    // 현재 상태에서 누락된 즐겨찾기 음성 ID 찾기
-    const missingVoiceIds = Array.from(favoriteVoiceIds).filter((vid) => {
-      return !availableVoices.find((v: any) => v.voice_id === vid) && 
-             !allVoices.find((v: any) => v.voice_id === vid);
-    });
-    
-    if (missingVoiceIds.length === 0) {
-      // allVoices에는 있지만 availableVoices에는 없는 경우 추가
-      const foundInAll = allVoices.filter((v: any) => 
-        favoriteVoiceIds.has(v.voice_id) && 
-        !availableVoices.find((av: any) => av.voice_id === v.voice_id)
-      );
-      if (foundInAll.length > 0) {
-        setAvailableVoices((prev) => {
-          const existingIds = new Set(prev.map((v: any) => v.voice_id));
-          const newVoices = foundInAll.filter((v: any) => !existingIds.has(v.voice_id));
-          if (newVoices.length > 0) {
-            console.log(`✅ 즐겨찾기 음성 ${newVoices.length}개를 availableVoices에 추가`);
-            return [...prev, ...newVoices];
-          }
-          return prev;
-        });
-      }
-      console.log("✅ 모든 즐겨찾기 음성이 이미 로드되어 있습니다.");
-      return;
-    }
-    
-    console.log(`즐겨찾기된 음성 ${missingVoiceIds.length}개를 로드합니다.`);
+    if (loadFavoriteVoicesRef.current) return; // 이미 실행 중이면 스킵
+    loadFavoriteVoicesRef.current = true;
     
     try {
+      // 클론 음성 관리는 VoiceCloning.tsx에서 처리하므로, 여기서는 일반 음성만 처리
+      // 현재 상태에서 누락된 즐겨찾기 음성 ID 찾기 (함수형 업데이트로 최신 상태 가져오기)
+      let currentAllVoices: any[] = [];
+      let currentAvailableVoices: any[] = [];
+      
+      // 최신 상태를 가져오기 위해 임시로 getter 함수 사용
+      setAllVoices((prev) => {
+        currentAllVoices = prev;
+        return prev;
+      });
+      setAvailableVoices((prev) => {
+        currentAvailableVoices = prev;
+        return prev;
+      });
+      
+      const missingVoiceIds = Array.from(favoriteVoiceIds).filter((vid) => {
+        return !currentAvailableVoices.find((v: any) => v.voice_id === vid) && 
+               !currentAllVoices.find((v: any) => v.voice_id === vid);
+      });
+      
+      if (missingVoiceIds.length === 0) {
+        // allVoices에는 있지만 availableVoices에는 없는 경우 추가
+        const foundInAll = currentAllVoices.filter((v: any) => 
+          favoriteVoiceIds.has(v.voice_id) && 
+          !currentAvailableVoices.find((av: any) => av.voice_id === v.voice_id)
+        );
+        if (foundInAll.length > 0) {
+          setAvailableVoices((prev) => {
+            const existingIds = new Set(prev.map((v: any) => v.voice_id));
+            const newVoices = foundInAll.filter((v: any) => !existingIds.has(v.voice_id));
+            if (newVoices.length > 0) {
+              console.log(`✅ 즐겨찾기 음성 ${newVoices.length}개를 availableVoices에 추가`);
+              return [...prev, ...newVoices];
+            }
+            return prev;
+          });
+        }
+        console.log("✅ 모든 즐겨찾기 음성이 이미 로드되어 있습니다.");
+        return;
+      }
+      
+      console.log(`즐겨찾기된 음성 ${missingVoiceIds.length}개를 로드합니다.`);
       // 1. 먼저 DB 카탈로그에서 찾기
       const dbVoices = await dbService.loadVoiceCatalog();
       if (dbVoices && dbVoices.length > 0) {
@@ -3388,11 +3008,16 @@ const PublicVoiceGenerator = () => {
       }
     } catch (e: any) {
       console.warn("즐겨찾기 음성 로드 실패:", e.message);
+    } finally {
+      loadFavoriteVoicesRef.current = false;
     }
-  }, [favoriteVoiceIds, fetchWithSupabaseProxy, allVoices, availableVoices]);
+  }, [favoriteVoiceIds, fetchWithSupabaseProxy]);
 
-  // 컴포넌트 마운트 시 데이터 로드 및 마이그레이션
+  // 컴포넌트 마운트 시 데이터 로드 및 마이그레이션 (한 번만 실행)
   useEffect(() => {
+    if (!isInitialMountRef.current) return; // 한 번만 실행
+    isInitialMountRef.current = false;
+    
     if (user?.id) {
       // DB에서 데이터 로드
       loadDataFromDB().then(() => {
@@ -3407,14 +3032,96 @@ const PublicVoiceGenerator = () => {
       
       // DB에 음성이 없거나, 20개 미만이거나, 오늘 업데이트되지 않았으면 업데이트
       if (needsUpdate || dbCount < 20) {
-        console.log(`음성 목록 자동 업데이트 필요 (DB: ${dbCount}개, 업데이트 필요: ${needsUpdate})`);
+        // 음성 목록 자동 업데이트 필요
         fetchVoices(false, false); // 조용히 업데이트 (토스트 없이)
       } else {
         fetchVoices(false, false); // 일반 로드
       }
     })();
-    startUsagePolling();
-  }, [user?.id, loadDataFromDB, migrateLocalStorageToDB]);
+    // 사용량 통계는 Dashboard에서 관리하므로 여기서는 폴링하지 않음
+    // startUsagePolling(); // 제거: Dashboard에서 관리
+    
+    // DB에서 템플릿 로드 (비동기이므로 useEffect에서 호출)
+    
+    // URL 파라미터에서 메시지 불러오기
+    const loadMessageId = searchParams.get("loadMessage");
+    if (loadMessageId && user?.id) {
+      loadMessageById(loadMessageId);
+      // 파라미터 제거
+      setSearchParams((prev) => {
+        const newParams = new URLSearchParams(prev);
+        newParams.delete("loadMessage");
+        return newParams;
+      }, { replace: true });
+    }
+    
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  
+  // DB에서 템플릿 로드
+  const loadTemplatesFromDB = useCallback(async () => {
+    if (!user?.id) return;
+    setIsLoadingTemplates(true);
+    try {
+      const [greeting, announcement, policy] = await Promise.all([
+        dbService.loadTemplates(user.id, "greeting"),
+        dbService.loadTemplates(user.id, "announcement"),
+        dbService.loadTemplates(user.id, "policy"),
+      ]);
+      
+      setDbTemplates({
+        greeting: greeting || [],
+        announcement: announcement || [],
+        policy: policy || [],
+      });
+    } catch (error) {
+      // 조용히 실패 처리 (DB 테이블이 없을 수 있음)
+      console.warn("템플릿 로드 실패 (무시 가능):", error);
+      setDbTemplates({
+        greeting: [],
+        announcement: [],
+        policy: [],
+      });
+    } finally {
+      setIsLoadingTemplates(false);
+    }
+  }, [user?.id]);
+
+  // DB에서 템플릿 로드
+  useEffect(() => {
+    if (user?.id) {
+      loadTemplatesFromDB();
+    }
+  }, [user?.id, loadTemplatesFromDB]);
+
+  // 저장된 메시지 불러오기 함수
+  const loadMessageById = useCallback(async (messageId: string) => {
+    if (!user?.id) return;
+    try {
+      const messages = await dbService.loadMessages(user.id);
+      const message = messages.find((m) => m.id === messageId);
+      if (message) {
+        setCustomText(message.text);
+        setSelectedPurpose(message.purpose || "announcement");
+        toast({
+          title: "문구 불러오기 완료",
+          description: "저장된 문구를 불러왔습니다.",
+        });
+      } else {
+        toast({
+          title: "문구를 찾을 수 없습니다",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("메시지 불러오기 실패:", error);
+      toast({
+        title: "문구 불러오기 실패",
+        description: "저장된 문구를 불러오는데 실패했습니다.",
+        variant: "destructive",
+      });
+    }
+  }, [user?.id, toast]);
 
   // allVoices 변경 시 진행률 업데이트 (자동 로드 중일 때)
   useEffect(() => {
@@ -3456,7 +3163,7 @@ const PublicVoiceGenerator = () => {
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [favoriteVoiceIds.size, allVoices.length, loadFavoriteVoices, isLoadingVoices, cloneRequests.length]);
+  }, [favoriteVoiceIds.size, allVoices.length, loadFavoriteVoices, isLoadingVoices]);
 
   // 텍스트 변경 시 예상 오디오 길이 및 크레딧 자동 예측 (300자 초과 지원)
   useEffect(() => {
@@ -3566,9 +3273,20 @@ const PublicVoiceGenerator = () => {
       if (response?.ok) {
         const data = await response.json();
         return data?.duration ?? data?.data?.duration ?? null;
+      } else if (response) {
+        // 에러 응답 로깅
+        try {
+          const errorData = await response.clone().json();
+          console.warn(`예상 길이 계산 실패 (${response.status}):`, errorData?.error || errorData?.detail || "알 수 없는 오류");
+        } catch {
+          const errorText = await response.text();
+          console.warn(`예상 길이 계산 실패 (${response.status}):`, errorText);
+        }
       }
-    } catch (error) {
-      console.warn("예상 길이 계산 실패:", error);
+    } catch (error: any) {
+      if (error?.name !== "AbortError") {
+        console.warn("예상 길이 계산 실패:", error?.message || error);
+      }
     }
     return null;
   };
@@ -3670,7 +3388,8 @@ const PublicVoiceGenerator = () => {
       throw new Error('OpenAI 응답을 해석할 수 없습니다.');
     }
 
-    return data.text;
+    // 마크다운 기호 제거
+    return removeMarkdown(data.text);
   }
 
   async function editWithOpenAI(original: string, instruction: string) {
@@ -3690,7 +3409,8 @@ const PublicVoiceGenerator = () => {
       throw new Error('OpenAI 응답을 해석할 수 없습니다.');
     }
 
-    return data.text;
+    // 마크다운 기호 제거
+    return removeMarkdown(data.text);
   }
 
   // 실제 음원 생성 로직 (템플릿 변수 검증 제외)
@@ -3765,33 +3485,114 @@ const PublicVoiceGenerator = () => {
       }
     }
 
-    // 캐시 키 구성 및 캐시 히트 시 바로 반환
-    const cacheKey = buildGenerationKey({
-      text: processedText, // pause 구간이 적용된 텍스트 사용
+    const targetFormat = needsSplitting ? "wav" : "mp3";
+    const generationParams = {
+      text: processedText,
       voiceId: selectedVoice,
       language: chosenLanguage,
       model: chosenModel,
       style: styleValue,
       speed: speedValue,
       pitchShift,
-    });
+      emotionPreset: voiceSettings.emotion.preset || "none",
+      emotionIntensity: (voiceSettings.emotion as any).intensity || 0,
+      emotionPrompt: voiceSettings.emotion.customPrompt || "",
+      format: targetFormat,
+    };
+
+    const paramHash = await computeGenerationHash(generationParams);
+    const cacheKey = `hash_${paramHash}`;
+
+    const findHistoryEntry = () =>
+      generationHistory.find(
+        (entry) =>
+          (entry.paramHash && entry.paramHash === paramHash) ||
+          (!entry.paramHash && entry.cacheKey === cacheKey)
+      );
+
+    const ensureCacheEntry = (blob: Blob, duration: number | null, mime: string, audioUrl: string | null) => {
+      cacheRef.current.set(cacheKey, {
+        blob,
+        duration,
+        mimeType: mime,
+        _audioUrl: audioUrl || undefined,
+      });
+    };
+
+    const finalizeReuse = (audioUrl: string | null, duration: number | null, entry: any, source: string) => {
+      if (!audioUrl) return false;
+      cleanupGeneratedAudioUrl(generatedAudio);
+      setGeneratedAudio(audioUrl);
+      setGeneratedDuration(duration || 0);
+      setPredictedDuration(duration || null);
+      setPendingGeneration(null);
+      setIsSaveNameDialogOpen(false);
+      if (entry?.id) {
+        setExpandedGenerationId(entry.id ? String(entry.id) : null);
+      }
+      toast({
+        title: "✅ 기존 음원 재사용",
+        description: source === "history" ? "이전에 저장된 음원을 불러왔습니다." : "저장된 음원을 재사용했습니다.",
+      });
+      return true;
+    };
+
+    let existingEntry = findHistoryEntry();
     const cached = cacheRef.current.get(cacheKey);
-    if (cached) {
-      // blob 데이터에서 새 blob URL 생성
+
+    if (cached && existingEntry) {
       const audioUrl = cached._audioUrl || (cached.blob ? URL.createObjectURL(cached.blob) : null);
-      if (!audioUrl) {
-        console.warn('Cached entry has no blob or audioUrl');
-        // 캐시 항목이 손상된 경우 계속 진행
-      } else {
-        if (!cached._audioUrl && cached.blob) {
-          // cacheRef에 audioUrl 캐싱
-          cacheRef.current.set(cacheKey, { ...cached, _audioUrl: audioUrl });
+      if (cached.blob && audioUrl) {
+        ensureCacheEntry(cached.blob, cached.duration ?? existingEntry.duration ?? null, cached.mimeType || (existingEntry.mimeType ?? "audio/mpeg"), audioUrl);
+      }
+      if (finalizeReuse(audioUrl, cached.duration ?? existingEntry.duration ?? null, existingEntry, "history")) {
+        return;
+      }
+    }
+
+    if (!existingEntry && user?.id) {
+      try {
+        const dbEntry = await dbService.findGenerationByHash(user.id, paramHash);
+        if (dbEntry) {
+          existingEntry = dbEntry;
+          setGenerationHistory((prev) => {
+            const filtered = prev.filter((g) => String(g.id) !== String(dbEntry.id));
+            return [dbEntry, ...filtered].slice(0, 100);
+          });
         }
-        cleanupGeneratedAudioUrl(generatedAudio);
-        setGeneratedAudio(audioUrl);
-        setGeneratedDuration((cached.duration ?? estimateDurationFromText(trimmedText)) || 0);
-        setPredictedDuration(cached.duration ?? null);
-        toast({ title: "✅ 캐시 재사용", description: "이전에 생성한 동일한 음원을 재사용했습니다." });
+      } catch (e) {
+        // findGenerationByHash 실패는 조용히 처리 (400 에러 등)
+        console.warn("findGenerationByHash 실패:", e);
+      }
+    }
+
+    if (existingEntry) {
+      let audioUrl: string | null = null;
+      let duration = existingEntry.duration ?? null;
+      let blobToCache: Blob | null = null;
+      const existingCacheKey = existingEntry.cacheKey || cacheKey;
+      const cachedForExisting = cacheRef.current.get(existingCacheKey) || cacheRef.current.get(cacheKey);
+
+      if (cachedForExisting?.blob) {
+        blobToCache = cachedForExisting.blob;
+        audioUrl = cachedForExisting._audioUrl || (cachedForExisting.blob ? URL.createObjectURL(cachedForExisting.blob) : null);
+        duration = cachedForExisting.duration ?? duration;
+      } else if (user?.id && existingEntry.id) {
+        const blobData = await dbService.loadGenerationBlob(user.id, String(existingEntry.id));
+        if (blobData?.audioBlob) {
+          blobToCache = dbService.arrayBufferToBlob(blobData.audioBlob, blobData.mimeType || existingEntry.mimeType || "audio/mpeg");
+          audioUrl = URL.createObjectURL(blobToCache);
+        }
+      }
+
+      if (!audioUrl && existingEntry.audioUrl && !existingEntry.audioUrl.startsWith('blob:')) {
+        audioUrl = existingEntry.audioUrl;
+      }
+
+      if (blobToCache) {
+        ensureCacheEntry(blobToCache, duration, blobToCache.type, audioUrl);
+      }
+      if (finalizeReuse(audioUrl, duration, existingEntry, "history-db")) {
         return;
       }
     }
@@ -3817,26 +3618,48 @@ const PublicVoiceGenerator = () => {
         const chunk = textChunks[i];
         setGenerationProgress({ current: i + 1, total: textChunks.length });
 
+        // Supertone API 요청 본문 구성 (필수 파라미터만 포함)
         const requestBody: Record<string, any> = {
           text: chunk,
-          language: chosenLanguage,
-          style: styleValue,
-          model: chosenModel,
-          voice_settings: {
-            speed: speedValue,
-            pitch_shift: pitchShift,
-            pitch_variance: 1,
-            playback_speed: voiceSettings.playbackSpeed,
-          },
+          language: chosenLanguage || "ko",
         };
+
+        // style이 있으면 추가 (일부 모델만 지원)
+        if (styleValue && styleValue !== "neutral") {
+          requestBody.style = styleValue;
+        }
+
+        // model이 있으면 추가
+        if (chosenModel) {
+          requestBody.model = chosenModel;
+        }
+
+        // voice_settings 구성 (필수 필드만 포함)
+        const voiceSettingsObj: Record<string, any> = {};
+        if (speedValue !== undefined && speedValue !== 1.0) {
+          voiceSettingsObj.speed = speedValue;
+        }
+        if (pitchShift !== undefined && pitchShift !== 0) {
+          voiceSettingsObj.pitch_shift = pitchShift;
+        }
+        // pitch_variance는 선택사항이므로 제거 또는 기본값만 사용
+        if (voiceSettings.playbackSpeed !== undefined && voiceSettings.playbackSpeed !== 1.0) {
+          voiceSettingsObj.playback_speed = voiceSettings.playbackSpeed;
+        }
+
+        // voice_settings에 내용이 있으면 추가
+        if (Object.keys(voiceSettingsObj).length > 0) {
+          requestBody.voice_settings = voiceSettingsObj;
+        }
 
         let audioResult: { blob: Blob; duration: number | null; mimeType?: string } | null = null;
       let source = "프록시";
 
       // 1. Supabase Edge Function 프록시 시도
+      // voice_id는 URL에 포함되므로 body에서 제거 (Edge Function이 자동으로 처리)
       const proxyResponse = await fetchWithSupabaseProxy(`/text-to-speech/${selectedVoice}?output_format=mp3`, {
         method: "POST",
-          body: JSON.stringify({ ...requestBody, voice_id: selectedVoice }),
+        body: JSON.stringify(requestBody), // voice_id 제거 (URL에 포함)
       });
 
       if (proxyResponse?.ok) {
@@ -3854,9 +3677,15 @@ const PublicVoiceGenerator = () => {
         console.warn(firstErrorMsg);
 
         let finalFailed = true;
-        // 400인 경우 최소 필드로 재시도 (text, language만)
+        // 400인 경우 최소 필드로 재시도 (text만, 또는 text + language)
         if (proxyResponse.status === 400) {
           try {
+            // 에러 상세 정보 로깅 (개발용)
+            try {
+              const errorJson = await proxyResponse.clone().json();
+              console.warn("400 에러 상세:", errorJson);
+            } catch {}
+            
             const minimalBody: Record<string, any> = { text: chunk };
             if (chosenLanguage) minimalBody.language = chosenLanguage;
             const retryResp = await fetchWithSupabaseProxy(`/text-to-speech/${selectedVoice}?output_format=mp3`, {
@@ -3952,15 +3781,32 @@ const PublicVoiceGenerator = () => {
 
       console.log(`음성 생성 성공 - ${needsSplitting ? `${textChunks.length}개 청크 결합` : '단일 생성'}`);
       
-      // 이름 저장 다이얼로그 표시
-      setPendingGeneration({
-        id: generateUniqueId(),
+      // 캐시에 blob 데이터 저장 (먼저 저장하여 pushHistory에서 사용 가능하도록)
+      cacheRef.current.set(cacheKey, {
+        blob: finalAudioBlob,
+        duration: roundedDuration,
+        mimeType: finalMimeType,
+        _audioUrl: audioUrl,
+      });
+
+      const finalExtension = guessExtensionFromMime(finalMimeType);
+      const storagePath = buildStoragePath(selectedVoice, paramHash, finalExtension);
+      const createdAtIso = new Date().toISOString();
+      const tempId = generateUniqueId();
+
+      // 즉시 DB에 자동 저장 (임시 이름으로)
+      const autoSavedEntry = await pushHistory({
+        id: tempId,
         cacheKey,
+        storagePath,
+        format: finalExtension,
+        paramHash,
         purpose: selectedPurpose,
         purposeLabel: purposeMeta.label,
         voiceId: selectedVoice || "",
         voiceName: getVoiceDisplayName(selectedVoice || ""),
-        createdAt: new Date().toISOString(),
+        savedName: `음원_${new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`,
+        createdAt: createdAtIso,
         duration: roundedDuration,
         status: "ready",
         hasAudio: true,
@@ -3971,18 +3817,42 @@ const PublicVoiceGenerator = () => {
         pitchShift,
         textPreview: trimmedText.slice(0, 120),
         textLength: trimmedText.length,
-        audioUrl, // 새로 생성한 blob URL
+        audioUrl,
+        mimeType: finalMimeType,
+      });
+      
+      // 이름 저장 다이얼로그 표시
+      setPendingGeneration({
+        id: autoSavedEntry?.id || tempId, // DB 저장된 실제 ID 사용
+        cacheKey,
+        storagePath,
+        format: finalExtension,
+        paramHash,
+        purpose: selectedPurpose,
+        purposeLabel: purposeMeta.label,
+        voiceId: selectedVoice || "",
+        voiceName: getVoiceDisplayName(selectedVoice || ""),
+        createdAt: createdAtIso,
+        duration: roundedDuration,
+        status: "ready",
+        hasAudio: true,
+        language: chosenLanguage,
+        model: chosenModel,
+        style: styleValue,
+        speed: speedValue,
+        pitchShift,
+        textPreview: trimmedText.slice(0, 120),
+        textLength: trimmedText.length,
+        audioUrl,
+        mimeType: finalMimeType,
       });
       setIsSaveNameDialogOpen(true);
-
-      // 캐시에 blob 데이터 저장
-      cacheRef.current.set(cacheKey, {
-        blob: finalAudioBlob,
-        duration: roundedDuration,
-        mimeType: finalMimeType,
-        _audioUrl: audioUrl,
+      
+      toast({
+        title: "✅ 음원 자동 저장 완료",
+        description: "음원이 자동으로 저장되었습니다. 필요시 이름을 변경하세요.",
+        duration: 2000,
       });
-      // pushHistory는 이름 저장 다이얼로그에서 처리
     } catch (error: any) {
       console.error("음성 생성 오류:", error);
       const errorMessage = error?.message || "음성 생성 중 오류가 발생했습니다.";
@@ -4049,79 +3919,51 @@ const PublicVoiceGenerator = () => {
   };
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#F5F7FA' }}>
+    <PageContainer maxWidth="wide">
       {/* Header */}
-      <div className="border-b border-border bg-white/95 backdrop-blur-lg shadow-sm">
-        <div className="container mx-auto px-4 py-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="landio-text-h1 gradient-text">공공기관 음성 생성</h1>
-              <p className="landio-text-body mt-2" style={{ color: '#4B5563' }}>지자체장 및 기관장 음성 메시지 생성</p>
-              {user && (
-                <div className="mt-2 flex items-center gap-2 text-sm" style={{ color: '#6B7280' }}>
-                  <Building2 className="w-4 h-4" />
-                  <span>{user.organization}</span>
-                  {user.department && <span>• {user.department}</span>}
-                </div>
-              )}
-            </div>
-            <div className="flex items-center gap-4">
-              <HomeButton />
-              <Badge variant="outline" className="px-3 py-1">
-                <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
-                공공기관 특화
-              </Badge>
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h1 className="text-3xl font-bold">음원 생성 (TTS)</h1>
+            <p className="text-muted-foreground mt-1">지자체장 및 기관장 음성 메시지 생성</p>
+          </div>
+          <Badge variant="outline" className="px-3 py-1">
+            <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+            공공기관 특화
+          </Badge>
+        </div>
+        {user && (
+          <div className="p-4 bg-muted/30 rounded-lg">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Building2 className="w-4 h-4" />
+              <span>{user.organization}</span>
+              {user.department && <span>• {user.department}</span>}
             </div>
           </div>
-        </div>
+        )}
       </div>
 
-      <div className="container mx-auto px-4 py-8">
-        {/* Phase 4: 사용량 & 크레딧 모니터링 패널 */}
-        <div className="mb-8 grid grid-cols-1 md:grid-cols-3 gap-4 landio-fade-up">
-          <Card className="landio-card">
-            <CardContent className="pt-6">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-muted-foreground">이번 달 생성</span>
-                  <Badge variant="outline">{usageStats.callsThisMonth}회</Badge>
-                </div>
-                <div className="text-2xl font-bold">{Math.round(usageStats.durationThisMonth / 60)}분</div>
-                <div className="text-xs text-muted-foreground">전체: {usageStats.totalCalls}회 / {Math.round(usageStats.totalDuration / 3600)}시간</div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="landio-card">
-            <CardContent className="pt-6">
-              <div className="space-y-2">
-                <span className="text-sm font-medium text-muted-foreground">크레딧 잔액</span>
-                <div className={`text-2xl font-bold ${creditBalance.balance < 50000 ? "text-red-600" : creditBalance.balance < 100000 ? "text-orange-600" : "text-green-600"}`}>
-                  ₩{creditBalance.balance.toLocaleString()}
-                </div>
-                <div className="w-full bg-muted h-2 rounded-full overflow-hidden">
-                  <div className={`h-full transition-all ${creditBalance.balance < 50000 ? "bg-red-600" : "bg-green-600"}`} style={{ width: `${Math.min((creditBalance.balance / 500000) * 100, 100)}%` }} />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="landio-card">
-            <CardContent className="pt-6">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-muted-foreground">최근 로그</span>
-                  <Button size="sm" variant="ghost" onClick={() => setIsMonitoringPanelOpen(!isMonitoringPanelOpen)}>자세히</Button>
-                </div>
-                <div className="text-xs space-y-1">
-                  {operationLogs.slice(0, 3).map((log) => (
-                    <div key={log.id} className={`text-[11px] ${log.type === "error" ? "text-red-600" : log.type === "warning" ? "text-orange-600" : log.type === "success" ? "text-green-600" : "text-muted-foreground"}`}>
-                      • {log.message}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+      <div className="space-y-8">
+        {/* 워크플로우 진행 상태 */}
+        <Card className="landio-card">
+          <CardContent className="pt-6">
+            <Stepper
+              steps={[
+                { label: "목적 선택", description: "방송 목적 선택" },
+                { label: "문구 작성", description: "메시지 작성 또는 템플릿 선택" },
+                { label: "음성 선택", description: "음성 스타일 선택" },
+                { label: "음원 생성", description: "TTS 음원 생성" },
+                { label: "저장 완료", description: "음원 저장 및 다음 단계" },
+              ]}
+              currentStep={
+                pendingGeneration ? 4 : 
+                generatedAudio ? 3 :
+                selectedVoice ? 2 :
+                customText.trim() ? 1 : 0
+              }
+            />
+          </CardContent>
+        </Card>
 
         <Card className="mb-8 landio-card landio-fade-up">
           <CardHeader>
@@ -4170,92 +4012,175 @@ const PublicVoiceGenerator = () => {
                 </CardDescription>
               </CardHeader>
               <CardContent>
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-sm text-muted-foreground">문구·대본 → 템플릿에서 생성된 템플릿을 사용합니다</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigate("/scripts/templates")}
+                  >
+                    <FileText className="w-4 h-4 mr-2" />
+                    템플릿 관리
+                  </Button>
+                </div>
                 <Tabs defaultValue="greeting" className="w-full">
                   <TabsList className="grid w-full grid-cols-3">
-                    <TabsTrigger value="greeting">인사말</TabsTrigger>
-                    <TabsTrigger value="announcement">안내방송</TabsTrigger>
-                    <TabsTrigger value="policy">정책안내</TabsTrigger>
+                    <TabsTrigger value="greeting">
+                      인사말 ({dbTemplates.greeting.length})
+                    </TabsTrigger>
+                    <TabsTrigger value="announcement">
+                      안내방송 ({dbTemplates.announcement.length})
+                    </TabsTrigger>
+                    <TabsTrigger value="policy">
+                      정책안내 ({dbTemplates.policy.length})
+                    </TabsTrigger>
                   </TabsList>
                   
                   <TabsContent value="greeting" className="space-y-3 mt-4">
-                    {voiceTemplates.greeting.map((template) => (
-                      <Card 
-                        key={template.id}
-                        className={`cursor-pointer transition-all hover:shadow-md ${
-                          selectedTemplate === template.id ? 'ring-2 ring-primary' : ''
-                        }`}
-                        onClick={() => handleTemplateSelect(template)}
-                      >
-                        <CardContent className="p-4">
-                          <div className="flex items-start gap-3">
-                            <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
-                              <template.icon className="w-4 h-4 text-primary" />
+                    {isLoadingTemplates ? (
+                      <div className="text-center py-8 text-muted-foreground">템플릿 로딩 중...</div>
+                    ) : dbTemplates.greeting.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        등록된 인사말 템플릿이 없습니다.
+                        <br />
+                        <Button
+                          variant="link"
+                          className="mt-2"
+                          onClick={() => navigate("/scripts/templates")}
+                        >
+                          템플릿 만들기
+                        </Button>
+                      </div>
+                    ) : (
+                      dbTemplates.greeting.map((template) => (
+                        <Card 
+                          key={template.id}
+                          className={`cursor-pointer transition-all hover:shadow-md ${
+                            selectedTemplate === template.id ? 'ring-2 ring-primary' : ''
+                          }`}
+                          onClick={() => handleTemplateSelect(template)}
+                        >
+                          <CardContent className="p-4">
+                            <div className="flex items-start gap-3">
+                              <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
+                                <FileText className="w-4 h-4 text-primary" />
+                              </div>
+                              <div className="flex-1">
+                                <h3 className="font-medium">{template.templateName}</h3>
+                                <p className="text-sm text-muted-foreground line-clamp-2">{template.text}</p>
+                                {(template.variables || []).length > 0 && (
+                                  <div className="mt-2 flex flex-wrap gap-1">
+                                    {(template.variables || []).map((varName) => (
+                                      <Badge key={varName} variant="secondary" className="text-xs">
+                                        {`{${varName}}`}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                            <div className="flex-1">
-                              <h3 className="font-medium">{template.title}</h3>
-                              <p className="text-sm text-muted-foreground">{template.description}</p>
-                              <Badge variant="secondary" className="mt-1 text-xs">
-                                {template.category}
-                              </Badge>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
+                          </CardContent>
+                        </Card>
+                      ))
+                    )}
                   </TabsContent>
                   
                   <TabsContent value="announcement" className="space-y-3 mt-4">
-                    {voiceTemplates.announcement.map((template) => (
-                      <Card 
-                        key={template.id}
-                        className={`cursor-pointer transition-all hover:shadow-md ${
-                          selectedTemplate === template.id ? 'ring-2 ring-primary' : ''
-                        }`}
-                        onClick={() => handleTemplateSelect(template)}
-                      >
-                        <CardContent className="p-4">
-                          <div className="flex items-start gap-3">
-                            <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
-                              <template.icon className="w-4 h-4 text-primary" />
+                    {isLoadingTemplates ? (
+                      <div className="text-center py-8 text-muted-foreground">템플릿 로딩 중...</div>
+                    ) : dbTemplates.announcement.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        등록된 안내방송 템플릿이 없습니다.
+                        <br />
+                        <Button
+                          variant="link"
+                          className="mt-2"
+                          onClick={() => navigate("/scripts/templates")}
+                        >
+                          템플릿 만들기
+                        </Button>
+                      </div>
+                    ) : (
+                      dbTemplates.announcement.map((template) => (
+                        <Card 
+                          key={template.id}
+                          className={`cursor-pointer transition-all hover:shadow-md ${
+                            selectedTemplate === template.id ? 'ring-2 ring-primary' : ''
+                          }`}
+                          onClick={() => handleTemplateSelect(template)}
+                        >
+                          <CardContent className="p-4">
+                            <div className="flex items-start gap-3">
+                              <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
+                                <FileText className="w-4 h-4 text-primary" />
+                              </div>
+                              <div className="flex-1">
+                                <h3 className="font-medium">{template.templateName}</h3>
+                                <p className="text-sm text-muted-foreground line-clamp-2">{template.text}</p>
+                                {(template.variables || []).length > 0 && (
+                                  <div className="mt-2 flex flex-wrap gap-1">
+                                    {(template.variables || []).map((varName) => (
+                                      <Badge key={varName} variant="secondary" className="text-xs">
+                                        {`{${varName}}`}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                            <div className="flex-1">
-                              <h3 className="font-medium">{template.title}</h3>
-                              <p className="text-sm text-muted-foreground">{template.description}</p>
-                              <Badge variant="secondary" className="mt-1 text-xs">
-                                {template.category}
-                              </Badge>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
+                          </CardContent>
+                        </Card>
+                      ))
+                    )}
                   </TabsContent>
                   
                   <TabsContent value="policy" className="space-y-3 mt-4">
-                    {voiceTemplates.policy.map((template) => (
-                      <Card 
-                        key={template.id}
-                        className={`cursor-pointer transition-all hover:shadow-md ${
-                          selectedTemplate === template.id ? 'ring-2 ring-primary' : ''
-                        }`}
-                        onClick={() => handleTemplateSelect(template)}
-                      >
-                        <CardContent className="p-4">
-                          <div className="flex items-start gap-3">
-                            <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
-                              <template.icon className="w-4 h-4 text-primary" />
+                    {isLoadingTemplates ? (
+                      <div className="text-center py-8 text-muted-foreground">템플릿 로딩 중...</div>
+                    ) : dbTemplates.policy.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        등록된 정책안내 템플릿이 없습니다.
+                        <br />
+                        <Button
+                          variant="link"
+                          className="mt-2"
+                          onClick={() => navigate("/scripts/templates")}
+                        >
+                          템플릿 만들기
+                        </Button>
+                      </div>
+                    ) : (
+                      dbTemplates.policy.map((template) => (
+                        <Card 
+                          key={template.id}
+                          className={`cursor-pointer transition-all hover:shadow-md ${
+                            selectedTemplate === template.id ? 'ring-2 ring-primary' : ''
+                          }`}
+                          onClick={() => handleTemplateSelect(template)}
+                        >
+                          <CardContent className="p-4">
+                            <div className="flex items-start gap-3">
+                              <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
+                                <FileText className="w-4 h-4 text-primary" />
+                              </div>
+                              <div className="flex-1">
+                                <h3 className="font-medium">{template.templateName}</h3>
+                                <p className="text-sm text-muted-foreground line-clamp-2">{template.text}</p>
+                                {(template.variables || []).length > 0 && (
+                                  <div className="mt-2 flex flex-wrap gap-1">
+                                    {(template.variables || []).map((varName) => (
+                                      <Badge key={varName} variant="secondary" className="text-xs">
+                                        {`{${varName}}`}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                            <div className="flex-1">
-                              <h3 className="font-medium">{template.title}</h3>
-                              <p className="text-sm text-muted-foreground">{template.description}</p>
-                              <Badge variant="secondary" className="mt-1 text-xs">
-                                {template.category}
-                              </Badge>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
+                          </CardContent>
+                        </Card>
+                      ))
+                    )}
                   </TabsContent>
                 </Tabs>
               </CardContent>
@@ -4462,7 +4387,13 @@ const PublicVoiceGenerator = () => {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => openCloneModal(selectedVoice)}
+                    onClick={() => {
+                      navigate("/audio/cloning");
+                      toast({
+                        title: "클로닝 페이지로 이동",
+                        description: "클론 음성 생성을 시작할 수 있습니다.",
+                      });
+                    }}
                   >
                     <Plus className="w-4 h-4 mr-2" />
                     클론 생성
@@ -4606,9 +4537,9 @@ const PublicVoiceGenerator = () => {
                                   {Array.from({ length: Math.max(0, 3 - row.length) }).map((_, k) => (
                                     <div key={`sp-${k}`} />
                                   ))}
+                                </div>
+                              ))}
                             </div>
-                          ))}
-                        </div>
                           );
                         })}
                         
@@ -4641,8 +4572,143 @@ const PublicVoiceGenerator = () => {
                       <TabsTrigger value="ai-assist">OpenAI 작성</TabsTrigger>
                     </TabsList>
 
-                    <TabsContent value="manual" className="mt-3 text-xs text-muted-foreground">
-                      텍스트를 직접 입력하세요.
+                    <TabsContent value="manual" className="space-y-4 mt-3">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-sm">메시지 내용 *</Label>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={async () => {
+                            // 이미 열려있으면 닫기
+                            if (isMessageHistoryOpen) {
+                              setIsMessageHistoryOpen(false);
+                              return;
+                            }
+                            // 문구 관리에서 저장된 메시지 로드
+                            if (user?.id) {
+                              try {
+                                const messages = await dbService.loadMessages(user.id);
+                                // 타입 정규화
+                                const normalized = messages.map(msg => ({
+                                  id: String(msg.id || `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`),
+                                  text: msg.text,
+                                  purpose: msg.purpose || selectedPurpose,
+                                  createdAt: msg.createdAt || new Date().toISOString(),
+                                  updatedAt: msg.updatedAt || msg.createdAt || new Date().toISOString(),
+                                }));
+                                setMessageHistory(normalized.sort((a, b) => 
+                                  new Date(b.updatedAt).getTime() - 
+                                  new Date(a.updatedAt).getTime()
+                                ));
+                                setIsMessageHistoryOpen(true);
+                              } catch (error) {
+                                console.error("메시지 로드 실패:", error);
+                                toast({
+                                  title: "문구 불러오기 실패",
+                                  description: "저장된 문구를 불러오는데 실패했습니다.",
+                                  variant: "destructive",
+                                });
+                              }
+                            }
+                          }}
+                        >
+                          <MessageSquare className="w-4 h-4 mr-2" />
+                          {isMessageHistoryOpen ? "문구 목록 닫기" : "문구 불러오기"}
+                        </Button>
+                      </div>
+                      <Textarea
+                        placeholder="메시지를 입력하거나 위의 '문구 불러오기' 버튼을 클릭하여 저장된 문구를 불러오세요..."
+                        value={customText}
+                        onChange={(e) => setCustomText(e.target.value)}
+                        className="min-h-[200px]"
+                      />
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>{customText.length}자</span>
+                        <div className="flex items-center gap-2">
+                          {customText.trim() && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                // 먼저 마크다운 제거
+                                let cleaned = removeMarkdown(customText);
+                                // 조사 교정
+                                const corrected = correctKoreanPostpositions(cleaned);
+                                if (corrected !== customText) {
+                                  setCustomText(corrected);
+                                  toast({
+                                    title: "조사 교정 완료",
+                                    description: "마크다운 기호 제거 및 한국어 조사가 자동으로 교정되었습니다.",
+                                  });
+                                } else if (cleaned !== customText) {
+                                  // 마크다운만 제거된 경우
+                                  setCustomText(cleaned);
+                                  toast({
+                                    title: "마크다운 제거 완료",
+                                    description: "마크다운 기호가 제거되었습니다.",
+                                  });
+                                }
+                              }}
+                            >
+                              조사 교정
+                            </Button>
+                          )}
+                          {customText.length > 300 && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={async () => {
+                                // 300자 초과 처리 다이얼로그
+                                const choice = window.confirm(
+                                  `현재 ${customText.length}자입니다.\n\n` +
+                                  `확인: 300자 이내로 축약 (AI 활용)\n` +
+                                  `취소: 300자 단위로 자동 분리`
+                                );
+                                
+                                if (choice) {
+                                  // 300자 이내로 축약
+                                  try {
+                                    setIsLoadingAI(true);
+                                    const out = await editWithOpenAI(
+                                      customText,
+                                      `300자 이내로 간결하게 축약하세요. 핵심 내용은 유지하되 불필요한 설명은 생략하세요.`
+                                    );
+                                    setCustomText(out);
+                                    toast({
+                                      title: "축약 완료",
+                                      description: `문구가 ${out.length}자로 축약되었습니다.`,
+                                    });
+                                  } catch (e: any) {
+                                    toast({
+                                      title: "축약 실패",
+                                      description: e?.message || "문구 축약 중 오류가 발생했습니다.",
+                                      variant: "destructive",
+                                    });
+                                  } finally {
+                                    setIsLoadingAI(false);
+                                  }
+                                } else {
+                                  // 300자 단위로 분리
+                                  const chunks = splitTextIntoChunks(customText, 300);
+                                  if (chunks.length > 1) {
+                                    const combined = chunks.map((chunk, idx) => 
+                                      `[${idx + 1}]\n${chunk}`
+                                    ).join('\n\n');
+                                    setCustomText(combined);
+                                    toast({
+                                      title: "분리 완료",
+                                      description: `${chunks.length}개로 분리되었습니다.`,
+                                    });
+                                  }
+                                }
+                              }}
+                              disabled={isLoadingAI}
+                            >
+                              {customText.length}자 → 처리
+                            </Button>
+                          )}
+                        </div>
+                      </div>
                     </TabsContent>
 
                     <TabsContent value="ai-assist" className="space-y-4 mt-3">
@@ -4727,9 +4793,16 @@ const PublicVoiceGenerator = () => {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => setIsMessageHistoryOpen(true)}
+                              onClick={() => {
+                                // 이미 열려있으면 닫기
+                                if (isMessageHistoryOpen) {
+                                  setIsMessageHistoryOpen(false);
+                                } else {
+                                  setIsMessageHistoryOpen(true);
+                                }
+                              }}
                             >
-                              이력 보기
+                              {isMessageHistoryOpen ? "이력 닫기" : "이력 보기"}
                             </Button>
                         <Button
                           variant="outline"
@@ -4786,9 +4859,16 @@ const PublicVoiceGenerator = () => {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => setIsMessageHistoryOpen(true)}
+                              onClick={() => {
+                                // 이미 열려있으면 닫기
+                                if (isMessageHistoryOpen) {
+                                  setIsMessageHistoryOpen(false);
+                                } else {
+                                  setIsMessageHistoryOpen(true);
+                                }
+                              }}
                             >
-                              이력 보기
+                              {isMessageHistoryOpen ? "이력 닫기" : "이력 보기"}
                             </Button>
                         <Button
                           variant="outline"
@@ -4902,111 +4982,7 @@ const PublicVoiceGenerator = () => {
                     </div>
                   )}
 
-                  <Label htmlFor="text">메시지 내용 *</Label>
-                  <Textarea
-                    id="text"
-                    placeholder="음성으로 변환할 텍스트를 입력하세요..."
-                    value={customText}
-                    onChange={(e) => setCustomText(e.target.value)}
-                    className="min-h-[200px]"
-                  />
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <div className="text-xs text-muted-foreground">
-                        {selectedTemplate ? (
-                          <p className="mb-1">템플릿 변수를 입력하면 자동으로 반영됩니다.</p>
-                        ) : (
-                          <>
-                            <p className="mb-1">템플릿의 {"{"}변수명{"}"} 부분을 실제 내용으로 교체해주세요.</p>
-                            <ul className="list-disc list-inside space-y-0.5 text-[11px]">
-                              <li>예: {"{"}기관명{"}"} → 강원특별자치도청</li>
-                              <li>예: {"{"}담당자명{"}"} → 김철수</li>
-                              <li>예: {"{"}이벤트명{"}"} → 신년인사</li>
-                            </ul>
-                          </>
-                        )}
-                      </div>
-                      <p className={`text-xs ${customText.length > 300 ? 'text-red-500' : 'text-muted-foreground'}`}>
-                        {customText.length} / 300자 (최대)
-                      </p>
-                    </div>
-                    {predictedDuration !== null && customText.trim() && (
-                      <div className="flex items-center gap-2 text-xs">
-                        <Clock className="w-3 h-3 text-primary" />
-                        <span className="text-muted-foreground">
-                          예상 길이:
-                        </span>
-                        <span className="font-medium text-primary">
-                          {isPredictingDuration ? "예측 중..." : `${predictedDuration.toFixed(2)}초`}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap gap-2 justify-end">
-                    <Button variant="outline" onClick={() => { 
-                      setCustomText(""); 
-                      setSelectedTemplate(""); 
-                      setTemplateVariables({});
-                      setSelectedTemplateObj(null);
-                    }}>
-                      내용 초기화
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={async () => {
-                        try {
-                          const prompt = (lastAIPrompt || openAIPrompt).trim();
-                          if (!prompt) { 
-                            setAlertDialog({ open: true, title: "프롬프트 없음", message: "프롬프트를 입력해주세요." });
-                            return; 
-                          }
-                          setIsLoadingAI(true);
-                          const org = user?.organization || "귀 기관";
-                          const dept = user?.department || "관계 부서";
-                          const purposeLabel = purposeMeta?.label || "공지";
-                          const checklistGuide = purposeMeta?.checklist?.join(", ") || "";
-                          const basePrompt = `${org} ${dept} 방송문 (${purposeLabel}): ${prompt}. ${purposeMeta?.optimizedPrompt || ""} ${checklistGuide ? `검수 체크리스트를 확인하세요: ${checklistGuide}` : ""}`;
-                          const out = await generateWithOpenAI(basePrompt);
-                          setCustomText(out);
-                          setLastAIPrompt(prompt);
-                        } catch (e: any) {
-                          setAlertDialog({ open: true, title: "다시 생성 실패", message: e?.message || "다시 생성 중 오류가 발생했습니다." });
-                        } finally {
-                          setIsLoadingAI(false);
-                        }
-                      }}
-                    >
-                      다시 생성
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={async () => {
-                        try {
-                          const instruction = (lastAIInstruction || openAIInstruction).trim();
-                          if (!instruction) { 
-                            setAlertDialog({ open: true, title: "수정 지침 없음", message: "수정 지침을 입력해주세요." });
-                            return; 
-                          }
-                          if (!customText.trim()) { 
-                            setAlertDialog({ open: true, title: "텍스트 없음", message: "수정할 텍스트를 입력해주세요." });
-                            return; 
-                          }
-                          setIsLoadingAI(true);
-                          const checklistGuide = purposeMeta?.checklist?.join(", ") || "";
-                          const instructionWithChecklist = `${instruction}. ${purposeMeta?.optimizedPrompt || ""} ${checklistGuide ? `검수 체크리스트를 확인하세요: ${checklistGuide}` : ""}`;
-                          const out = await editWithOpenAI(customText, instructionWithChecklist);
-                          setCustomText(out);
-                          setLastAIInstruction(instruction);
-                        } catch (e: any) {
-                          setAlertDialog({ open: true, title: "다시 수정 실패", message: e?.message || "다시 수정 중 오류가 발생했습니다." });
-                        } finally {
-                          setIsLoadingAI(false);
-                        }
-                      }}
-                    >
-                      다시 수정
-                    </Button>
-                  </div>
+                  {/* 중복 메시지 입력 영역 제거됨: 상단 '직접 작성' 탭의 단일 입력을 사용합니다. */}
                 </div>
 
                 {/* 고급 설정 */}
@@ -5413,7 +5389,52 @@ const PublicVoiceGenerator = () => {
                       audioUrl={generatedAudio}
                       title="생성된 음성"
                       duration={generatedDuration}
+                      mimeType={pendingGeneration?.mimeType || "audio/mpeg"}
+                      cacheKey={pendingGeneration?.cacheKey || undefined}
                       onDownload={handleDownload}
+                      onError={async () => {
+                        // blob URL이 만료된 경우 복원 시도
+                        if (!pendingGeneration?.cacheKey) {
+                          toast({
+                            title: "음원 복원 실패",
+                            description: "cacheKey가 없어 복원할 수 없습니다.",
+                            variant: "destructive",
+                          });
+                          return;
+                        }
+                        
+                        const cached = cacheRef.current.get(pendingGeneration.cacheKey);
+                        if (cached?.blob) {
+                          try {
+                            // 기존 blob URL 해제
+                            if (cached._audioUrl) {
+                              URL.revokeObjectURL(cached._audioUrl);
+                            }
+                            // 새 blob URL 생성
+                            const newUrl = URL.createObjectURL(cached.blob);
+                            cacheRef.current.set(pendingGeneration.cacheKey, { ...cached, _audioUrl: newUrl });
+                            setGeneratedAudio(newUrl);
+                            toast({
+                              title: "음원 복원 완료",
+                              description: "만료된 음원을 복원했습니다.",
+                              duration: 2000,
+                            });
+                          } catch (e) {
+                            console.error("Blob URL 생성 실패:", e);
+                            toast({
+                              title: "음원 복원 실패",
+                              description: "음원을 복원하는 중 오류가 발생했습니다.",
+                              variant: "destructive",
+                            });
+                          }
+                        } else {
+                          toast({
+                            title: "음원 복원 실패",
+                            description: "음원 데이터를 찾을 수 없습니다.",
+                            variant: "destructive",
+                          });
+                        }
+                      }}
                     />
                     <Button
                       variant="outline"
@@ -5438,262 +5459,6 @@ const PublicVoiceGenerator = () => {
 
         {/* 생성 기록 & 사용 가이드 */}
         <div className="mt-8 space-y-6">
-          <Card className="landio-card landio-fade-up">
-            <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <Mic2 className="w-5 h-5" />
-                  클론 음성 관리
-                </CardTitle>
-                <CardDescription>기존 음성을 기반으로 클론 음성을 생성하고 관리합니다.</CardDescription>
-              </div>
-              <Button size="sm" className="landio-button" onClick={() => openCloneModal()}>새 클론 음성 생성</Button>
-            </CardHeader>
-            <CardContent>
-              {cloneRequests.length === 0 ? (
-                <p className="text-sm text-muted-foreground">아직 생성된 클론 음성이 없습니다. 기준 음성을 선택한 후 클론 생성 버튼을 눌러보세요.</p>
-              ) : (
-                <div className="space-y-3">
-                  {cloneRequests.map((clone) => {
-                    const isFavorite = favoriteVoiceIds.has(clone.voiceId);
-                    const languageLabel = languageCodeToKo(clone.language);
-                    return (
-                      <div key={clone.id} className="rounded-xl border border-border bg-muted/20 p-4 grid gap-4 md:grid-cols-[200px_1fr_250px] items-start transition-all hover:shadow-md" style={{ borderRadius: '12px' }}>
-                        {/* 왼쪽: 상태 및 기본 정보 */}
-                        <div className="space-y-2">
-                          <Badge variant={clone.status === "completed" ? "default" : "outline"} className="w-fit">
-                            {clone.status === "completed" ? "완료" : "진행중"}
-                          </Badge>
-                          <div className="text-xs text-muted-foreground">{formatDateTime(clone.createdAt)}</div>
-                        </div>
-                        
-                        {/* 중앙: 음성 이름, 기준 음성, 언어, 미리듣기 입력 */}
-                        <div className="space-y-3">
-                          <div className="space-y-1">
-                            <div className="text-sm font-medium text-white">{clone.voiceName}</div>
-                            <div className="text-xs text-muted-foreground">기준 음성: {clone.baseVoiceName || "-"}</div>
-                            <div className="text-xs text-muted-foreground">언어: {languageLabel}</div>
-                          </div>
-                          
-                          {/* 클론 음성 미리듣기 (완료된 경우에만) */}
-                          {clone.status === "completed" && (
-                            <div className="space-y-2">
-                              <Input
-                                type="text"
-                                placeholder="미리듣기 텍스트 입력..."
-                                value={clonePreviewText[clone.id] || ""}
-                                onChange={(e) => setClonePreviewText(prev => ({ ...prev, [clone.id]: e.target.value }))}
-                                className="h-10 text-sm"
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter" && !e.shiftKey) {
-                                    e.preventDefault();
-                                    handleClonePreview(clone);
-                                  }
-                                }}
-                              />
-                              {clonePreviewAudio[clone.id] && (
-                                <AudioPlayer
-                                  audioUrl={clonePreviewAudio[clone.id]!}
-                                  title={`${clone.voiceName} 미리듣기`}
-                                  duration={0}
-                                />
-                              )}
-                            </div>
-                          )}
-                        </div>
-                        
-                        {/* 오른쪽: 샘플 정보 및 액션 버튼 */}
-                        <div className="space-y-3">
-                          <div className="space-y-1 text-xs text-muted-foreground">
-                            <div>샘플: {clone.sampleName || "-"}</div>
-                            <div>메모: {clone.memo || "-"}</div>
-                            {clone.completedAt && (
-                              <div>완료: {formatDateTime(clone.completedAt)}</div>
-                            )}
-                          </div>
-                          
-                          <div className="flex flex-col gap-2">
-                            {/* 미리듣기 버튼 (완료된 경우에만) */}
-                            {clone.status === "completed" && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="landio-button w-full justify-start"
-                                disabled={!clonePreviewText[clone.id]?.trim() || isGeneratingClonePreview[clone.id]}
-                                onClick={() => handleClonePreview(clone)}
-                              >
-                                {isGeneratingClonePreview[clone.id] ? (
-                                  <>
-                                    <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-current mr-2"></div>
-                                    생성 중...
-                                  </>
-                                ) : (
-                                  <>
-                                    <Play className="w-3 h-3 mr-2" />
-                                    미리듣기
-                                  </>
-                                )}
-                              </Button>
-                            )}
-                            
-                            {/* 튜닝 및 파형 비교 버튼 (완료된 경우에만) */}
-                            {clone.status === "completed" && (
-                              <div className="flex gap-2">
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="landio-button flex-1"
-                                  onClick={() => {
-                                    setSelectedCloneForTuning(clone.id);
-                                    // 기존 튜닝 설정이 없으면 기본값 설정 (기존 생성 기록에서 사용된 설정 찾기)
-                                    if (!cloneTuningSettings[clone.id]) {
-                                      // 이 클론 음성으로 생성된 기록 찾기
-                                      const relatedGenerations = generationHistory.filter(gen => 
-                                        gen.voiceId === clone.voiceId || gen.voiceId === clone.baseVoiceId
-                                      );
-                                      
-                                      // 가장 최근 생성 기록에서 설정 가져오기
-                                      let initialSettings = {
-                                        speed: 1.0,
-                                        pitch: 0,
-                                        style: "neutral",
-                                        language: clone.language || "ko",
-                                        emotion: "neutral"
-                                      };
-                                      
-                                      if (relatedGenerations.length > 0) {
-                                        const latestGen = relatedGenerations.sort((a, b) => 
-                                          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-                                        )[0];
-                                        
-                                        // 생성 기록에서 사용된 설정 추출
-                                        if (latestGen.settings) {
-                                          initialSettings = {
-                                            speed: latestGen.settings.speed || 1.0,
-                                            pitch: latestGen.settings.pitch || 0,
-                                            style: latestGen.settings.style || "neutral",
-                                            language: latestGen.settings.language || clone.language || "ko",
-                                            emotion: latestGen.settings.emotion || "neutral"
-                                          };
-                                        }
-                                      }
-                                      
-                                      setCloneTuningSettings(prev => ({
-                                        ...prev,
-                                        [clone.id]: initialSettings
-                                      }));
-                                    }
-                                    setIsCloneTuningModalOpen(true);
-                                  }}
-                                >
-                                  <Settings className="w-3 h-3 mr-1" />
-                                  튜닝
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="landio-button flex-1"
-                                  onClick={async () => {
-                                    setSelectedCloneForWaveform(clone.id);
-                                    setIsWaveformComparisonOpen(true);
-                                    
-                                    // 파형 데이터 로드
-                                    try {
-                                      const ctx = audioContext || new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 44100 });
-                                      if (!audioContext) setAudioContext(ctx);
-                                      
-                                      // 기준 음성 샘플 가져오기
-                                      const baseVoice = getVoiceMeta(clone.baseVoiceId);
-                                      const sampleUrl = baseVoice?.samples?.[0]?.url;
-                                      
-                                      // 클론 음성 미리듣기가 있으면 사용, 없으면 생성
-                                      let clonedUrl = clonePreviewAudio[clone.id];
-                                      if (!clonedUrl && clonePreviewText[clone.id]) {
-                                        // 미리듣기 생성
-                                        await handleClonePreview(clone);
-                                        clonedUrl = clonePreviewAudio[clone.id] || null;
-                                      }
-                                      
-                                      let originalBuffer: AudioBuffer | undefined;
-                                      let clonedBuffer: AudioBuffer | undefined;
-                                      
-                                      if (sampleUrl) {
-                                        try {
-                                          originalBuffer = await decodeUrlToBuffer(ctx, sampleUrl);
-                                        } catch (e) {
-                                          console.warn("기준 음성 샘플 디코딩 실패:", e);
-                                        }
-                                      }
-                                      
-                                      if (clonedUrl) {
-                                        try {
-                                          clonedBuffer = await decodeUrlToBuffer(ctx, clonedUrl);
-                                        } catch (e) {
-                                          console.warn("클론 음성 디코딩 실패:", e);
-                                        }
-                                      }
-                                      
-                                      setWaveformComparisonData(prev => ({
-                                        ...prev,
-                                        [clone.id]: {
-                                          original: originalBuffer,
-                                          cloned: clonedBuffer,
-                                          originalUrl: sampleUrl,
-                                          clonedUrl: clonedUrl || undefined
-                                        }
-                                      }));
-                                    } catch (error) {
-                                      console.error("파형 데이터 로드 오류:", error);
-                                      toast({
-                                        title: "파형 로드 실패",
-                                        description: "파형 데이터를 불러올 수 없습니다.",
-                                        variant: "destructive"
-                                      });
-                                    }
-                                  }}
-                                >
-                                  <BarChart3 className="w-3 h-3 mr-1" />
-                                  파형 비교
-                                </Button>
-                              </div>
-                            )}
-                            
-                            {/* 즐겨찾기 및 사용하기 버튼 */}
-                            <div className="flex gap-2">
-                              <Button
-                                size="sm"
-                                variant={isFavorite ? "default" : "outline"}
-                                className="landio-button flex-1"
-                                onClick={() => toggleFavorite(clone.voiceId)}
-                              >
-                                {isFavorite ? "즐겨찾기 해제" : "즐겨찾기"}
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="landio-button flex-1"
-                                disabled={clone.status !== "completed"}
-                                onClick={() => {
-                                  if (clone.status !== "completed") return;
-                                  setSelectedVoice(clone.voiceId);
-                                  const meta = getVoiceMeta(clone.voiceId);
-                                  setSelectedVoiceInfo(meta || null);
-                                  toast({ title: "클론 음성 선택", description: `${clone.voiceName} 음성을 선택했습니다.` });
-                                }}
-                              >
-                                사용하기
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
           <Card className="landio-card landio-fade-up">
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -5740,7 +5505,54 @@ const PublicVoiceGenerator = () => {
                             setTimeout(() => resolve(), 2000); // 타임아웃
                           });
                           
-                          const cacheKey = `uploaded_${Date.now()}_${file.name}`;
+                          const uploadHash = await computeGenerationHash({ name: file.name, size: file.size, lastModified: file.lastModified || Date.now() });
+                          const existingHistoryUpload = generationHistory.find((g) => g.paramHash === uploadHash);
+                          if (existingHistoryUpload) {
+                            toast({
+                              title: "이미 업로드된 음원",
+                              description: existingHistoryUpload.savedName ? `"${existingHistoryUpload.savedName}" 음원을 재사용합니다.` : "동일한 음원이 이미 존재하여 재사용합니다.",
+                            });
+                            setExpandedGenerationId(existingHistoryUpload.id ? String(existingHistoryUpload.id) : null);
+                            URL.revokeObjectURL(audioUrl);
+                            return;
+                          }
+
+                          let existingDbUpload: dbService.GenerationEntry | null = null;
+                          if (user?.id) {
+                            try {
+                              existingDbUpload = await dbService.findGenerationByHash(user.id, uploadHash);
+                            } catch (e) {
+                              // findGenerationByHash 실패는 조용히 처리 (400 에러 등)
+                              console.warn("findGenerationByHash 실패 (업로드):", e);
+                            }
+                          }
+                          if (existingDbUpload) {
+                            setGenerationHistory((prev) => [existingDbUpload, ...prev.filter((g) => String(g.id) !== String(existingDbUpload?.id))].slice(0, 100));
+                            if (existingDbUpload.id) {
+                              const blobData = await dbService.loadGenerationBlob(user.id, String(existingDbUpload.id));
+                              if (blobData?.audioBlob) {
+                                const blob = dbService.arrayBufferToBlob(blobData.audioBlob, blobData.mimeType || existingDbUpload.mimeType || "audio/mpeg");
+                                const existingUrl = URL.createObjectURL(blob);
+                                cacheRef.current.set(`hash_${uploadHash}`, {
+                                  blob,
+                                  duration: existingDbUpload.duration || null,
+                                  mimeType: blob.type,
+                                  _audioUrl: existingUrl,
+                                });
+                              }
+                            }
+                            setExpandedGenerationId(existingDbUpload.id ? String(existingDbUpload.id) : null);
+                            toast({
+                              title: "이미 업로드된 음원",
+                              description: "동일한 파일이 이미 등록되어 기존 음원을 불러왔습니다.",
+                            });
+                            URL.revokeObjectURL(audioUrl);
+                            return;
+                          }
+
+                          const extension = guessExtensionFromMime(file.type);
+                          const storagePath = buildStoragePath("uploaded", uploadHash, extension, file.lastModified ? new Date(file.lastModified) : new Date());
+                          const cacheKey = `hash_${uploadHash}`;
                           cacheRef.current.set(cacheKey, {
                             blob: audioBlob,
                             duration,
@@ -5761,8 +5573,12 @@ const PublicVoiceGenerator = () => {
                             language: "ko",
                             cacheKey,
                             audioUrl,
+                            storagePath,
+                            format: extension,
+                            paramHash: uploadHash,
                             status: "ready",
                             hasAudio: true,
+                            mimeType: file.type || "audio/mpeg",
                           };
                           
                           const dbId = await dbService.saveGeneration(user.id, dbEntry, audioBlob);
@@ -5774,7 +5590,7 @@ const PublicVoiceGenerator = () => {
                             createdAt: new Date().toISOString(),
                           };
                           
-                          setGenerationHistory((prev) => [newEntry, ...prev].slice(0, 100));
+                          setGenerationHistory((prev) => [newEntry, ...prev.filter((g) => String(g.id) !== String(newEntry.id))].slice(0, 100));
                           
                           toast({
                             title: "음원 업로드 완료",
@@ -5817,8 +5633,9 @@ const PublicVoiceGenerator = () => {
               ) : (
                 <div className="space-y-3">
                   {generationHistory.map((entry) => {
+                    if (!entry.id) return null; // id가 없으면 렌더링하지 않음
                     const languageKo = languageCodeToKo(entry.language);
-                    const isExpanded = expandedGenerationId === entry.id;
+                    const isExpanded = expandedGenerationId === String(entry.id || '');
                     const isEditing = editingGenerationId === entry.id;
                     
                     // audioUrl 복원: cacheKey가 있으면 cacheRef에서 blob 데이터로부터 새 blob URL 생성
@@ -5913,6 +5730,8 @@ const PublicVoiceGenerator = () => {
                             </div>
                             <div className="text-xs text-muted-foreground truncate" title={entry.textPreview}>{entry.textPreview || "(텍스트 없음)"}</div>
                             <div className="text-xs text-muted-foreground">길이: {entry.duration != null ? `${entry.duration.toFixed(2)}초` : "-"}</div>
+                            <div className="text-xs text-muted-foreground truncate" title={entry.storagePath || "경로 미지정"}>경로: {entry.storagePath || "-"}</div>
+                            <div className="text-xs text-muted-foreground">형식: {(entry.format || guessExtensionFromMime(entry.mimeType)).toUpperCase()} · Hash: {entry.paramHash ? entry.paramHash.slice(0, 8) : "-"}</div>
                           </div>
                           <div className="space-y-1 text-xs text-muted-foreground">
                             <div>음성: {entry.voiceName || "-"}</div>
@@ -5925,6 +5744,7 @@ const PublicVoiceGenerator = () => {
                               variant="outline"
                               className="landio-button"
                               onClick={() => setExpandedGenerationId(isExpanded ? null : entry.id)}
+                              disabled={!audioUrl}
                             >
                               {isExpanded ? "접기" : "미리듣기"}
                             </Button>
@@ -5932,7 +5752,92 @@ const PublicVoiceGenerator = () => {
                               size="sm"
                               variant="outline"
                               className="landio-button"
-                              onClick={() => openCloneModal(entry.voiceId)}
+                              onClick={async () => {
+                                // 음원 불러오기
+                                if (!audioUrl) {
+                                  toast({
+                                    title: "음원을 불러올 수 없습니다",
+                                    description: "음원 데이터가 없습니다.",
+                                    variant: "destructive",
+                                  });
+                                  return;
+                                }
+                                
+                                try {
+                                  // cacheKey가 있으면 cacheRef에서 blob 가져오기
+                                  let audioBlob: Blob | null = null;
+                                  if (entry.cacheKey) {
+                                    const cached = cacheRef.current.get(entry.cacheKey);
+                                    if (cached?.blob) {
+                                      audioBlob = cached.blob;
+                                    }
+                                  }
+                                  
+                                  // blob이 없으면 audioUrl에서 가져오기 시도
+                                  if (!audioBlob && audioUrl) {
+                                    try {
+                                      const response = await fetch(audioUrl);
+                                      if (response.ok) {
+                                        audioBlob = await response.blob();
+                                        // cacheRef에 저장
+                                        const cacheKey = entry.cacheKey || `loaded_${entry.id}_${Date.now()}`;
+                                        cacheRef.current.set(cacheKey, {
+                                          blob: audioBlob,
+                                          duration: entry.duration || null,
+                                          mimeType: entry.mimeType || "audio/mpeg",
+                                          _audioUrl: audioUrl,
+                                        });
+                                      }
+                                    } catch (e) {
+                                      console.error("음원 불러오기 실패:", e);
+                                    }
+                                  }
+                                  
+                                  if (audioBlob) {
+                                    // 새 blob URL 생성
+                                    const newUrl = URL.createObjectURL(audioBlob);
+                                    const newCacheKey = entry.cacheKey || `loaded_${entry.id}_${Date.now()}`;
+                                    cacheRef.current.set(newCacheKey, {
+                                      blob: audioBlob,
+                                      duration: entry.duration || null,
+                                      mimeType: entry.mimeType || "audio/mpeg",
+                                      _audioUrl: newUrl,
+                                    });
+                                    
+                                    // 생성된 음원으로 설정
+                                    setGeneratedAudio(newUrl);
+                                    setGeneratedDuration(entry.duration || 0);
+                                    setCustomText(entry.textPreview || "");
+                                    setSelectedPurpose(entry.purpose || "announcement");
+                                    
+                                    toast({
+                                      title: "음원 불러오기 완료",
+                                      description: `${entry.savedName || formatDateTime(entry.createdAt)} 음원을 불러왔습니다.`,
+                                    });
+                                  } else {
+                                    toast({
+                                      title: "음원을 불러올 수 없습니다",
+                                      description: "음원 데이터를 가져오는데 실패했습니다.",
+                                      variant: "destructive",
+                                    });
+                                  }
+                                } catch (error) {
+                                  console.error("음원 불러오기 실패:", error);
+                                  toast({
+                                    title: "음원 불러오기 실패",
+                                    description: "음원을 불러오는 중 오류가 발생했습니다.",
+                                    variant: "destructive",
+                                  });
+                                }
+                              }}
+                            >
+                              불러오기
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="landio-button"
+                              onClick={() => {/* 클론 기능은 /audio/cloning 페이지에서 사용 가능 */}}
                             >
                               클로닝
                             </Button>
@@ -5943,7 +5848,17 @@ const PublicVoiceGenerator = () => {
                         {isExpanded && (
                           <div className="mt-3 pt-3 border-t border-border space-y-3">
                             {/* 미리듣기 */}
-                            {audioUrl ? (
+                            {!audioUrl ? (
+                              <div className="p-3 bg-red-900/20 border border-red-500/30 rounded-lg">
+                                <div className="flex items-center gap-2 text-xs text-red-400">
+                                  <AlertCircle className="w-4 h-4" />
+                                  <span className="font-semibold">파일 없음 (재생 불가)</span>
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  음원 데이터가 저장되지 않았습니다. 새로 생성해주세요.
+                                </p>
+                              </div>
+                            ) : (
                               <div className="p-3 bg-muted/40 rounded-lg">
                                 <div className="text-xs font-semibold mb-2 text-muted-foreground">미리듣기</div>
                                 <AudioPlayer
@@ -5951,6 +5866,7 @@ const PublicVoiceGenerator = () => {
                                   audioUrl={audioUrl || ""}
                                   title={entry.savedName || formatDateTime(entry.createdAt)}
                                   duration={entry.duration || 0}
+                                  mimeType={(entry as any).mimeType || "audio/mpeg"}
                                   cacheKey={entry.cacheKey}
                                   onError={async () => {
                                     // blob URL이 만료된 경우 복원 시도 (자동, 조용히)
@@ -5984,45 +5900,38 @@ const PublicVoiceGenerator = () => {
                                       }
                                     }
                                     
-                                    // 2단계: DB에서 복원 시도
+                                    // 2단계: DB에서 blob 재로드 시도 (cacheRef에 없을 때만)
                                     if (!restored && user?.id && entry.id) {
                                       try {
-                                        // 전체 히스토리를 다시 로드하지 않고, 특정 항목만 조회
-                                        const dbHistory = await dbService.loadGenerations(user.id, 100);
-                                        const dbEntry = dbHistory.find((item: any) => String(item.id) === String(entry.id));
-                                        
-                                        if (dbEntry?.audioBlob) {
+                                        const single = await dbService.loadGenerationBlob(user.id, String(entry.id));
+                                        if (single?.audioBlob) {
                                           try {
-                                            // dbEntry가 any 타입이므로 mimeType을 안전하게 접근
-                                            const mimeType = (dbEntry as any).mimeType || entry.mimeType || "audio/mpeg";
-                                            const blob = dbService.arrayBufferToBlob(dbEntry.audioBlob, mimeType);
+                                            const mimeType = single.mimeType || (entry as any).mimeType || "audio/mpeg";
+                                            const blob = dbService.arrayBufferToBlob(single.audioBlob, mimeType);
                                             const newUrl = URL.createObjectURL(blob);
                                             const cacheKey = entry.cacheKey || `${entry.id}_${Date.now()}`;
-                                            cacheRef.current.set(cacheKey, { 
-                                              blob, 
-                                              duration: entry.duration || null, 
+                                            cacheRef.current.set(cacheKey, {
+                                              blob,
+                                              duration: entry.duration || null,
                                               mimeType: mimeType,
-                                              _audioUrl: newUrl 
+                                              _audioUrl: newUrl,
                                             });
                                             
+                                            // generationHistory 업데이트
                                             setGenerationHistory((prev) => 
                                               prev.map((g) => 
-                                                g.id === entry.id ? { ...g, audioUrl: newUrl, cacheKey } : g
+                                                g.id === entry.id ? { ...g, audioUrl: newUrl, cacheKey, mimeType: mimeType as string } : g
                                               )
                                             );
                                             
                                             restored = true;
                                             console.log(`음원 복원 완료 (DB): ${entry.id}`);
                                           } catch (e) {
-                                            console.error(`Blob 변환 실패:`, e);
+                                            console.error(`DB blob 복원 실패:`, e);
                                           }
                                         }
-                                        
-                                        if (!restored) {
-                                          console.warn(`음원 복원 실패 (DB에 데이터 없음): ${entry.id}`);
-                                        }
-                                      } catch (error) {
-                                        console.error("DB 복원 실패:", error);
+                                      } catch (e) {
+                                        console.error(`DB 로드 실패:`, e);
                                       }
                                     }
                                     
@@ -6036,10 +5945,6 @@ const PublicVoiceGenerator = () => {
                                     }
                                   }}
                                 />
-                              </div>
-                            ) : (
-                              <div className="p-3 bg-muted/40 rounded-lg text-xs text-muted-foreground">
-                                오디오 파일을 불러올 수 없습니다.
                               </div>
                             )}
                             {/* 관리 기능 */}
@@ -6424,236 +6329,7 @@ const PublicVoiceGenerator = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isCloneModalOpen} onOpenChange={setIsCloneModalOpen}>
-        <DialogContent className="sm:max-w-lg dark-dialog">
-          <DialogHeader>
-            <DialogTitle className="text-white font-bold text-lg" style={{ color: '#FFFFFF' }}>새 클론 음성 생성</DialogTitle>
-            <DialogDescription className="text-gray-300">
-              기준 음성과 샘플 음성을 업로드하면, 동일한 톤의 클론 음성을 만들어 음성 목록에 추가합니다.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="clone-target" className="text-gray-200">대상 이름 *</Label>
-              <Input
-                id="clone-target"
-                placeholder="예: 시장님 공식 음성"
-                value={cloneForm.targetName}
-                onChange={(e) => setCloneForm((prev) => ({ ...prev, targetName: e.target.value }))}
-                className="bg-gray-800/50 border-gray-600 text-white placeholder:text-gray-400 focus-visible:ring-gray-500"
-              />
-    </div>
-            <div className="space-y-2">
-              <Label className="text-gray-200">기준 음성 *</Label>
-              <Select
-                value={cloneForm.baseVoiceId || undefined}
-                onValueChange={(value) => {
-                  const base = getVoiceMeta(value);
-                  const firstLang = base
-                    ? normalizeLanguage(Array.isArray(base.language) ? base.language[0] : base.language) || cloneForm.language
-                    : cloneForm.language;
-                  setCloneForm((prev) => ({ ...prev, baseVoiceId: value, language: firstLang }));
-                }}
-              >
-                <SelectTrigger className="bg-gray-800/50 border-gray-600 text-white">
-                  <SelectValue placeholder="기준 음성을 선택하세요" className="text-gray-400" />
-                </SelectTrigger>
-                <SelectContent className="max-h-64 bg-gray-800 border-gray-600">
-                  <div className="px-2 py-1.5 border-b border-gray-700 space-y-2 sticky top-0 bg-gray-800 z-10" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[10px] text-muted-foreground">정렬:</span>
-                      <Select 
-                        value={cloneBaseVoiceSortBy} 
-                        onValueChange={(v) => {
-                          if (v === "none") {
-                            setCloneBaseVoiceSortBy("none");
-                          } else {
-                            setCloneBaseVoiceSortBy(v as "name" | "language" | "gender");
-                            if (cloneBaseVoiceSortBy !== v) setCloneBaseVoiceSortOrder("asc");
-                          }
-                        }}
-                      >
-                        <SelectTrigger className="h-6 w-24 text-[10px] border-gray-600" onClick={(e) => e.stopPropagation()}>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent onClick={(e) => e.stopPropagation()}>
-                          <SelectItem value="none">정렬 안함</SelectItem>
-                          <SelectItem value="name">이름</SelectItem>
-                          <SelectItem value="language">언어</SelectItem>
-                          <SelectItem value="gender">성별</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      {cloneBaseVoiceSortBy !== "none" && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-6 w-6 p-0"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setCloneBaseVoiceSortOrder(cloneBaseVoiceSortOrder === "asc" ? "desc" : "asc");
-                          }}
-                          title={cloneBaseVoiceSortOrder === "asc" ? "오름차순" : "내림차순"}
-                        >
-                          {cloneBaseVoiceSortOrder === "asc" ? "↑" : "↓"}
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                  {(() => {
-                    const sorted = [...allVoices].sort((a: any, b: any) => {
-                      if (cloneBaseVoiceSortBy === "name") {
-                        const nameA = (a.name || a.voice_id || "").toLowerCase();
-                        const nameB = (b.name || b.voice_id || "").toLowerCase();
-                        return cloneBaseVoiceSortOrder === "asc" 
-                          ? nameA.localeCompare(nameB, "ko") 
-                          : nameB.localeCompare(nameA, "ko");
-                      } else if (cloneBaseVoiceSortBy === "language") {
-                        const langA = Array.isArray(a.language) ? a.language[0] || "" : (a.language || "");
-                        const langB = Array.isArray(b.language) ? b.language[0] || "" : (b.language || "");
-                        const langRankA = langA === "ko" ? 0 : langA === "en" ? 1 : langA === "ja" ? 2 : 3;
-                        const langRankB = langB === "ko" ? 0 : langB === "en" ? 1 : langB === "ja" ? 2 : 3;
-                        return cloneBaseVoiceSortOrder === "asc" 
-                          ? langRankA - langRankB 
-                          : langRankB - langRankA;
-                      } else if (cloneBaseVoiceSortBy === "gender") {
-                        const genderA = (a.gender || "").toLowerCase();
-                        const genderB = (b.gender || "").toLowerCase();
-                        const genderOrder = { female: 0, male: 1, neutral: 2, "": 3 };
-                        const rankA = genderOrder[genderA as keyof typeof genderOrder] ?? 3;
-                        const rankB = genderOrder[genderB as keyof typeof genderOrder] ?? 3;
-                        return cloneBaseVoiceSortOrder === "asc" ? rankA - rankB : rankB - rankA;
-                      }
-                      return 0;
-                    });
-                    return sorted.map((voice: any) => {
-                      const flags = (() => {
-                        const arr = Array.isArray(voice.language) ? voice.language : (voice.language ? [voice.language] : []);
-                        return arr.map((c: string) => languageCodeToFlag(c)).filter(Boolean).join(" ") || "";
-                      })();
-                      const genderKo = genderCodeToKo(voice.gender);
-                      const genderColor = voice.gender === "female" ? "bg-red-500" : voice.gender === "male" ? "bg-blue-500" : "bg-gray-400";
-                      return (
-                        <SelectItem key={voice.voice_id} value={voice.voice_id} className="text-white focus:bg-gray-700">
-                          <div className="flex items-center gap-2">
-                            <span className={`inline-block w-2 h-2 rounded-full ${genderColor}`}></span>
-                            <span>{voice.name || voice.voice_id}</span>
-                            {flags && <span className="text-xs">{flags}</span>}
-                          </div>
-                        </SelectItem>
-                      );
-                    });
-                  })()}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-gray-200">주요 언어 *</Label>
-              <Select
-                value={cloneForm.language}
-                onValueChange={(value) => setCloneForm((prev) => ({ ...prev, language: value }))}
-              >
-                <SelectTrigger className="bg-gray-800/50 border-gray-600 text-white">
-                  <SelectValue placeholder="언어를 선택하세요" className="text-gray-400" />
-                </SelectTrigger>
-                <SelectContent className="bg-gray-800 border-gray-600">
-                  {languageOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value} className="text-white focus:bg-gray-700">{option.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="clone-memo" className="text-gray-200">메모</Label>
-              <Textarea
-                id="clone-memo"
-                placeholder="예: 시장님 축사톤으로 30초 분량"
-                value={cloneForm.memo}
-                onChange={(e) => setCloneForm((prev) => ({ ...prev, memo: e.target.value }))}
-                className="bg-gray-800/50 border-gray-600 text-white placeholder:text-gray-400 focus-visible:ring-gray-500"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-gray-200">샘플 업로드 *</Label>
-              <Tabs 
-                value={cloneForm.sampleType || "file"} 
-                onValueChange={(value) => setCloneForm((prev) => ({ 
-                  ...prev, 
-                  sampleType: value as "file" | "youtube",
-                  sampleFile: value === "file" ? prev.sampleFile : null,
-                  youtubeUrl: value === "youtube" ? prev.youtubeUrl : undefined,
-                  sampleName: value === "file" ? prev.sampleName : undefined,
-                }))}
-              >
-                <TabsList className="grid w-full grid-cols-2 bg-gray-800/50">
-                  <TabsTrigger value="file" className="flex items-center gap-2 text-gray-300 data-[state=active]:text-white data-[state=active]:bg-gray-700">
-                    <Upload className="w-4 h-4" />
-                    파일 업로드
-                  </TabsTrigger>
-                  <TabsTrigger value="youtube" className="flex items-center gap-2 text-gray-300 data-[state=active]:text-white data-[state=active]:bg-gray-700">
-                    <Youtube className="w-4 h-4" />
-                    유튜브 링크
-                  </TabsTrigger>
-                </TabsList>
-                <TabsContent value="file" className="space-y-2 mt-4">
-                  <Input
-                    id="clone-sample"
-                    type="file"
-                    accept="audio/*"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0] || null;
-                      setCloneForm((prev) => ({ ...prev, sampleFile: file, sampleName: file?.name }));
-                    }}
-                    className="bg-gray-800/50 border-gray-600 text-white file:text-white file:bg-gray-700 file:border-gray-600"
-                  />
-                  {cloneForm.sampleName && (
-                    <p className="text-xs text-gray-400">선택된 파일: {cloneForm.sampleName}</p>
-                  )}
-                  <p className="text-xs text-gray-400">
-                    지원 형식: WAV, MP3, OGG (최대 50MB)
-                  </p>
-                </TabsContent>
-                <TabsContent value="youtube" className="space-y-2 mt-4">
-                  <Input
-                    id="clone-youtube"
-                    type="url"
-                    placeholder="https://www.youtube.com/watch?v=... 또는 https://youtu.be/..."
-                    value={cloneForm.youtubeUrl || ""}
-                    onChange={(e) => setCloneForm((prev) => ({ ...prev, youtubeUrl: e.target.value }))}
-                    className="bg-gray-800/50 border-gray-600 text-white placeholder:text-gray-400 focus-visible:ring-gray-500"
-                  />
-                  {cloneForm.youtubeUrl && (
-                    <div className="flex items-center gap-2 text-xs text-gray-400">
-                      <Youtube className="w-3 h-3" />
-                      <span>유튜브 링크가 입력되었습니다.</span>
-                    </div>
-                  )}
-                  <p className="text-xs text-gray-400">
-                    유튜브 영상에서 오디오가 자동으로 추출됩니다.
-                  </p>
-                </TabsContent>
-              </Tabs>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              className="border-gray-600 text-gray-300 hover:bg-gray-800 hover:text-white"
-              onClick={() => {
-                setIsCloneModalOpen(false);
-                setCloneForm(createCloneForm({ language: cloneForm.language }));
-              }}
-            >
-              취소
-            </Button>
-            <Button 
-              onClick={handleCloneSubmit}
-              className="bg-primary hover:bg-primary/90 text-white"
-            >
-              클로닝 요청
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* 클론 음성 생성 모달은 VoiceCloning.tsx로 이동됨 */}
 
       <Dialog open={isMixingModalOpen} onOpenChange={(open) => {
         setIsMixingModalOpen(open);
@@ -6666,11 +6342,12 @@ const PublicVoiceGenerator = () => {
           }
         }
       }}>
-        <DialogContent className="sm:max-w-2xl dark-dialog bg-gray-900/95 border-gray-700">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-hidden flex flex-col dark-dialog bg-gray-900/95 border-gray-700">
           <DialogHeader>
             <DialogTitle style={{ color: '#FFFFFF' }}>음원 믹싱 설정</DialogTitle>
             <DialogDescription style={{ color: '#E5E7EB' }}>음원을 선택하고 배경음과 효과음을 추가하여 믹싱합니다.</DialogDescription>
           </DialogHeader>
+          <ScrollArea className="flex-1 overflow-y-auto pr-4">
           <div className="space-y-4">
             {/* 생성된 음원 정보 (가장 중요) */}
             <div className="p-4 bg-blue-900/30 border-2 border-blue-600/50 rounded-lg">
@@ -6745,8 +6422,8 @@ const PublicVoiceGenerator = () => {
                 <SelectContent className="bg-gray-800 border-gray-600">
                   {generationHistory.map((gen) => (
                     <SelectItem 
-                      key={gen.id} 
-                      value={gen.id.toString()} 
+                      key={gen.id || `gen_${Date.now()}_${Math.random()}`} 
+                      value={String(gen.id || '')} 
                       className="text-white focus:bg-gray-700"
                     >
                       {gen.savedName || formatDateTime(gen.createdAt)}
@@ -7293,6 +6970,7 @@ const PublicVoiceGenerator = () => {
               )}
             </div>
           </div>
+          </ScrollArea>
           <DialogFooter>
             <Button 
               variant="outline" 
@@ -7349,31 +7027,89 @@ const PublicVoiceGenerator = () => {
       </Dialog>
 
       {/* 이름 저장 다이얼로그 */}
-      <Dialog open={isSaveNameDialogOpen} onOpenChange={setIsSaveNameDialogOpen}>
-        <DialogContent className="sm:max-w-lg dark-dialog bg-gray-900/95 border-gray-700">
+      <Dialog 
+        open={isSaveNameDialogOpen} 
+        onOpenChange={(open) => {
+          // 외부 클릭이나 ESC 키로 닫히는 것을 방지 (저장 또는 취소 버튼으로만 닫힘)
+          if (!open && pendingGeneration) {
+            // 저장되지 않은 경우 확인
+            if (window.confirm("저장하지 않고 닫으시겠습니까?\n저장하지 않으면 생성된 음원이 손실될 수 있습니다.")) {
+              setIsSaveNameDialogOpen(false);
+              setSaveNameInput("");
+              setPendingGeneration(null);
+            }
+            return;
+          }
+          // pendingGeneration이 없으면 (이미 저장되었거나 취소된 경우) 정상적으로 닫기
+          if (!open && !pendingGeneration) {
+            setIsSaveNameDialogOpen(false);
+          }
+        }}
+      >
+        <DialogContent 
+          className="sm:max-w-2xl max-w-[95vw] dark-dialog bg-gray-900/95 border-gray-700"
+          onInteractOutside={(e) => {
+            // 외부 클릭으로 닫히는 것을 방지
+            if (pendingGeneration) {
+              e.preventDefault();
+            }
+          }}
+          onEscapeKeyDown={(e) => {
+            // ESC 키로 닫히는 것을 방지
+            if (pendingGeneration) {
+              e.preventDefault();
+            }
+          }}
+        >
           <DialogHeader>
-            <DialogTitle style={{ color: '#FFFFFF' }}>음원 저장</DialogTitle>
+            <DialogTitle style={{ color: '#FFFFFF' }} className="text-xl font-semibold flex items-center gap-2">
+              음원 저장
+              <Badge variant="outline" className="text-[10px] bg-green-900/30 text-green-400 border-green-600">
+                클라우드 서버
+              </Badge>
+            </DialogTitle>
             <DialogDescription style={{ color: '#E5E7EB' }}>
-              생성된 음원에 이름을 지정하여 저장하세요. 이름을 지정하지 않으면 생성 날짜가 표시됩니다.
+              생성된 음원을 저장하고 다음 작업을 선택하세요.
             </DialogDescription>
+            <div className="mt-2 p-3 bg-blue-900/20 border border-blue-600/30 rounded-lg">
+              <div className="flex items-start gap-2 text-xs text-blue-300">
+                <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <div className="space-y-1">
+                  <div><strong>저장 위치:</strong> 계정별 Supabase 클라우드 DB</div>
+                  {pendingGeneration?.storagePath && (
+                    <div><strong>로컬 파일 경로:</strong> <code className="text-[10px] bg-gray-800/50 px-1 py-0.5 rounded">{pendingGeneration.storagePath}</code></div>
+                  )}
+                  <div><strong>파일 형식:</strong> {pendingGeneration?.format?.toUpperCase() || "MP3/WAV"}</div>
+                  <div><strong>접근 방식:</strong> 로그인 시 어디서든 사용 가능</div>
+                </div>
+              </div>
+            </div>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label style={{ color: '#E5E7EB' }}>저장 이름 (선택사항)</Label>
+              <Label style={{ color: '#E5E7EB' }} className="text-sm font-medium">저장 이름 (선택사항)</Label>
               <Input
                 value={saveNameInput}
                 onChange={(e) => setSaveNameInput(e.target.value)}
                 placeholder="예: 신년인사 메시지"
-                className="bg-gray-800/50 border-gray-600 text-white"
+                className="bg-gray-800/50 border-gray-600 text-white h-10 w-full max-w-full"
                 style={{ color: '#FFFFFF' }}
-                onKeyDown={(e) => {
+                onKeyDown={async (e) => {
                   if (e.key === 'Enter') {
                     const savedName = saveNameInput.trim() || null;
                     if (pendingGeneration) {
-                      pushHistory({
+                      const savedEntry = await pushHistory({
                         ...pendingGeneration,
                         savedName,
                       });
+                      // 저장 후 자동으로 믹싱 페이지로 이동
+                      if (savedEntry?.id) {
+                        navigate(`/mix/board?generation=${savedEntry.id}`);
+                        toast({
+                          title: "믹싱 페이지로 이동",
+                          description: "믹싱을 시작할 수 있습니다.",
+                        });
+                      }
                     }
                     setIsSaveNameDialogOpen(false);
                     setSaveNameInput("");
@@ -7386,437 +7122,147 @@ const PublicVoiceGenerator = () => {
               </p>
             </div>
           </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              className="border-gray-600 hover:bg-gray-800 hover:text-white"
-              style={{ color: '#E5E7EB' }}
-              onClick={() => {
-                setIsSaveNameDialogOpen(false);
-                setSaveNameInput("");
-                setPendingGeneration(null);
-              }}
-            >
-              취소
-            </Button>
-            <Button
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-              onClick={() => {
-                const savedName = saveNameInput.trim() || null;
-                if (pendingGeneration) {
-                  pushHistory({
-                    ...pendingGeneration,
-                    savedName,
-                  });
-                  toast({
-                    title: "음원 저장 완료",
-                    description: savedName ? `"${savedName}"으로 저장되었습니다.` : "생성 날짜로 저장되었습니다.",
-                  });
-                }
-                setIsSaveNameDialogOpen(false);
-                setSaveNameInput("");
-                setPendingGeneration(null);
-              }}
-            >
-              저장
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* 클론 음성 튜닝 모달 */}
-      <Dialog open={isCloneTuningModalOpen} onOpenChange={setIsCloneTuningModalOpen}>
-        <DialogContent className="sm:max-w-2xl dark-dialog bg-gray-900/95 border-gray-700">
-          <DialogHeader>
-            <DialogTitle style={{ color: '#FFFFFF' }} className="flex items-center gap-2">
-              <Settings className="w-5 h-5" />
-              클론 음성 튜닝
-            </DialogTitle>
-            <DialogDescription style={{ color: '#E5E7EB' }}>
-              {selectedCloneForTuning && (() => {
-                const clone = cloneRequests.find(c => c.id === selectedCloneForTuning);
-                return clone ? `${clone.voiceName} 음성의 속도, 피치, 감정 등을 조정하여 완성도를 높입니다.` : "";
-              })()}
-            </DialogDescription>
-          </DialogHeader>
-          {selectedCloneForTuning && (() => {
-            const clone = cloneRequests.find(c => c.id === selectedCloneForTuning);
-            if (!clone) return null;
-            const tuning = cloneTuningSettings[clone.id] || {
-              speed: 1.0,
-              pitch: 0,
-              style: "neutral",
-              language: clone.language || "ko",
-              emotion: "neutral"
-            };
-
-            return (
-              <div className="space-y-6">
-                {/* 미리듣기 텍스트 입력 */}
-                <div className="space-y-2">
-                  <Label style={{ color: '#E5E7EB' }}>미리듣기 텍스트 *</Label>
-                  <Input
-                    placeholder="튜닝 효과를 확인할 텍스트를 입력하세요..."
-                    value={clonePreviewText[clone.id] || ""}
-                    onChange={(e) => setClonePreviewText(prev => ({ ...prev, [clone.id]: e.target.value }))}
-                    className="bg-gray-800/50 border-gray-600 text-white"
-                  />
-                </div>
-
-                {/* 튜닝 설정 */}
-                <div className="space-y-4">
-                  {/* 속도 */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label style={{ color: '#E5E7EB' }}>속도</Label>
-                      <span className="text-sm text-gray-400">{(tuning.speed || 1.0).toFixed(2)}x</span>
-                    </div>
-                    <Slider
-                      value={[tuning.speed || 1.0]}
-                      onValueChange={(values) => {
-                        setCloneTuningSettings(prev => ({
-                          ...prev,
-                          [clone.id]: { ...tuning, speed: values[0] }
-                        }));
-                      }}
-                      min={0.5}
-                      max={2.0}
-                      step={0.05}
-                      className="w-full"
-                    />
-                    <div className="flex justify-between text-xs text-gray-400">
-                      <span>0.5x (느림)</span>
-                      <span>1.0x (보통)</span>
-                      <span>2.0x (빠름)</span>
-                    </div>
-                  </div>
-
-                  {/* 피치 */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label style={{ color: '#E5E7EB' }}>피치</Label>
-                      <span className="text-sm text-gray-400">
-                        {tuning.pitch && tuning.pitch > 0 ? '+' : ''}{tuning.pitch || 0}
-                      </span>
-                    </div>
-                    <Slider
-                      value={[tuning.pitch || 0]}
-                      onValueChange={(values) => {
-                        setCloneTuningSettings(prev => ({
-                          ...prev,
-                          [clone.id]: { ...tuning, pitch: values[0] }
-                        }));
-                      }}
-                      min={-100}
-                      max={100}
-                      step={1}
-                      className="w-full"
-                    />
-                    <div className="flex justify-between text-xs text-gray-400">
-                      <span>-100 (낮음)</span>
-                      <span>0 (기본)</span>
-                      <span>+100 (높음)</span>
-                    </div>
-                  </div>
-
-                  {/* 스타일 */}
-                  <div className="space-y-2">
-                    <Label style={{ color: '#E5E7EB' }}>스타일</Label>
-                    <Select
-                      value={tuning.style || "neutral"}
-                      onValueChange={(value) => {
-                        setCloneTuningSettings(prev => ({
-                          ...prev,
-                          [clone.id]: { ...tuning, style: value }
-                        }));
-                      }}
-                    >
-                      <SelectTrigger className="bg-gray-800/50 border-gray-600 text-white">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="bg-gray-800 border-gray-600">
-                        {[
-                          { value: "neutral", label: "중립" },
-                          { value: "happy", label: "밝음" },
-                          { value: "sad", label: "슬픔" },
-                          { value: "angry", label: "분노" },
-                          { value: "calm", label: "차분" },
-                          { value: "friendly", label: "친근" },
-                          { value: "professional", label: "전문" },
-                          { value: "excited", label: "흥분" },
-                          { value: "serious", label: "진지" },
-                        ].map((opt) => (
-                          <SelectItem key={opt.value} value={opt.value} className="text-white focus:bg-gray-700">
-                            {opt.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* 언어 */}
-                  <div className="space-y-2">
-                    <Label style={{ color: '#E5E7EB' }}>언어</Label>
-                    <Select
-                      value={tuning.language || clone.language || "ko"}
-                      onValueChange={(value) => {
-                        setCloneTuningSettings(prev => ({
-                          ...prev,
-                          [clone.id]: { ...tuning, language: value }
-                        }));
-                      }}
-                    >
-                      <SelectTrigger className="bg-gray-800/50 border-gray-600 text-white">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="bg-gray-800 border-gray-600">
-                        {languageOptions.map((opt) => (
-                          <SelectItem key={opt.value} value={opt.value} className="text-white focus:bg-gray-700">
-                            {opt.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                {/* 미리듣기 버튼 및 플레이어 */}
-                <div className="space-y-2">
-                  <div className="flex gap-2">
-                    <Button
-                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
-                      disabled={!clonePreviewText[clone.id]?.trim() || isGeneratingCloneTuning[clone.id]}
-                      onClick={() => handleCloneTuningPreview(clone.id)}
-                    >
-                      {isGeneratingCloneTuning[clone.id] ? (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                          생성 중...
-                        </>
-                      ) : (
-                        <>
-                          <Play className="w-4 h-4 mr-2" />
-                          튜닝 미리듣기
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="border-gray-600 hover:bg-gray-800 hover:text-white"
-                      style={{ color: '#E5E7EB' }}
-                      onClick={() => {
-                        // 튜닝 설정을 클론 음성에 저장 (DB에 저장 가능하도록)
+          <DialogFooter className="flex flex-col gap-2 sm:gap-3">
+            {/* 주요 액션 버튼들 - 2x2 그리드 */}
+            <div className="grid grid-cols-2 gap-2 w-full">
+              <Button
+                className="bg-green-600 hover:bg-green-700 text-white h-10 text-xs sm:text-sm font-medium px-2 sm:px-3 whitespace-nowrap overflow-hidden"
+                onClick={async () => {
+                  const savedName = saveNameInput.trim() || null;
+                  if (pendingGeneration) {
+                    const savedEntry = await pushHistory({
+                      ...pendingGeneration,
+                      savedName,
+                    });
+                    // 저장 후 자동으로 믹싱 페이지로 이동
+                    if (savedEntry?.id) {
+                      toast({
+                        title: "음원 저장 완료",
+                        description: "믹싱 페이지로 이동합니다.",
+                      });
+                      // 약간의 딜레이 후 이동 (저장 확인)
+                      setTimeout(() => {
+                        navigate(`/mix/board?generation=${savedEntry.id}`);
+                      }, 300);
+                    }
+                  }
+                  setIsSaveNameDialogOpen(false);
+                  setSaveNameInput("");
+                  setPendingGeneration(null);
+                }}
+              >
+                <Music2 className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2 flex-shrink-0" />
+                <span className="truncate text-[10px] sm:text-xs">저장 후 믹싱</span>
+              </Button>
+              <Button
+                className="bg-blue-600 hover:bg-blue-700 text-white h-10 text-xs sm:text-sm font-medium px-2 sm:px-3 whitespace-nowrap overflow-hidden"
+                onClick={async () => {
+                  const savedName = saveNameInput.trim() || null;
+                  if (pendingGeneration) {
+                    const savedEntry = await pushHistory({
+                      ...pendingGeneration,
+                      savedName,
+                    });
+                    // 저장 후 자동으로 스케줄 페이지로 이동
+                    if (savedEntry?.id) {
+                      navigate(`/send/schedule?generation=${savedEntry.id}`);
+                      toast({
+                        title: "음원 저장 완료",
+                        description: "스케줄 설정 페이지로 이동합니다.",
+                      });
+                    }
+                  }
+                  setIsSaveNameDialogOpen(false);
+                  setSaveNameInput("");
+                  setPendingGeneration(null);
+                }}
+              >
+                <Calendar className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2 flex-shrink-0" />
+                <span className="truncate text-[10px] sm:text-xs">저장 후 스케줄</span>
+              </Button>
+            </div>
+            {/* 음원 저장만 하기 & 취소 */}
+            <div className="grid grid-cols-2 gap-2 w-full">
+              <Button
+                className="bg-gray-700 hover:bg-gray-600 text-white h-10 text-xs sm:text-sm font-medium flex-1 sm:flex-[2]"
+                onClick={async () => {
+                  try {
+                    const savedName = saveNameInput.trim() || null;
+                    if (pendingGeneration) {
+                      // 이미 자동 저장되었으므로, 이름만 업데이트
+                      const updated = await dbService.updateGeneration(user?.id || "", pendingGeneration.id, {
+                        savedName: savedName || pendingGeneration.savedName,
+                      });
+                      
+                      if (updated) {
+                        // generationHistory 업데이트
+                        setGenerationHistory((prev) =>
+                          prev.map((g) =>
+                            g.id === pendingGeneration.id
+                              ? { ...g, savedName: savedName || g.savedName }
+                              : g
+                          )
+                        );
+                        
                         toast({
-                          title: "튜닝 설정 저장",
-                          description: "튜닝 설정이 저장되었습니다. 다음에 동일한 설정으로 사용할 수 있습니다.",
+                          title: "음원 저장 완료",
+                          description: savedName ? `"${savedName}"으로 저장되었습니다.` : "기존 이름으로 저장되었습니다.",
                         });
-                      }}
-                      title="튜닝 설정을 저장하여 다음에 사용"
-                    >
-                      <Settings className="w-4 h-4" />
-                    </Button>
-                  </div>
-                  
-                  {cloneTuningPreviewAudio[clone.id] && (
-                    <div className="space-y-2">
-                      <AudioPlayer
-                        audioUrl={cloneTuningPreviewAudio[clone.id]!}
-                        title="튜닝된 음성 미리듣기"
-                        duration={0}
-                      />
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-full"
-                        onClick={() => {
-                          if (cloneTuningPreviewAudio[clone.id]) {
-                            URL.revokeObjectURL(cloneTuningPreviewAudio[clone.id]!);
-                            setCloneTuningPreviewAudio(prev => {
-                              const newState = { ...prev };
-                              delete newState[clone.id];
-                              return newState;
-                            });
-                          }
-                        }}
-                      >
-                        <X className="w-4 h-4 mr-2" />
-                        미리듣기 제거
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
-          <DialogFooter>
-            <Button
-              variant="outline"
-              className="border-gray-600 hover:bg-gray-800 hover:text-white"
-              style={{ color: '#E5E7EB' }}
-              onClick={() => {
-                setIsCloneTuningModalOpen(false);
-                setSelectedCloneForTuning(null);
-              }}
-            >
-              닫기
-            </Button>
+                        setIsSaveNameDialogOpen(false);
+                        setSaveNameInput("");
+                        setPendingGeneration(null);
+                      } else {
+                        toast({
+                          title: "저장 실패",
+                          description: "음원 저장에 실패했습니다.",
+                          variant: "destructive",
+                        });
+                      }
+                    } else {
+                      toast({
+                        title: "오류",
+                        description: "저장할 음원 정보가 없습니다.",
+                        variant: "destructive",
+                      });
+                      setIsSaveNameDialogOpen(false);
+                      setSaveNameInput("");
+                      setPendingGeneration(null);
+                    }
+                  } catch (error) {
+                    console.error("음원 저장 실패:", error);
+                    toast({
+                      title: "저장 실패",
+                      description: "음원 저장 중 오류가 발생했습니다.",
+                      variant: "destructive",
+                    });
+                  }
+                }}
+              >
+                음원 저장
+              </Button>
+              <Button
+                variant="outline"
+                className="border-gray-600 hover:bg-gray-800 hover:text-white text-gray-300 h-10 text-xs sm:text-sm flex-1"
+                onClick={() => {
+                  // 음원은 이미 자동 저장되었으므로 취소해도 손실 없음
+                  setIsSaveNameDialogOpen(false);
+                  setSaveNameInput("");
+                  setPendingGeneration(null);
+                  toast({
+                    title: "취소",
+                    description: "음원은 이미 저장되었습니다.",
+                    duration: 1500,
+                  });
+                }}
+              >
+                취소
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* 파형 비교 모달 */}
-      <Dialog open={isWaveformComparisonOpen} onOpenChange={setIsWaveformComparisonOpen}>
-        <DialogContent className="sm:max-w-4xl dark-dialog bg-gray-900/95 border-gray-700 max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle style={{ color: '#FFFFFF' }} className="flex items-center gap-2">
-              <BarChart3 className="w-5 h-5" />
-              파형 비교
-            </DialogTitle>
-            <DialogDescription style={{ color: '#E5E7EB' }}>
-              {selectedCloneForWaveform && (() => {
-                const clone = cloneRequests.find(c => c.id === selectedCloneForWaveform);
-                return clone ? `원본 음성과 ${clone.voiceName} 클론 음성의 파형을 비교합니다.` : "";
-              })()}
-            </DialogDescription>
-          </DialogHeader>
-          {selectedCloneForWaveform && (() => {
-            const clone = cloneRequests.find(c => c.id === selectedCloneForWaveform);
-            if (!clone) return null;
-            const waveformData = waveformComparisonData[clone.id];
-
-            return (
-              <div className="space-y-6">
-                {/* 원본 음성 파형 */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label style={{ color: '#E5E7EB' }} className="text-lg font-semibold">
-                      원본 음성 (기준 음성)
-                    </Label>
-                    {waveformData?.originalUrl && (
-                      <AudioPlayer
-                        audioUrl={waveformData.originalUrl}
-                        title="원본 음성"
-                        duration={0}
-                        className="flex-1 max-w-xs"
-                      />
-                    )}
-                  </div>
-                  {waveformData?.original ? (
-                    <WaveformCanvas
-                      audioBuffer={waveformData.original}
-                      width={800}
-                      height={150}
-                      color="#3b82f6"
-                      backgroundColor="#111827"
-                      showGrid={true}
-                    />
-                  ) : (
-                    <div className="h-32 bg-gray-800/50 rounded border border-gray-700 flex items-center justify-center text-gray-400">
-                      {waveformData?.originalUrl ? "원본 음성 파형 데이터를 불러오는 중..." : "원본 음성 샘플을 찾을 수 없습니다."}
-                    </div>
-                  )}
-                </div>
-
-                {/* 클론 음성 파형 */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label style={{ color: '#E5E7EB' }} className="text-lg font-semibold">
-                      클론 음성 ({clone.voiceName})
-                    </Label>
-                    {waveformData?.clonedUrl && (
-                      <AudioPlayer
-                        audioUrl={waveformData.clonedUrl}
-                        title="클론 음성"
-                        duration={0}
-                        className="flex-1 max-w-xs"
-                      />
-                    )}
-                  </div>
-                  {waveformData?.cloned ? (
-                    <WaveformCanvas
-                      audioBuffer={waveformData.cloned}
-                      width={800}
-                      height={150}
-                      color="#10b981"
-                      backgroundColor="#111827"
-                      showGrid={true}
-                    />
-                  ) : (
-                    <div className="h-32 bg-gray-800/50 rounded border border-gray-700 flex items-center justify-center text-gray-400">
-                      {clonePreviewText[clone.id] ? (
-                        <div className="text-center space-y-2">
-                          <p>클론 음성 파형 데이터가 없습니다.</p>
-                          <p className="text-xs">미리듣기를 먼저 생성해주세요.</p>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="mt-2"
-                            onClick={() => handleClonePreview(clone)}
-                          >
-                            <Play className="w-3 h-3 mr-1" />
-                            미리듣기 생성
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="text-center space-y-2">
-                          <p>클론 음성 파형 데이터를 불러오는 중...</p>
-                          <p className="text-xs text-gray-500">또는 미리듣기 텍스트를 입력해주세요.</p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* 비교 정보 */}
-                {waveformData?.original && waveformData?.cloned && (
-                  <div className="p-4 bg-gray-800/50 rounded border border-gray-700 space-y-2">
-                    <h4 className="text-sm font-semibold" style={{ color: '#FFFFFF' }}>비교 정보</h4>
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <span style={{ color: '#9CA3AF' }}>원본 길이: </span>
-                        <span style={{ color: '#FFFFFF' }}>
-                          {waveformData.original.duration.toFixed(2)}초
-                        </span>
-                      </div>
-                      <div>
-                        <span style={{ color: '#9CA3AF' }}>클론 길이: </span>
-                        <span style={{ color: '#FFFFFF' }}>
-                          {waveformData.cloned.duration.toFixed(2)}초
-                        </span>
-                      </div>
-                      <div>
-                        <span style={{ color: '#9CA3AF' }}>원본 샘플레이트: </span>
-                        <span style={{ color: '#FFFFFF' }}>
-                          {waveformData.original.sampleRate}Hz
-                        </span>
-                      </div>
-                      <div>
-                        <span style={{ color: '#9CA3AF' }}>클론 샘플레이트: </span>
-                        <span style={{ color: '#FFFFFF' }}>
-                          {waveformData.cloned.sampleRate}Hz
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-          <DialogFooter>
-            <Button
-              variant="outline"
-              className="border-gray-600 hover:bg-gray-800 hover:text-white"
-              style={{ color: '#E5E7EB' }}
-              onClick={() => {
-                setIsWaveformComparisonOpen(false);
-                setSelectedCloneForWaveform(null);
-              }}
-            >
-              닫기
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* 클론 관련 모달은 모두 VoiceCloning.tsx로 이동됨 */}
 
       <Dialog open={isScheduleModalOpen} onOpenChange={setIsScheduleModalOpen}>
         <DialogContent className="sm:max-w-lg dark-dialog bg-gray-900/95 border-gray-700">
@@ -7866,51 +7312,7 @@ const PublicVoiceGenerator = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isMonitoringPanelOpen} onOpenChange={setIsMonitoringPanelOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-96 overflow-y-auto dark-dialog bg-gray-900/95 border-gray-700">
-          <DialogHeader>
-            <DialogTitle style={{ color: '#FFFFFF' }}>운영 모니터링</DialogTitle>
-            <DialogDescription style={{ color: '#E5E7EB' }}>최근 API 호출, 오류, 경고 이벤트 로그</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <h4 className="font-semibold text-sm" style={{ color: '#FFFFFF' }}>사용량 통계</h4>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="bg-gray-800/50 p-3 rounded border border-gray-600">
-                  <div style={{ color: '#9CA3AF' }}>월별 호출</div>
-                  <div className="text-xl font-bold" style={{ color: '#FFFFFF' }}>{usageStats.callsThisMonth}회</div>
-                </div>
-                <div className="bg-gray-800/50 p-3 rounded border border-gray-600">
-                  <div style={{ color: '#9CA3AF' }}>월별 생성시간</div>
-                  <div className="text-xl font-bold" style={{ color: '#FFFFFF' }}>{Math.round(usageStats.durationThisMonth / 60)}분</div>
-                </div>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <h4 className="font-semibold text-sm" style={{ color: '#FFFFFF' }}>최근 이벤트 로그</h4>
-              <ScrollArea className="h-48 border border-gray-600 rounded p-3 bg-gray-800/30">
-                <div className="space-y-2">
-                  {operationLogs.length === 0 ? (
-                    <p className="text-xs" style={{ color: '#9CA3AF' }}>로그가 없습니다.</p>
-                  ) : (
-                    operationLogs.map((log) => (
-                      <div key={log.id} className={`text-xs p-2 rounded border-l-2 ${
-                        log.type === "error" ? "border-red-400 bg-red-900/30" :
-                        log.type === "warning" ? "border-orange-400 bg-orange-900/30" :
-                        log.type === "success" ? "border-green-400 bg-green-900/30" :
-                        "border-blue-400 bg-blue-900/30"
-                      }`}>
-                        <div className="font-medium" style={{ color: '#FFFFFF' }}>{log.message}</div>
-                        <div className="text-[10px]" style={{ color: '#9CA3AF' }}>{new Date(log.timestamp).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}</div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </ScrollArea>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* 사용량 모니터링 패널 제거 (Dashboard에서 관리) */}
 
       {/* 메시지 이력 관리 다이얼로그 */}
       <Dialog open={isMessageHistoryOpen} onOpenChange={setIsMessageHistoryOpen}>
@@ -7921,7 +7323,7 @@ const PublicVoiceGenerator = () => {
               메시지 이력 관리
             </DialogTitle>
             <DialogDescription style={{ color: '#E5E7EB' }}>
-              저장된 메시지를 확인하고, 불러오거나 수정, 삭제할 수 있습니다.
+              저장된 메시지를 선택하면 메시지 입력 영역에 불러옵니다.
             </DialogDescription>
           </DialogHeader>
           <ScrollArea className="max-h-[60vh] pr-4">
@@ -7934,7 +7336,19 @@ const PublicVoiceGenerator = () => {
                 messageHistory.map((msg) => {
                   const purposeLabel = purposeOptions.find(p => p.id === msg.purpose)?.label || msg.purpose;
                   return (
-                    <div key={msg.id} className="p-4 border border-gray-600 rounded-lg space-y-3 hover:bg-gray-800/50 transition-colors">
+                    <div 
+                      key={msg.id} 
+                      className="p-4 border border-gray-600 rounded-lg cursor-pointer hover:bg-gray-800/50 transition-colors"
+                      onClick={() => {
+                        setCustomText(msg.text);
+                        setSelectedPurpose(msg.purpose);
+                        setIsMessageHistoryOpen(false);
+                        toast({
+                          title: "문구 불러오기 완료",
+                          description: "메시지가 편집 영역에 로드되었습니다.",
+                        });
+                      }}
+                    >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 space-y-2">
                           <div className="flex items-center gap-2">
@@ -7945,53 +7359,36 @@ const PublicVoiceGenerator = () => {
                               {new Date(msg.updatedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}
                             </span>
                           </div>
-                          <p className="text-sm line-clamp-3" style={{ color: '#FFFFFF' }}>{msg.text}</p>
+                          <p className="text-sm line-clamp-2" style={{ color: '#FFFFFF' }}>{msg.text}</p>
                         </div>
-                        <div className="flex gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="hover:bg-gray-800"
-                            onClick={() => {
-                              setCustomText(msg.text);
-                              setSelectedPurpose(msg.purpose);
-                              setIsMessageHistoryOpen(false);
-                              toast({
-                                title: "메시지 불러오기 완료",
-                                description: "메시지가 편집 영역에 로드되었습니다.",
-                              });
-                            }}
-                          >
-                            <Edit className="w-4 h-4" style={{ color: '#E5E7EB' }} />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="hover:bg-gray-800"
-                            onClick={async () => {
-                              // DB에서 삭제
-                              if (user?.id && msg.id) {
-                                await dbService.deleteMessage(user.id, msg.id);
-                              }
-                              
-                              // 로컬 상태 업데이트
-                              const updated = messageHistory.filter(m => m.id !== msg.id);
-                              setMessageHistory(updated);
-                              
-                              // localStorage도 업데이트 (폴백)
-                              try {
-                                localStorage.setItem(MESSAGE_HISTORY_STORAGE_KEY, JSON.stringify(updated));
-                              } catch {}
-                              
-                              toast({
-                                title: "메시지 삭제 완료",
-                                description: "메시지가 삭제되었습니다.",
-                              });
-                            }}
-                          >
-                            <Trash2 className="w-4 h-4 text-red-400" />
-                          </Button>
-                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="hover:bg-gray-700 flex-shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // DB에서 삭제
+                            if (user?.id && msg.id) {
+                              dbService.deleteMessage(user.id, msg.id).then(() => {
+                                // 로컬 상태 업데이트
+                                const updated = messageHistory.filter(m => m.id !== msg.id);
+                                setMessageHistory(updated);
+                                
+                                // localStorage도 업데이트 (폴백)
+                                try {
+                                  localStorage.setItem(MESSAGE_HISTORY_STORAGE_KEY, JSON.stringify(updated));
+                                } catch {}
+                                
+                                toast({
+                                  title: "메시지 삭제 완료",
+                                  description: "메시지가 삭제되었습니다.",
+                                });
+                              }).catch(() => {});
+                            }
+                          }}
+                        >
+                          <Trash2 className="w-4 h-4 text-red-400" />
+                        </Button>
                       </div>
                     </div>
                   );
@@ -8176,12 +7573,12 @@ const PublicVoiceGenerator = () => {
               <div className="mt-2 p-3 bg-gray-800/50 rounded-lg">
                 {templateVariableWarning.variables.map((v, idx) => (
                   <div key={idx} className="text-sm font-mono text-yellow-400">
-                    {'{'}{v}{'}'}
+                    {`{${v}}`}
                   </div>
                 ))}
               </div>
               <div className="mt-3 text-xs text-gray-400">
-                변수를 그대로 두고 생성하면 음성에 "{'{'}기관명{'}'}", "{'{'}담당자명{'}'}" 같은 문구가 그대로 읽힙니다.
+                변수를 그대로 두고 생성하면 음성에 {"{기관명}"}, {"{담당자명}"} 같은 문구가 그대로 읽힙니다.
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -8224,9 +7621,10 @@ const PublicVoiceGenerator = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </PageContainer>
   );
 };
 
 export default PublicVoiceGenerator;
+
 

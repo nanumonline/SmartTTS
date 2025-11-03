@@ -33,7 +33,10 @@ import ReportsQualityPage from "./pages/ReportsQualityPage";
 import SettingsIntegrationsPage from "./pages/SettingsIntegrationsPage";
 import SettingsRolesPage from "./pages/SettingsRolesPage";
 import SettingsBrandPage from "./pages/SettingsBrandPage";
+import StorageSettingsPage from "./pages/StorageSettingsPage";
 import ScriptsTemplatesPage from "./pages/ScriptsTemplatesPage";
+import MessageManagementPage from "./pages/MessageManagementPage";
+import MessageTemplatePage from "./pages/MessageTemplatePage";
 
 const queryClient = new QueryClient();
 
@@ -75,27 +78,27 @@ const App = () => (
               } 
             />
             <Route 
+              path="/scripts/messages" 
+              element={
+                <ProtectedRoute>
+                  <AppShell>
+                    <MessageManagementPage />
+                  </AppShell>
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
               path="/scripts/templates" 
               element={
                 <ProtectedRoute>
                   <AppShell>
-                    <ScriptsTemplatesPage />
+                    <MessageTemplatePage />
                   </AppShell>
                 </ProtectedRoute>
               } 
             />
             
             {/* 음원 생성 */}
-            <Route 
-              path="/audio/styles" 
-              element={
-                <ProtectedRoute>
-                  <AppShell>
-                    <AdvancedVoiceGenerator />
-                  </AppShell>
-                </ProtectedRoute>
-              } 
-            />
             <Route 
               path="/audio/tts" 
               element={
@@ -345,6 +348,16 @@ const App = () => (
                 <ProtectedRoute>
                   <AppShell>
                     <SettingsBrandPage />
+                  </AppShell>
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/settings/storage" 
+              element={
+                <ProtectedRoute>
+                  <AppShell>
+                    <StorageSettingsPage />
                   </AppShell>
                 </ProtectedRoute>
               } 
