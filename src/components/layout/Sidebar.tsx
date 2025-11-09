@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import {
@@ -21,6 +21,7 @@ import {
   BookOpen,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { loadBrandSettings, getLogoUrl } from "@/lib/brandSettings";
 
 interface NavItem {
   title: string;
@@ -118,6 +119,36 @@ export default function Sidebar({ className }: SidebarProps) {
   const [expandedItems, setExpandedItems] = React.useState<Set<string>>(
     new Set([location.pathname.split("/")[1] || "dashboard"])
   );
+  const [logoUrl, setLogoUrl] = useState<string | undefined>();
+
+  // 브랜드 로고 로드
+  useEffect(() => {
+    const loadLogo = () => {
+      const settings = loadBrandSettings();
+      const logo = getLogoUrl(settings);
+      setLogoUrl(logo);
+    };
+    
+    loadLogo();
+    
+    // localStorage 변경 감지 (다른 탭에서 설정 변경 시)
+    const handleStorageChange = () => {
+      loadLogo();
+    };
+    
+    // 커스텀 이벤트 감지 (같은 탭에서 설정 변경 시)
+    const handleBrandSettingsChange = () => {
+      loadLogo();
+    };
+    
+    window.addEventListener("storage", handleStorageChange);
+    window.addEventListener("brandSettingsChanged", handleBrandSettingsChange);
+    
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener("brandSettingsChanged", handleBrandSettingsChange);
+    };
+  }, []);
 
   // 현재 경로와 일치하는 부모 아이템 자동 확장
   React.useEffect(() => {
@@ -166,11 +197,37 @@ export default function Sidebar({ className }: SidebarProps) {
     >
       <div className="flex h-full flex-col">
         {/* Logo */}
-        <div className="flex h-16 items-center gap-2 border-b border-border px-6">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-            <Mic2 className="w-5 h-5 text-white" />
-          </div>
-          <span className="text-lg font-bold gradient-text">Smart TTS</span>
+        <div className="flex h-16 items-center gap-3 border-b border-border px-6">
+          {logoUrl ? (
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 bg-muted flex items-center justify-center border border-border">
+                <img
+                  src={logoUrl}
+                  alt="로고"
+                  className="max-w-full max-h-full object-contain"
+                  onError={(e) => {
+                    // 로고 로드 실패 시 기본 아이콘 표시
+                    e.currentTarget.style.display = "none";
+                    const parent = e.currentTarget.parentElement;
+                    if (parent && !parent.querySelector(".fallback-icon")) {
+                      const icon = document.createElement("div");
+                      icon.className = "fallback-icon w-full h-full flex items-center justify-center";
+                      icon.innerHTML = '<svg class="w-5 h-5 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"></path></svg>';
+                      parent.appendChild(icon);
+                    }
+                  }}
+                />
+              </div>
+              <span className="text-lg font-bold gradient-text truncate">Smart TTS</span>
+            </div>
+          ) : (
+            <>
+              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center flex-shrink-0">
+                <Mic2 className="w-5 h-5 text-white" />
+              </div>
+              <span className="text-lg font-bold gradient-text">Smart TTS</span>
+            </>
+          )}
         </div>
 
         {/* Navigation */}

@@ -27,6 +27,7 @@ const Register = () => {
   const [agreedTerms, setAgreedTerms] = useState(false);
   const [agreedPrivacy, setAgreedPrivacy] = useState(false);
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { register, isLoading } = useAuth();
   const navigate = useNavigate();
 
@@ -159,23 +160,32 @@ const Register = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setIsSubmitting(true);
     
-    if (formData.password !== formData.confirmPassword) {
-      setError("비밀번호가 일치하지 않습니다.");
-      return;
-    }
-    
-    if (!agreedTerms || !agreedPrivacy) {
-      setError("약관에 동의해주세요.");
-      return;
-    }
-    
-    const success = await register(formData);
-    
-    if (success) {
-      navigate("/dashboard");
-    } else {
-      setError("회원가입 중 오류가 발생했습니다. 다시 시도해주세요.");
+    try {
+      if (formData.password !== formData.confirmPassword) {
+        setError("비밀번호가 일치하지 않습니다.");
+        setIsSubmitting(false);
+        return;
+      }
+      
+      if (!agreedTerms || !agreedPrivacy) {
+        setError("약관에 동의해주세요.");
+        setIsSubmitting(false);
+        return;
+      }
+      
+      const success = await register(formData);
+      
+      if (success) {
+        navigate("/dashboard");
+      } else {
+        setError("회원가입 중 오류가 발생했습니다. 다시 시도해주세요.");
+      }
+    } catch (err) {
+      setError("회원가입 중 오류가 발생했습니다.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -531,9 +541,9 @@ const Register = () => {
                 type="submit" 
                 className="w-full h-11" 
                 variant="gradient"
-                disabled={isLoading}
+                disabled={isLoading || isSubmitting}
               >
-                {isLoading ? "회원가입 중..." : "회원가입"}
+                {(isLoading || isSubmitting) ? "회원가입 중..." : "회원가입"}
               </Button>
             </form>
 

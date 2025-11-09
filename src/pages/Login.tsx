@@ -12,19 +12,28 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { login, isLoading } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setIsSubmitting(true);
     
-    const success = await login(email, password);
-    
-    if (success) {
-      navigate("/dashboard");
-    } else {
-      setError("이메일 또는 비밀번호가 올바르지 않습니다.");
+    try {
+      const success = await login(email, password);
+      
+      if (success) {
+        // 로그인 성공 시 대시보드로 이동
+        navigate("/dashboard");
+      } else {
+        setError("이메일 또는 비밀번호가 올바르지 않습니다.");
+      }
+    } catch (err) {
+      setError("로그인 중 오류가 발생했습니다.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -120,9 +129,9 @@ const Login = () => {
                 type="submit" 
                 className="w-full h-11" 
                 variant="gradient"
-                disabled={isLoading}
+                disabled={isLoading || isSubmitting}
               >
-                {isLoading ? "로그인 중..." : "로그인"}
+                {(isLoading || isSubmitting) ? "로그인 중..." : "로그인"}
               </Button>
             </form>
 

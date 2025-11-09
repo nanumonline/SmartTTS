@@ -8,6 +8,7 @@ import { useNavigate } from "react-router-dom";
 import PageContainer from "@/components/layout/PageContainer";
 import PageHeader from "@/components/layout/PageHeader";
 import * as dbService from "@/services/dbService";
+import { loadBrandSettings, getLogoUrl } from "@/lib/brandSettings";
 import { 
   Mic2, 
   Radio, 
@@ -61,6 +62,36 @@ const Dashboard = () => {
   const [scheduledBroadcasts, setScheduledBroadcasts] = useState([]);
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [logoUrl, setLogoUrl] = useState<string | undefined>();
+
+  // 브랜드 로고 로드
+  useEffect(() => {
+    const loadLogo = () => {
+      const settings = loadBrandSettings();
+      const logo = getLogoUrl(settings);
+      setLogoUrl(logo);
+    };
+    
+    loadLogo();
+    
+    // localStorage 변경 감지
+    const handleStorageChange = () => {
+      loadLogo();
+    };
+    
+    // 커스텀 이벤트 감지 (같은 탭에서 설정 변경 시)
+    const handleBrandSettingsChange = () => {
+      loadLogo();
+    };
+    
+    window.addEventListener("storage", handleStorageChange);
+    window.addEventListener("brandSettingsChanged", handleBrandSettingsChange);
+    
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener("brandSettingsChanged", handleBrandSettingsChange);
+    };
+  }, []);
 
   // 사용량 & 크레딧 모니터링 상태
   const [usageStats, setUsageStats] = useState<UsageStats>({
@@ -309,24 +340,40 @@ const Dashboard = () => {
 
       {user && (
         <div className="mb-6 space-y-2 p-4 bg-muted/30 rounded-lg">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Building2 className="w-4 h-4" />
-            <span>{user.organization}</span>
-            {user.department && <span>• {user.department}</span>}
-            {user.position && <span>• {user.position}</span>}
-          </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Users className="w-3 h-3" />
-            <span>{user.name}님</span>
-            <span>•</span>
-            <span>{user.email}</span>
-            <span>•</span>
-            <Badge variant="outline" className="text-xs">
-              {user.plan === 'basic' ? '기본' : 
-               user.plan === 'standard' ? '표준' : 
-               user.plan === 'premium' ? '프리미엄' : 
-               user.plan === 'custom' ? '맞춤형' : user.plan}
-            </Badge>
+          <div className="flex items-center gap-3">
+            {logoUrl && (
+              <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-white flex items-center justify-center border border-border shadow-sm">
+                <img
+                  src={logoUrl}
+                  alt="로고"
+                  className="max-w-full max-h-full object-contain"
+                  onError={(e) => {
+                    e.currentTarget.style.display = "none";
+                  }}
+                />
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Building2 className="w-4 h-4 flex-shrink-0" />
+                <span className="truncate">{user.organization}</span>
+                {user.department && <span className="flex-shrink-0">• {user.department}</span>}
+                {user.position && <span className="flex-shrink-0">• {user.position}</span>}
+              </div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                <Users className="w-3 h-3 flex-shrink-0" />
+                <span className="truncate">{user.name}님</span>
+                <span className="flex-shrink-0">•</span>
+                <span className="truncate">{user.email}</span>
+                <span className="flex-shrink-0">•</span>
+                <Badge variant="outline" className="text-xs flex-shrink-0">
+                  {user.plan === 'basic' ? '기본' : 
+                   user.plan === 'standard' ? '표준' : 
+                   user.plan === 'premium' ? '프리미엄' : 
+                   user.plan === 'custom' ? '맞춤형' : user.plan}
+                </Badge>
+              </div>
+            </div>
           </div>
         </div>
       )}

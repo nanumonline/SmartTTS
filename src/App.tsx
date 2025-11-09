@@ -9,6 +9,7 @@ import AppShell from "@/components/layout/AppShell";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import ForgotPassword from "./pages/ForgotPassword";
 import Dashboard from "./pages/Dashboard";
 import Pricing from "./pages/Pricing";
 import PublicVoiceGenerator from "./pages/PublicVoiceGenerator";
@@ -52,6 +53,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/pricing" element={<Pricing />} />
             
             {/* Protected Routes with AppShell */}
