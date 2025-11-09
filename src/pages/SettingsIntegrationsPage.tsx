@@ -22,7 +22,9 @@ export default function SettingsIntegrationsPage() {
   });
 
   const handleSave = () => {
-    // TODO: 설정 저장
+    // SECURITY WARNING: API 키와 웹훅 URL은 절대 클라이언트 측에 저장하면 안 됩니다.
+    // TODO: Edge Function을 통해 서버 측에서 암호화하여 저장 구현 필요
+    // 참고: https://docs.lovable.dev/features/security
     toast({
       title: "저장 완료",
       description: "통합 설정이 저장되었습니다.",

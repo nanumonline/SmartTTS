@@ -40,142 +40,81 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Supabase 세션 확인 및 로컬 스토리지에서 사용자 정보 로드
+  // Supabase 인증 상태 관리
   useEffect(() => {
-    const loadUser = async () => {
-      try {
-        // Supabase 세션 확인
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (session?.user) {
-          // 실제 Supabase 인증된 사용자
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("*")
-            .eq("id", session.user.id)
-            .single();
-
-          const user: User = {
-            id: session.user.id,
-            email: session.user.email || "",
-            name: profile?.full_name || session.user.email?.split("@")[0] || "",
-            organizationType: "public",
-            organization: profile?.organization || "",
-            department: profile?.department || "",
-            position: "",
-            plan: "standard",
-            isActive: true,
-          };
-
-          setUser(user);
-          localStorage.setItem("user", JSON.stringify(user));
-        } else {
-          // 로컬 스토리지에서 사용자 정보 로드
-          const savedUser = localStorage.getItem("user");
-          if (savedUser) {
-            try {
-              const parsed = JSON.parse(savedUser);
-              // UUID 형식 확인 및 수정
-              if (!parsed.id || !parsed.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-                let userId = localStorage.getItem("test_user_id");
-                if (!userId || !userId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-                  userId = crypto.randomUUID();
-                  localStorage.setItem("test_user_id", userId);
-                }
-                parsed.id = userId;
-                localStorage.setItem("user", JSON.stringify(parsed));
-              }
-              setUser(parsed);
-            } catch (error) {
-              console.error("Failed to parse saved user:", error);
-              localStorage.removeItem("user");
-            }
-          }
-        }
-      } catch (error) {
-        console.error("Failed to load user:", error);
-        // 폴백: 로컬 스토리지에서 로드
-        const savedUser = localStorage.getItem("user");
-        if (savedUser) {
-          try {
-            setUser(JSON.parse(savedUser));
-          } catch (e) {
-            localStorage.removeItem("user");
-          }
-        }
-      } finally {
+    // 초기 세션 확인
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        loadUserProfile(session.user);
+      } else {
+        setUser(null);
         setIsLoading(false);
       }
-    };
+    });
 
-    loadUser();
+    // 인증 상태 변경 리스너
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (event === 'SIGNED_IN' && session?.user) {
+          await loadUserProfile(session.user);
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null);
+          localStorage.removeItem("user");
+        }
+      }
+    );
+
+    return () => subscription.unsubscribe();
   }, []);
+
+  const loadUserProfile = async (authUser: any) => {
+    try {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", authUser.id)
+        .single();
+
+      const user: User = {
+        id: authUser.id,
+        email: authUser.email || "",
+        name: profile?.full_name || authUser.email?.split("@")[0] || "",
+        organizationType: "public",
+        organization: profile?.organization || "",
+        department: profile?.department || "",
+        position: "",
+        plan: "standard",
+        isActive: true,
+      };
+
+      setUser(user);
+      localStorage.setItem("user", JSON.stringify(user));
+    } catch (error) {
+      console.error("Failed to load profile:", error);
+      setUser(null);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const login = async (email: string, password: string): Promise<boolean> => {
     setIsLoading(true);
     
     try {
-      // 실제 Supabase Auth 사용 시도
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      if (authData?.user && !authError) {
-        // 실제 인증 성공 - Supabase에서 사용자 정보 가져오기
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", authData.user.id)
-          .single();
-
-        const user: User = {
-          id: authData.user.id, // UUID 형식
-          email: authData.user.email || email,
-          name: profile?.full_name || email.split("@")[0],
-          organizationType: "public",
-          organization: profile?.organization || "",
-          department: profile?.department || "",
-          position: "",
-          plan: "standard",
-          isActive: true,
-        };
-
-        setUser(user);
-        localStorage.setItem("user", JSON.stringify(user));
+      if (authError || !authData?.user) {
+        console.error("Login failed:", authError?.message);
         setIsLoading(false);
-        return true;
+        return false;
       }
 
-      // 인증 실패 시 더미 사용자 생성 (UUID 형식)
-      if (email && password) {
-        // localStorage에서 기존 UUID 가져오기 또는 새로 생성
-        let userId = localStorage.getItem("test_user_id");
-        if (!userId || !userId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-          userId = crypto.randomUUID();
-          localStorage.setItem("test_user_id", userId);
-        }
-
-        const mockUser: User = {
-          id: userId, // UUID 형식
-          email,
-          name: "홍길동",
-          organizationType: "public",
-          organization: "춘천시청",
-          department: "시민안전과",
-          position: "과장",
-          plan: "standard",
-          isActive: true
-        };
-        
-        setUser(mockUser);
-        localStorage.setItem("user", JSON.stringify(mockUser));
-        setIsLoading(false);
-        return true;
-      }
-      
+      // 인증 성공 - 프로필 로드는 onAuthStateChange에서 처리됨
       setIsLoading(false);
-      return false;
+      return true;
     } catch (error) {
       console.error("Login error:", error);
       setIsLoading(false);
@@ -187,11 +126,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     setIsLoading(true);
     
     try {
-      // 실제 Supabase Auth 사용 시도
+      const redirectUrl = `${window.location.origin}/`;
+      
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: userData.email,
         password: userData.password,
         options: {
+          emailRedirectTo: redirectUrl,
           data: {
             full_name: userData.name,
             organization: userData.organization,
@@ -200,47 +141,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         },
       });
 
-      if (authData?.user && !authError) {
-        // 실제 회원가입 성공
-        const user: User = {
-          id: authData.user.id, // UUID 형식
-          email: authData.user.email || userData.email,
-          name: userData.name,
-          organizationType: userData.organizationType,
-          organization: userData.organization,
-          department: userData.department,
-          position: userData.position,
-          plan: userData.plan || "public_basic",
-          isActive: true,
-        };
-
-        setUser(user);
-        localStorage.setItem("user", JSON.stringify(user));
+      if (authError || !authData?.user) {
+        console.error("Register failed:", authError?.message);
         setIsLoading(false);
-        return true;
+        return false;
       }
 
-      // 더미 회원가입 (UUID 형식)
-      let userId = localStorage.getItem("test_user_id");
-      if (!userId || !userId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-        userId = crypto.randomUUID();
-        localStorage.setItem("test_user_id", userId);
-      }
-
-      const mockUser: User = {
-        id: userId, // UUID 형식
-        email: userData.email,
-        name: userData.name,
-        organizationType: userData.organizationType,
-        organization: userData.organization,
-        department: userData.department,
-        position: userData.position,
-        plan: userData.plan || "public_basic",
-        isActive: true
-      };
-      
-      setUser(mockUser);
-      localStorage.setItem("user", JSON.stringify(mockUser));
+      // 회원가입 성공 - 프로필 로드는 onAuthStateChange에서 처리됨
       setIsLoading(false);
       return true;
     } catch (error) {
@@ -250,7 +157,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    await supabase.auth.signOut();
     setUser(null);
     localStorage.removeItem("user");
   };
