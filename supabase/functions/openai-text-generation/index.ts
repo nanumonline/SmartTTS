@@ -3,6 +3,7 @@
 
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.76.1";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -16,6 +17,40 @@ serve(async (req: Request) => {
   }
 
   try {
+    // 인증 확인 (Defense in Depth)
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      console.error("인증 헤더 누락");
+      return new Response(
+        JSON.stringify({ error: "인증이 필요합니다." }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    // Supabase 클라이언트로 사용자 확인
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+      { global: { headers: { Authorization: authHeader } } }
+    );
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      console.error("인증 실패:", authError?.message);
+      return new Response(
+        JSON.stringify({ error: "유효하지 않은 인증입니다." }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    console.log(`요청 사용자: ${user.id}`);
+
     const { type, prompt, original, instruction, organization, department } = await req.json();
     
     // OpenAI API 키 확인
