@@ -492,7 +492,7 @@ export default function MessageTemplatePage() {
                 rows={6}
               />
               <p className="text-xs text-muted-foreground">
-                변수는 {`{변수명}`} 형식으로 사용하세요. 예: {`{기관명}`, `{담당자명}`}
+                변수는 {"{변수명}"} 형식으로 사용하세요. 예: {"{기관명}, {담당자명}"}
               </p>
             </div>
           </div>

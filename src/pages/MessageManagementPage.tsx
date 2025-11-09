@@ -79,7 +79,7 @@ export default function MessageManagementPage() {
   const navigate = useNavigate();
   // 목적 설정은 TTS 생성 페이지에서 관리하고, DB에서 가져옴
   const [selectedPurpose, setSelectedPurpose] = useState<string>("announcement");
-  const [messageHistory, setMessageHistory] = useState<Array<{ id: string; text: string; purpose: string; createdAt: string; updatedAt: string }>>([]);
+  const [messageHistory, setMessageHistory] = useState<Array<{ id?: string; text: string; purpose: string; createdAt?: string; updatedAt?: string }>>([]);
   const [customText, setCustomText] = useState("");
   const [isMessageHistoryOpen, setIsMessageHistoryOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -322,9 +322,6 @@ export default function MessageManagementPage() {
                 <Badge variant="default" className="text-sm px-3 py-1">
                   {purposeMeta?.label || "안내방송"}
                 </Badge>
-                <span className="text-xs text-muted-foreground">
-                  {purposeMeta?.description || ""}
-                </span>
               </div>
             </CardContent>
           </Card>

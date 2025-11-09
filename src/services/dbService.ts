@@ -111,7 +111,7 @@ export async function saveGeneration(userId: string, entry: GenerationEntry, aud
       (insertResult.error.code === "42703" || 
        insertResult.error.message?.includes("column") ||
        insertResult.error.message?.includes("does not exist") ||
-       insertResult.error.status === 400)
+       insertResult.error.message?.includes("400"))
     ) {
       console.warn(
         "tts_generations 컬럼이 누락되어 확장 필드를 제외하고 재시도합니다:",
@@ -130,7 +130,7 @@ export async function saveGeneration(userId: string, entry: GenerationEntry, aud
         return null;
       }
       // 400 에러도 조용히 처리 (마이그레이션 미적용 상태)
-      if (error.status === 400) {
+      if (error.message?.includes("400")) {
         console.warn("DB 저장 실패 (400): 마이그레이션을 적용해주세요:", error.message);
         return null;
       }
@@ -189,7 +189,7 @@ export async function loadGenerations(userId: string, limit: number = 200): Prom
         return [];
       }
       // 400 에러는 컬럼이 없을 가능성이 높음 (이미 기본 컬럼으로 시도했으므로 조용히 처리)
-      if (error.status === 400 || error.code === "42703" || error.message?.includes("column")) {
+      if (error.message?.includes("400") || error.code === "42703" || error.message?.includes("column")) {
         console.warn("DB 조회 실패 (컬럼 누락): 마이그레이션을 적용해주세요:", error.message);
         return [];
       }
@@ -251,8 +251,8 @@ export async function findGenerationByHash(userId: string, paramHash: string): P
     
     // param_hash 컬럼이 있으면 필터링 시도
     try {
-      const hashQuery = await supabase
-        .from("tts_generations")
+      const hashQuery: any = await (supabase
+        .from("tts_generations") as any)
         .select(baseColumns)
         .eq("user_id", userId)
         .eq("param_hash", paramHash)
@@ -261,7 +261,7 @@ export async function findGenerationByHash(userId: string, paramHash: string): P
         .maybeSingle();
       
       if (!hashQuery.error && hashQuery.data) {
-        data = hashQuery.data;
+        data = [hashQuery.data];
         error = hashQuery.error;
       }
     } catch (e) {
@@ -270,7 +270,7 @@ export async function findGenerationByHash(userId: string, paramHash: string): P
     }
 
     if (error) {
-      if (error.code === "42703" || error.message?.includes("column") || error.status === 400) {
+      if (error.code === "42703" || error.message?.includes("column") || error.message?.includes("400")) {
         // 컬럼이 없는 경우 (구버전)
         return null;
       }
@@ -278,7 +278,7 @@ export async function findGenerationByHash(userId: string, paramHash: string): P
     }
     
     // param_hash로 필터링된 결과가 없으면 전체 조회 결과에서 클라이언트 측 필터링
-    if (!data) {
+    if (!data || (Array.isArray(data) && data.length === 0)) {
       // 전체 조회 (param_hash 없이)
       const allQuery = await supabase
         .from("tts_generations")
@@ -298,36 +298,37 @@ export async function findGenerationByHash(userId: string, paramHash: string): P
       });
       
       if (!matched) return null;
-      data = matched;
+      data = [matched];
     }
-    if (!data) return null;
+    if (!data || (Array.isArray(data) && data.length === 0)) return null;
 
-    const derivedCacheKey = data.cache_key || (data.param_hash ? `hash_${data.param_hash}` : null);
+    const row: any = Array.isArray(data) ? data[0] : data;
+    const derivedCacheKey = row.cache_key || (row.param_hash ? `hash_${row.param_hash}` : null);
     return {
-      id: data.id,
-      purpose: data.purpose,
-      purposeLabel: data.purpose_label,
-      voiceId: data.voice_id,
-      voiceName: data.voice_name,
-      savedName: data.saved_name,
-      textPreview: data.text_preview,
-      textLength: data.text_length,
-      duration: data.duration,
-      language: data.language,
-      model: data.model,
-      style: data.style,
-      speed: data.speed,
-      pitchShift: data.pitch_shift,
-      audioUrl: data.audio_url,
+      id: row.id,
+      purpose: row.purpose,
+      purposeLabel: row.purpose_label,
+      voiceId: row.voice_id,
+      voiceName: row.voice_name,
+      savedName: row.saved_name,
+      textPreview: row.text_preview,
+      textLength: row.text_length,
+      duration: row.duration,
+      language: row.language,
+      model: row.model,
+      style: row.style,
+      speed: row.speed,
+      pitchShift: row.pitch_shift,
+      audioUrl: row.audio_url,
       cacheKey: derivedCacheKey || undefined,
-      mimeType: data.mime_type || "audio/mpeg",
-      storagePath: data.storage_path || null,
-      format: data.format || null,
-      paramHash: data.param_hash || null,
-      status: data.status,
-      hasAudio: data.has_audio,
-      createdAt: data.created_at,
-      updatedAt: data.updated_at,
+      mimeType: row.mime_type || "audio/mpeg",
+      storagePath: row.storage_path || null,
+      format: row.format || null,
+      paramHash: row.param_hash || null,
+      status: row.status,
+      hasAudio: row.has_audio,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
     };
   } catch (error) {
     console.warn("findGenerationByHash 실패:", error);
@@ -347,18 +348,18 @@ export async function loadGenerationBlob(userId: string, id: string): Promise<{ 
 
     if (error) {
       // 500 에러는 서버 문제로 조용히 처리
-      if (error.status === 500 || error.message?.includes("500")) {
+      if (error.message?.includes("500")) {
         console.warn("loadGenerationBlob 500 에러 (서버 문제):", error.message);
         return null;
       }
       return null;
     }
     
-    const buf = data?.audio_blob ? new Uint8Array(data.audio_blob).buffer : null;
+    const buf = data?.audio_blob ? new Uint8Array(data.audio_blob as any).buffer : null;
     return { audioBlob: buf, mimeType: data?.mime_type };
   } catch (error: any) {
     // 500 에러는 서버 문제로 조용히 처리
-    if (error.status === 500 || error.message?.includes("500")) {
+    if (error.message?.includes("500")) {
       console.warn("loadGenerationBlob 500 에러 (서버 문제):", error.message);
       return null;
     }
@@ -563,7 +564,7 @@ export async function saveUserSettings(userId: string, settings: UserSettings): 
         return false;
       }
       // RLS 정책 위반이나 권한 에러는 조용히 처리 (localStorage 폴백)
-      if (error.code === "42501" || error.status === 401 || error.status === 406) {
+      if (error.code === "42501" || error.message?.includes("401") || error.message?.includes("406")) {
         console.warn("설정 저장 실패 (RLS/권한):", error);
         return false;
       }
@@ -571,7 +572,7 @@ export async function saveUserSettings(userId: string, settings: UserSettings): 
     }
     return true;
   } catch (error: any) {
-    if (error.code !== "PGRST205" && error.code !== "42501" && error.status !== 401 && error.status !== 406) {
+    if (error.code !== "PGRST205" && error.code !== "42501" && !error.message?.includes("401") && !error.message?.includes("406")) {
       console.error("설정 저장 실패:", error);
     }
     return false;
@@ -593,7 +594,7 @@ export async function loadUserSettings(userId: string): Promise<UserSettings | n
         return null; // 테이블 없음 (조용히 처리)
       }
       // RLS 정책 위반이나 권한 에러는 조용히 처리
-      if (error.code === "42501" || error.status === 401 || error.status === 406) {
+      if (error.code === "42501" || error.message?.includes("401") || error.message?.includes("406")) {
         console.warn("설정 조회 실패 (RLS/권한):", error);
         return null;
       }
@@ -661,7 +662,7 @@ export async function saveCloneRequest(userId: string, request: CloneRequestEntr
         gender: request.gender,
         status: request.status || "processing",
         completed_at: request.completedAt,
-      })
+      } as any)
       .select("id")
       .single();
 
@@ -744,11 +745,11 @@ export async function saveMixingState(userId: string, state: MixingStateEntry, a
       .upsert({
         user_id: userId,
         generation_id: state.generationId,
-        settings: state.settings,
+        settings: state.settings as any,
         mixed_audio_blob: audioBuffer ? Array.from(new Uint8Array(audioBuffer)) : null,
         mixed_audio_url: state.mixedAudioUrl,
         updated_at: new Date().toISOString(),
-      }, {
+      } as any, {
         onConflict: "user_id,generation_id"
       });
 
@@ -1339,7 +1340,7 @@ export async function syncVoiceCatalog(voices: any[], forceSync: boolean = false
         if (error.code === "PGRST205" || 
             error.message?.includes("schema cache") ||
             error.code === "42501" || // 권한 에러
-            error.status === 401) { // Unauthorized
+            error.message?.includes("401")) { // Unauthorized
           // 조용히 스킵 (DB 테이블 미생성 또는 RLS 정책 문제)
           return false;
         }

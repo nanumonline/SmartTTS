@@ -146,7 +146,7 @@ export default function StorageSettingsPage() {
               생성된 음원 파일이 저장될 기본 경로를 설정합니다.
               <br />
               <span className="text-xs text-muted-foreground mt-2 block">
-                파일 구조: /audio/tts/YYYY/MMDD/voiceId_hash.{mp3|wav}
+                파일 구조: /audio/tts/YYYY/MMDD/voiceId_hash.[mp3|wav]
               </span>
             </CardDescription>
           </CardHeader>
@@ -220,7 +220,7 @@ export default function StorageSettingsPage() {
             <div className="space-y-1">
               <p className="font-medium">파일 구조:</p>
               <code className="block p-2 bg-muted rounded text-xs">
-                {storagePath || "[저장경로]"}/audio/tts/YYYY/MMDD/voiceId_hash.{mp3|wav}
+                {storagePath || "[저장경로]"}/audio/tts/YYYY/MMDD/voiceId_hash.[mp3|wav]
               </code>
             </div>
             <div className="space-y-1">

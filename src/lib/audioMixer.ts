@@ -353,7 +353,7 @@ export async function exportMixToWav(
     }
     if (settings.fadeOut > 0) {
       // 페이드아웃이 있는 경우, 페이드아웃 전까지 게인 조절
-      const fadeOutStart = bgmEndTime - settings.fadeOut;
+      const fadeOutStart = bgmTotalLen - settings.fadeOut;
       for (let t = 0; t < fadeOutStart; t += step) {
         const tt = t - settings.ttsOffset; // TTS 시간 계산
         if (tt < 0 || tt >= ttsBuffer.duration) {
