@@ -58,8 +58,17 @@ type OperationLog = {
 
 const Dashboard = () => {
   const [isPlaying, setIsPlaying] = useState(false);
-  const [recentGenerations, setRecentGenerations] = useState([]);
-  const [scheduledBroadcasts, setScheduledBroadcasts] = useState([]);
+  const [recentGenerations, setRecentGenerations] = useState<dbService.GenerationEntry[]>([]);
+  const [scheduledBroadcasts, setScheduledBroadcasts] = useState<dbService.ScheduleRequestEntry[]>([]);
+  const [stats, setStats] = useState({
+    totalBroadcasts: 0,
+    activeBroadcasts: 0,
+    totalDuration: "0분",
+    successRate: 0,
+    monthlyUsage: 0,
+  });
+  const [recentBroadcasts, setRecentBroadcasts] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const { user } = useAuth();
   const navigate = useNavigate();
   const [logoUrl, setLogoUrl] = useState<string | undefined>();
@@ -130,16 +139,43 @@ const Dashboard = () => {
   };
 
   const fetchUsageStats = async () => {
+    if (!user?.id) return;
+    
     try {
-      // Mock 데이터 (실제로는 Supabase Edge Function 호출)
-      const mockUsage: UsageStats = {
-        totalCalls: 1250,
-        totalDuration: 18750,
-        callsThisMonth: 450,
-        durationThisMonth: 6750,
+      // 실제 DB에서 사용량 통계 계산
+      const generations = await dbService.loadGenerations(user.id, 1000);
+      
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      
+      // 전체 통계
+      const totalCalls = generations.length;
+      const totalDuration = generations.reduce((sum, gen) => sum + (gen.duration || 0), 0);
+      
+      // 이번 달 통계
+      const callsThisMonth = generations.filter(gen => {
+        if (!gen.createdAt) return false;
+        const createdAt = new Date(gen.createdAt);
+        return createdAt >= startOfMonth;
+      }).length;
+      
+      const durationThisMonth = generations
+        .filter(gen => {
+          if (!gen.createdAt) return false;
+          const createdAt = new Date(gen.createdAt);
+          return createdAt >= startOfMonth;
+        })
+        .reduce((sum, gen) => sum + (gen.duration || 0), 0);
+      
+      const usage: UsageStats = {
+        totalCalls,
+        totalDuration,
+        callsThisMonth,
+        durationThisMonth,
         lastUpdated: new Date().toISOString(),
       };
-      setUsageStats(mockUsage);
+      
+      setUsageStats(usage);
       addOperationLog("success", "사용량 데이터 업데이트 완료");
     } catch (error: any) {
       addOperationLog("error", `사용량 조회 실패: ${error.message}`);
@@ -184,84 +220,143 @@ const Dashboard = () => {
     }
   };
 
+  // 대시보드 데이터 로드
+  const loadDashboardData = async () => {
+    if (!user?.id) {
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      
+      // 병렬로 데이터 로드
+      const [generations, schedules] = await Promise.all([
+        dbService.loadGenerations(user.id, 100),
+        dbService.loadScheduleRequests(user.id),
+      ]);
+
+      // 최근 생성된 음성 목록 (최근 10개)
+      setRecentGenerations(generations.slice(0, 10));
+
+      // 예정된 방송 목록
+      setScheduledBroadcasts(schedules);
+
+      // 통계 계산
+      const totalBroadcasts = generations.length;
+      const activeBroadcasts = schedules.filter(
+        s => s.status === "scheduled" || s.status === "sent"
+      ).length;
+      
+      // 총 방송 시간 계산 (초 단위)
+      const totalDurationSeconds = generations.reduce(
+        (sum, gen) => sum + (gen.duration || 0), 
+        0
+      );
+      
+      // 시간 포맷팅 함수
+      const formatDuration = (seconds: number): string => {
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        if (hours > 0) {
+          return `${hours}시간 ${minutes}분`;
+        }
+        return `${minutes}분`;
+      };
+
+      // 성공률 계산 (status가 'ready'이고 hasAudio가 true인 것)
+      const successfulGenerations = generations.filter(
+        gen => gen.status === "ready" && gen.hasAudio !== false
+      ).length;
+      const successRate = totalBroadcasts > 0 
+        ? Math.round((successfulGenerations / totalBroadcasts) * 100 * 10) / 10
+        : 0;
+
+      // 이번 달 사용량 (퍼센트, 예시로 89% 고정 - 실제로는 요금제 기준으로 계산)
+      const monthlyUsage = 89; // TODO: 실제 요금제 기준으로 계산
+
+      setStats({
+        totalBroadcasts,
+        activeBroadcasts,
+        totalDuration: formatDuration(totalDurationSeconds),
+        successRate,
+        monthlyUsage,
+      });
+
+      // 최근 방송 목록 생성 (예약 요청과 생성 이력 결합)
+      const now = new Date();
+      const recentBroadcastsList = schedules
+        .slice(0, 10)
+        .map(schedule => {
+          const generation = generations.find(g => g.id === schedule.generationId);
+          const scheduledTime = new Date(schedule.scheduledTime);
+          const isPast = scheduledTime < now;
+          
+          let status: "active" | "scheduled" | "completed" = "scheduled";
+          if (schedule.status === "sent") {
+            status = isPast ? "completed" : "active";
+          } else if (schedule.status === "failed") {
+            status = "completed";
+          }
+
+          // 다음 실행 시간 포맷팅
+          const nextRun = isPast && schedule.status === "sent"
+            ? "완료"
+            : scheduledTime.toLocaleTimeString("ko-KR", { 
+                hour: "2-digit", 
+                minute: "2-digit" 
+              });
+
+          // duration 포맷팅
+          const duration = generation?.duration
+            ? formatDuration(generation.duration)
+            : "0분";
+
+          return {
+            id: schedule.id,
+            title: generation?.savedName || generation?.purposeLabel || "제목 없음",
+            status,
+            duration,
+            nextRun,
+            voice: generation?.voiceName || "알 수 없음",
+            scheduledTime: schedule.scheduledTime,
+          };
+        })
+        .sort((a, b) => {
+          // 예약 시간 기준으로 정렬 (최신순)
+          return new Date(b.scheduledTime).getTime() - new Date(a.scheduledTime).getTime();
+        });
+
+      setRecentBroadcasts(recentBroadcastsList);
+
+      addOperationLog("success", "대시보드 데이터 로드 완료");
+    } catch (error: any) {
+      console.error("대시보드 데이터 로드 실패:", error);
+      addOperationLog("error", `대시보드 데이터 로드 실패: ${error.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user?.id) {
+      loadDashboardData();
+    }
+  }, [user?.id]);
+
   useEffect(() => {
     startUsagePolling();
     return () => {
       stopUsagePolling();
     };
-  }, []);
+  }, [user?.id]);
 
-  // 실제 통계 데이터
-  const stats = {
-    totalBroadcasts: 156,
-    activeBroadcasts: 12,
-    totalDuration: "24시간 30분",
-    successRate: 98.5,
-    monthlyUsage: 89 // 퍼센트
-  };
-
-  // 최근 생성된 음성 목록
-  const recentVoices = [
-    {
-      id: 1,
-      title: "신년 인사말",
-      voice: "앵커 스타일 남성 1",
-      duration: "2:34",
-      createdAt: "2024-01-15 09:30",
-      status: "completed",
-      downloadUrl: "#"
-    },
-    {
-      id: 2,
-      title: "긴급 안내방송",
-      voice: "아나운서 스타일 여성 1",
-      duration: "1:45",
-      createdAt: "2024-01-15 08:15",
-      status: "completed",
-      downloadUrl: "#"
-    },
-    {
-      id: 3,
-      title: "정책 발표",
-      voice: "전문가 스타일 남성 1",
-      duration: "3:12",
-      createdAt: "2024-01-14 16:20",
-      status: "processing",
-      downloadUrl: "#"
-    }
-  ];
-
-  // 예정된 방송 목록
-  const upcomingBroadcasts = [
-    {
-      id: 1,
-      title: "월간 정책 브리핑",
-      scheduledTime: "2024-01-20 10:00",
-      status: "scheduled",
-      voice: "앵커 스타일 남성 1"
-    },
-    {
-      id: 2,
-      title: "지역 축제 안내",
-      scheduledTime: "2024-01-22 14:00",
-      status: "scheduled",
-      voice: "친근한 여성 1"
-    },
-    {
-      id: 3,
-      title: "공공서비스 안내",
-      scheduledTime: "2024-01-25 09:00",
-      status: "draft",
-      voice: "아나운서 스타일 여성 1"
-    }
-  ];
-
-  const handlePlayVoice = (voiceId: number) => {
+  const handlePlayVoice = (voiceId: string) => {
     setIsPlaying(!isPlaying);
     // 실제 오디오 재생 로직
   };
 
-  const handleDownloadVoice = (voiceId: number) => {
+  const handleDownloadVoice = (voiceId: string) => {
     // 실제 다운로드 로직
     console.log("다운로드:", voiceId);
   };
@@ -269,33 +364,6 @@ const Dashboard = () => {
   const handleCreateNewVoice = () => {
     navigate("/audio/tts");
   };
-
-  const recentBroadcasts = [
-    {
-      id: 1,
-      title: "오늘의 날씨 안내",
-      status: "active",
-      duration: "2분 30초",
-      nextRun: "14:30",
-      voice: "여성 1"
-    },
-    {
-      id: 2,
-      title: "점심시간 안내",
-      status: "scheduled",
-      duration: "1분 45초",
-      nextRun: "12:00",
-      voice: "남성 1"
-    },
-    {
-      id: 3,
-      title: "마감 안내",
-      status: "completed",
-      duration: "1분 20초",
-      nextRun: "완료",
-      voice: "여성 2"
-    }
-  ];
 
   const quickActions = [
     {
@@ -558,64 +626,88 @@ const Dashboard = () => {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {recentBroadcasts.map((broadcast) => (
-                    <div
-                      key={broadcast.id}
-                      className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors"
+                {isLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                  </div>
+                ) : recentBroadcasts.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Radio className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                    <p>예약된 방송이 없습니다.</p>
+                    <Button
+                      variant="outline"
+                      className="mt-4"
+                      onClick={() => navigate("/send/schedule")}
                     >
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-gradient-to-br from-primary to-accent rounded-lg flex items-center justify-center">
-                          <Volume2 className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                          <h3 className="font-medium">{broadcast.title}</h3>
-                          <p className="text-sm text-muted-foreground">
-                            {broadcast.voice} • {broadcast.duration}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <Badge
-                          variant={
-                            broadcast.status === "active"
-                              ? "default"
-                              : broadcast.status === "scheduled"
-                              ? "secondary"
-                              : "outline"
-                          }
+                      방송 예약하기
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="space-y-4">
+                      {recentBroadcasts.map((broadcast) => (
+                        <div
+                          key={broadcast.id}
+                          className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors"
                         >
-                          {broadcast.status === "active" && (
-                            <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
-                          )}
-                          {broadcast.status === "scheduled" && (
-                            <Clock className="w-3 h-3 mr-1" />
-                          )}
-                          {broadcast.status === "completed" && (
-                            <CheckCircle className="w-3 h-3 mr-1" />
-                          )}
-                          {broadcast.status === "active"
-                            ? "방송 중"
-                            : broadcast.status === "scheduled"
-                            ? "예약됨"
-                            : "완료"}
-                        </Badge>
-                        <div className="text-right">
-                          <p className="text-sm font-medium">{broadcast.nextRun}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {broadcast.status === "active" ? "다음 실행" : "실행 시간"}
-                          </p>
+                          <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 bg-gradient-to-br from-primary to-accent rounded-lg flex items-center justify-center">
+                              <Volume2 className="w-6 h-6 text-white" />
+                            </div>
+                            <div>
+                              <h3 className="font-medium">{broadcast.title}</h3>
+                              <p className="text-sm text-muted-foreground">
+                                {broadcast.voice} • {broadcast.duration}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <Badge
+                              variant={
+                                broadcast.status === "active"
+                                  ? "default"
+                                  : broadcast.status === "scheduled"
+                                  ? "secondary"
+                                  : "outline"
+                              }
+                            >
+                              {broadcast.status === "active" && (
+                                <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                              )}
+                              {broadcast.status === "scheduled" && (
+                                <Clock className="w-3 h-3 mr-1" />
+                              )}
+                              {broadcast.status === "completed" && (
+                                <CheckCircle className="w-3 h-3 mr-1" />
+                              )}
+                              {broadcast.status === "active"
+                                ? "방송 중"
+                                : broadcast.status === "scheduled"
+                                ? "예약됨"
+                                : "완료"}
+                            </Badge>
+                            <div className="text-right">
+                              <p className="text-sm font-medium">{broadcast.nextRun}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {broadcast.status === "active" ? "다음 실행" : "실행 시간"}
+                              </p>
+                            </div>
+                          </div>
                         </div>
-                      </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-                
-                <div className="mt-6">
-                  <Button variant="outline" className="w-full">
-                    모든 방송 보기
-                  </Button>
-                </div>
+                    
+                    <div className="mt-6">
+                      <Button 
+                        variant="outline" 
+                        className="w-full"
+                        onClick={() => navigate("/send/schedule")}
+                      >
+                        모든 방송 보기
+                      </Button>
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -638,28 +730,32 @@ const Dashboard = () => {
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span>월간 방송 시간</span>
-                    <span>120시간 / 200시간</span>
+                    <span>{Math.round(usageStats.durationThisMonth / 3600)}시간 / 무제한</span>
                   </div>
-                  <Progress value={60} className="h-2" />
-                  <p className="text-xs text-muted-foreground">60% 사용</p>
+                  <Progress value={Math.min((usageStats.durationThisMonth / 3600 / 200) * 100, 100)} className="h-2" />
+                  <p className="text-xs text-muted-foreground">
+                    {Math.round((usageStats.durationThisMonth / 3600 / 200) * 100)}% 사용 (예시)
+                  </p>
                 </div>
                 
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span>음성 생성 횟수</span>
-                    <span>45회 / 100회</span>
+                    <span>{usageStats.callsThisMonth}회 / 무제한</span>
                   </div>
-                  <Progress value={45} className="h-2" />
-                  <p className="text-xs text-muted-foreground">45% 사용</p>
+                  <Progress value={Math.min((usageStats.callsThisMonth / 100) * 100, 100)} className="h-2" />
+                  <p className="text-xs text-muted-foreground">
+                    {Math.min(usageStats.callsThisMonth, 100)}% 사용 (예시)
+                  </p>
                 </div>
                 
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span>스토리지 사용량</span>
-                    <span>2.5GB / 10GB</span>
+                    <span>계산 중...</span>
                   </div>
                   <Progress value={25} className="h-2" />
-                  <p className="text-xs text-muted-foreground">25% 사용</p>
+                  <p className="text-xs text-muted-foreground">25% 사용 (예시)</p>
                 </div>
               </div>
             </CardContent>

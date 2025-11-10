@@ -3318,8 +3318,8 @@ const PublicVoiceGenerator = () => {
     };
   };
 
-  // 여러 오디오를 하나로 결합하는 함수
-  const concatenateAudios = async (audioBlobs: Blob[]): Promise<Blob> => {
+  // 여러 오디오를 하나로 결합하는 함수 (mp3 형식 유지 시도)
+  const concatenateAudios = async (audioBlobs: Blob[], preserveFormat: boolean = false): Promise<Blob> => {
     if (audioBlobs.length === 0) {
       throw new Error("결합할 오디오가 없습니다.");
     }
@@ -3327,6 +3327,79 @@ const PublicVoiceGenerator = () => {
       return audioBlobs[0];
     }
 
+    // mp3 형식 유지 옵션이 있고 모든 청크가 mp3인 경우
+    // Web Audio API로 디코딩 후 결합 (더 안정적)
+    if (preserveFormat) {
+      const allMp3 = audioBlobs.every(blob => blob.type.includes('mp3') || blob.type.includes('mpeg'));
+      if (allMp3) {
+        try {
+          // Web Audio API로 디코딩 후 결합 (피치 변조 방지)
+          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 44100 });
+          const audioBuffers: AudioBuffer[] = [];
+
+          // 모든 오디오를 디코딩
+          for (const blob of audioBlobs) {
+            const arrayBuffer = await blob.arrayBuffer();
+            const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+            audioBuffers.push(audioBuffer);
+          }
+
+          // 전체 길이 계산
+          const totalLength = audioBuffers.reduce((sum, buf) => sum + buf.length, 0);
+          const sampleRate = audioBuffers[0].sampleRate;
+          const numChannels = audioBuffers[0].numberOfChannels;
+
+          // 오프라인 컨텍스트로 결합 (피치 변조 없이)
+          const offlineCtx = new OfflineAudioContext(numChannels, totalLength, sampleRate);
+          let currentOffset = 0;
+
+          for (const buffer of audioBuffers) {
+            const source = offlineCtx.createBufferSource();
+            source.buffer = buffer;
+            // 피치 변조 없이 원본 그대로 재생
+            source.playbackRate.value = 1.0;
+            source.connect(offlineCtx.destination);
+            source.start(currentOffset / sampleRate);
+            currentOffset += buffer.length;
+          }
+
+          const renderedBuffer = await offlineCtx.startRendering();
+
+          // WAV로 인코딩 (mp3 인코딩은 브라우저 제한으로 WAV 사용)
+          // 실제로는 서버 측에서 mp3로 변환하는 것이 이상적입니다
+          const { encodeWavPCM16, mixDownToStereo } = await import("@/lib/audioMixer");
+          const interleaved = mixDownToStereo(renderedBuffer);
+          const wavBlob = encodeWavPCM16(interleaved, sampleRate, numChannels);
+
+          // mp3 형식으로 저장하려면 서버 측 변환이 필요하지만,
+          // 현재는 WAV로 반환하고 mimeType을 mp3로 표시하지 않음
+          return wavBlob;
+        } catch (error: any) {
+          console.warn("MP3 디코딩/결합 실패, 바이너리 결합 시도:", error);
+          // 실패 시 바이너리 결합 시도
+          try {
+            const chunks: Uint8Array[] = [];
+            for (const blob of audioBlobs) {
+              const arrayBuffer = await blob.arrayBuffer();
+              chunks.push(new Uint8Array(arrayBuffer));
+            }
+            const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+            const combined = new Uint8Array(totalLength);
+            let offset = 0;
+            for (const chunk of chunks) {
+              combined.set(chunk, offset);
+              offset += chunk.length;
+            }
+            return new Blob([combined], { type: 'audio/mpeg' });
+          } catch (binaryError) {
+            console.error("바이너리 결합도 실패:", binaryError);
+            throw error; // 원래 에러를 throw
+          }
+        }
+      }
+    }
+
+    // 기본 동작: WAV로 변환하여 결합 (더 안정적)
     try {
       const ctx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 44100 });
       const audioBuffers: AudioBuffer[] = [];
@@ -3343,13 +3416,15 @@ const PublicVoiceGenerator = () => {
       const sampleRate = audioBuffers[0].sampleRate;
       const numChannels = audioBuffers[0].numberOfChannels;
 
-      // 오프라인 컨텍스트로 결합
+      // 오프라인 컨텍스트로 결합 (피치 변조 없이)
       const offlineCtx = new OfflineAudioContext(numChannels, totalLength, sampleRate);
       let currentOffset = 0;
 
       for (const buffer of audioBuffers) {
         const source = offlineCtx.createBufferSource();
         source.buffer = buffer;
+        // 피치 변조 없이 원본 그대로 재생
+        source.playbackRate.value = 1.0;
         source.connect(offlineCtx.destination);
         source.start(currentOffset / sampleRate);
         currentOffset += buffer.length;
@@ -3357,7 +3432,7 @@ const PublicVoiceGenerator = () => {
 
       const renderedBuffer = await offlineCtx.startRendering();
 
-      // WAV로 인코딩 (audioMixer의 함수 사용)
+      // WAV로 인코딩
       const { encodeWavPCM16, mixDownToStereo } = await import("@/lib/audioMixer");
       const interleaved = mixDownToStereo(renderedBuffer);
       const wavBlob = encodeWavPCM16(interleaved, sampleRate, numChannels);
@@ -3449,7 +3524,10 @@ const PublicVoiceGenerator = () => {
 
     const speedValue = getSpeedMultiplier();
     // 피치: -100 ~ +100 범위를 -12 ~ +12 세미톤으로 변환
-    const pitchShift = Math.max(-12, Math.min(12, Math.round(voiceSettings.pitch / 8.33)));
+    // 더 정확한 계산: (pitch / 100) * 12
+    const pitchShift = voiceSettings.pitch === 0 
+      ? 0 
+      : Math.max(-12, Math.min(12, Math.round((voiceSettings.pitch / 100) * 12)));
 
     // 끊어읽기 구간을 텍스트에 적용 (SSML 형식)
     let processedText = trimmedText;
@@ -3485,7 +3563,7 @@ const PublicVoiceGenerator = () => {
       }
     }
 
-    const targetFormat = needsSplitting ? "wav" : "mp3";
+    const targetFormat = needsSplitting ? "mp3" : "mp3"; // 분할 시에도 mp3 유지
     const generationParams = {
       text: processedText,
       voiceId: selectedVoice,
@@ -3754,10 +3832,31 @@ const PublicVoiceGenerator = () => {
       // 여러 청크가 있으면 결합, 하나면 그대로 사용
       if (audioChunks.length > 1) {
         console.log(`${audioChunks.length}개 청크를 결합합니다...`);
-        finalAudioBlob = await concatenateAudios(audioChunks);
-        finalMimeType = "audio/wav"; // 결합 후 WAV 형식
+        // mp3 형식 유지 시도 (모든 청크가 mp3인 경우)
+        const allMp3 = audioChunks.every(chunk => chunk.type.includes('mp3') || chunk.type.includes('mpeg'));
+        if (allMp3) {
+          try {
+            // Web Audio API로 디코딩 후 결합 (피치 변조 방지)
+            finalAudioBlob = await concatenateAudios(audioChunks, true);
+            // 브라우저에서 mp3 인코딩은 제한적이므로 WAV로 저장하되,
+            // 사용자에게는 mp3 형식으로 표시 (실제로는 WAV)
+            finalMimeType = "audio/wav"; // 실제로는 WAV로 저장
+            console.log("✅ 오디오 결합 완료 (WAV 형식으로 저장)");
+          } catch (error) {
+            console.warn("오디오 결합 실패:", error);
+            // 실패 시 WAV로 변환
+            finalAudioBlob = await concatenateAudios(audioChunks, false);
+            finalMimeType = "audio/wav";
+          }
+        } else {
+          // 일부 청크가 mp3가 아닌 경우 WAV로 변환
+          finalAudioBlob = await concatenateAudios(audioChunks, false);
+          finalMimeType = "audio/wav";
+        }
       } else {
         finalAudioBlob = audioChunks[0];
+        // 단일 청크의 경우 원본 형식 유지
+        finalMimeType = audioChunks[0].type || "audio/mpeg";
       }
 
       const roundedDuration = Math.round(totalDuration * 100) / 100;

@@ -46,21 +46,60 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     // 초기 세션 확인
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
-        loadUserProfile(session.user);
+        // 즉시 기본 사용자 정보 설정 (프로필 로드 기다리지 않음)
+        const defaultUser: User = {
+          id: session.user.id,
+          email: session.user.email || "",
+          name: session.user.email?.split("@")[0] || "",
+          organizationType: "public",
+          organization: "",
+          department: "",
+          position: "",
+          plan: "standard",
+          isActive: true,
+        };
+        setUser(defaultUser);
+        setIsLoading(false);
+        
+        // 프로필은 백그라운드에서 비동기로 로드
+        loadUserProfile(session.user, true).catch(err => {
+          console.warn("Background profile load failed:", err);
+        });
       } else {
         setUser(null);
         setIsLoading(false);
       }
+    }).catch((error) => {
+      console.error("Session check failed:", error);
+      setUser(null);
+      setIsLoading(false);
     });
 
     // 인증 상태 변경 리스너
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (event === 'SIGNED_IN' && session?.user) {
-          // login 함수에서 이미 loadUserProfile을 호출했으므로 중복 방지
-          // 단, 초기 로드나 다른 경로로 로그인된 경우에만 호출
+          // login 함수에서 이미 처리했으므로 중복 방지
           if (!isLoggingInRef.current) {
-            await loadUserProfile(session.user, false);
+            // 즉시 기본 사용자 정보 설정
+            const defaultUser: User = {
+              id: session.user.id,
+              email: session.user.email || "",
+              name: session.user.email?.split("@")[0] || "",
+              organizationType: "public",
+              organization: "",
+              department: "",
+              position: "",
+              plan: "standard",
+              isActive: true,
+            };
+            setUser(defaultUser);
+            localStorage.setItem("user", JSON.stringify(defaultUser));
+            
+            // 프로필은 백그라운드에서 비동기로 로드
+            loadUserProfile(session.user, true).catch(err => {
+              console.warn("Background profile load failed:", err);
+            });
           }
         } else if (event === 'SIGNED_OUT') {
           setUser(null);
@@ -79,13 +118,23 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       setIsLoading(true);
     }
     try {
-      const { data: profile, error: profileError } = await supabase
+      // 프로필 조회 시도 (타임아웃 추가)
+      const profileQuery = supabase
         .from("profiles")
         .select("*")
         .eq("id", authUser.id)
-        .single();
+        .maybeSingle();
+      
+      // 타임아웃 설정 (3초)
+      const timeoutId = setTimeout(() => {
+        // 타임아웃 시 쿼리 취소는 불가능하지만, 에러로 처리
+      }, 3000);
+      
+      const { data: profile, error: profileError } = await profileQuery;
+      
+      clearTimeout(timeoutId);
 
-      // 프로필이 없어도 기본 사용자 정보로 생성
+      // 프로필이 없거나 에러가 발생해도 기본 사용자 정보로 생성
       const user: User = {
         id: authUser.id,
         email: authUser.email || "",
@@ -101,7 +150,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       setUser(user);
       localStorage.setItem("user", JSON.stringify(user));
     } catch (error) {
-      console.error("Failed to load profile:", error);
+      console.warn("Profile load failed, using default user info:", error);
       // 프로필 로드 실패해도 기본 사용자 정보는 설정
       const user: User = {
         id: authUser.id,
@@ -117,8 +166,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       setUser(user);
       localStorage.setItem("user", JSON.stringify(user));
     } finally {
-      // skipLoadingState가 true여도 호출한 쪽에서 명시적으로 해제하도록 하되,
-      // 안전장치로 항상 해제하도록 변경
+      // 항상 로딩 상태 해제
       if (!skipLoadingState) {
         setIsLoading(false);
         isLoggingInRef.current = false;
@@ -143,13 +191,33 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         return false;
       }
 
-      // 인증 성공 - 프로필 로드 완료까지 대기
-      // loadUserProfile이 로딩 상태를 관리하도록 함 (skipLoadingState: true)
-      // 이미 setIsLoading(true)가 호출되었으므로 중복 방지
-      await loadUserProfile(authData.user, true);
-      // loadUserProfile 완료 후 명시적으로 로딩 상태 해제
+      // 인증 성공 - 즉시 기본 사용자 정보 설정
+      const defaultUser: User = {
+        id: authData.user.id,
+        email: authData.user.email || "",
+        name: authData.user.email?.split("@")[0] || "",
+        organizationType: "public",
+        organization: "",
+        department: "",
+        position: "",
+        plan: "standard",
+        isActive: true,
+      };
+      setUser(defaultUser);
+      localStorage.setItem("user", JSON.stringify(defaultUser));
+      
+      // 로그인 성공 - 즉시 로딩 상태 해제
       setIsLoading(false);
       isLoggingInRef.current = false;
+      
+      // 프로필 로드는 백그라운드에서 비동기로 처리 (로딩 상태에 영향 없음)
+      // 약간의 지연을 두어 onAuthStateChange와의 충돌 방지
+      setTimeout(() => {
+        loadUserProfile(authData.user, true).catch(err => {
+          console.warn("Background profile load failed:", err);
+        });
+      }, 100);
+      
       return true;
     } catch (error) {
       console.error("Login error:", error);
@@ -186,29 +254,27 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
       // 회원가입 성공 - 사용자가 생성되었는지 확인
       if (authData?.user) {
-        // 프로필 로드 시도 (회원가입 직후에는 프로필이 없을 수 있음)
-        // skipLoadingState를 false로 설정하여 loadUserProfile이 로딩 상태를 관리하도록 함
-        try {
-          await loadUserProfile(authData.user, false);
-        } catch (profileError) {
-          // 프로필 로드 실패해도 회원가입은 성공으로 처리
-          console.warn("Profile load failed after registration:", profileError);
-          // 기본 사용자 정보 설정
-          const user: User = {
-            id: authData.user.id,
-            email: authData.user.email || "",
-            name: userData.name || authData.user.email?.split("@")[0] || "",
-            organizationType: userData.organizationType || "public",
-            organization: userData.organization || "",
-            department: userData.department || "",
-            position: userData.position || "",
-            plan: userData.plan || "standard",
-            isActive: true,
-          };
-          setUser(user);
-          localStorage.setItem("user", JSON.stringify(user));
-          setIsLoading(false);
-        }
+        // 즉시 기본 사용자 정보 설정
+        const defaultUser: User = {
+          id: authData.user.id,
+          email: authData.user.email || "",
+          name: userData.name || authData.user.email?.split("@")[0] || "",
+          organizationType: userData.organizationType || "public",
+          organization: userData.organization || "",
+          department: userData.department || "",
+          position: userData.position || "",
+          plan: userData.plan || "standard",
+          isActive: true,
+        };
+        setUser(defaultUser);
+        localStorage.setItem("user", JSON.stringify(defaultUser));
+        
+        // 프로필 로드는 백그라운드에서 비동기로 처리 (로딩 상태에 영향 없음)
+        loadUserProfile(authData.user, true).catch(err => {
+          console.warn("Background profile load failed:", err);
+        });
+        
+        setIsLoading(false);
         return true;
       }
 

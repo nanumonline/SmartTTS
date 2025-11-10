@@ -51,7 +51,7 @@ serve(async (req: Request) => {
 
     console.log(`요청 사용자: ${user.id}`);
 
-    const { type, prompt, original, instruction, organization, department } = await req.json();
+    const { type, prompt, original, instruction, organization, department, purposeLabel } = await req.json();
     
     // OpenAI API 키 확인
     const openAIApiKey = Deno.env.get("OPENAI_API_KEY");
@@ -65,24 +65,18 @@ serve(async (req: Request) => {
       );
     }
 
-    // 시스템 프롬프트
-    const systemPrompt = [
-      "당신은 대한민국 공공기관 방송 문구 작성 전문가입니다.",
-      "격식 있고 신뢰감 있는 톤으로 작성하며, 간결하고 명확한 문장을 사용합니다.",
-      "방송용으로 호흡이 자연스럽고 발음이 명확하도록 문장을 구성하세요.",
-      "TTS 친화적으로 숫자, 단위를 명확히 표기하세요.",
-    ].join(" ");
-
+    // 시스템 프롬프트 최적화 (토큰 절약)
+    const systemPrompt = "공공기관 방송문 전문가. 격식 있고 간결한 문장. TTS 친화적 숫자/단위 표기.";
+    
     let userPrompt = "";
     
     if (type === "generate") {
-      // 텍스트 생성
-      const org = organization || "귀 기관";
-      const dept = department || "관계 부서";
-      userPrompt = `${org} ${dept} 방송문: ${prompt}`;
+      // 텍스트 생성 - 최적화된 프롬프트
+      const purpose = purposeLabel || "안내방송";
+      userPrompt = `${purpose}: ${prompt}`;
     } else if (type === "edit") {
-      // 텍스트 편집
-      userPrompt = `다음 방송 원문을 지침에 맞춰 자연스럽게 수정해 주세요.\n\n[원문]\n${original}\n\n[지침]\n${instruction}\n\n요구사항: 방송용 격식, 명확한 발음, 간결한 문장, 숫자/단위 명확화.`;
+      // 텍스트 편집 - 최적화된 프롬프트
+      userPrompt = `[원문]\n${original}\n\n[지침]\n${instruction}\n\n수정: 방송용 격식, 명확한 발음, 간결한 문장.`;
     } else {
       return new Response(
         JSON.stringify({ error: "type은 'generate' 또는 'edit'이어야 합니다." }),
@@ -122,7 +116,7 @@ serve(async (req: Request) => {
     }
 
     const data = await response.json();
-    const generatedText = data.choices?.[0]?.message?.content || "";
+    let generatedText = data.choices?.[0]?.message?.content || "";
 
     if (!generatedText) {
       return new Response(
@@ -133,6 +127,17 @@ serve(async (req: Request) => {
         }
       );
     }
+    
+    // 방송문 표현 개선: "~하는 방송문입니다" → "안내방송입니다. ~방송입니다"
+    const purpose = purposeLabel || "안내방송";
+    // "방송문입니다" 패턴을 찾아서 "방송입니다"로 변경하고 앞에 목적 추가
+    generatedText = generatedText
+      .replace(/(.+?)(하는|하는 )방송문입니다/g, `${purpose}입니다. $1방송입니다`)
+      .replace(/(.+?)(하는|하는 )방송문이에요/g, `${purpose}입니다. $1방송입니다`)
+      .replace(/(.+?)(하는|하는 )방송문이야/g, `${purpose}입니다. $1방송입니다`)
+      .replace(/방송문입니다/g, `${purpose}입니다`)
+      .replace(/방송문이에요/g, `${purpose}입니다`)
+      .replace(/방송문이야/g, `${purpose}입니다`);
 
     return new Response(
       JSON.stringify({ text: generatedText }),

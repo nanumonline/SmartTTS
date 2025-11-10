@@ -967,6 +967,7 @@ export interface MessageHistoryEntry {
   id?: string;
   text: string;
   purpose: string;
+  tags?: string[];
   isTemplate?: boolean;
   templateName?: string;
   templateCategory?: string;
@@ -990,6 +991,7 @@ export async function saveMessage(userId: string, message: MessageHistoryEntry):
         user_id: userId,
         text: message.text,
         purpose: message.purpose,
+        tags: message.tags ? JSON.stringify(message.tags) : null,
         is_template: message.isTemplate || false,
         template_name: message.templateName || null,
         template_category: message.templateCategory || null,
@@ -1270,16 +1272,27 @@ export async function loadMessages(userId: string): Promise<MessageHistoryEntry[
       return row.is_template === false;
     });
 
-    return filtered.map((row: any) => ({
-      id: row.id,
-      text: row.text,
-      purpose: row.purpose,
-      isTemplate: row.is_template || false,
-      templateName: row.template_name || undefined,
-      templateCategory: row.template_category || undefined,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    }));
+    return filtered.map((row: any) => {
+      let tags: string[] = [];
+      if (row.tags) {
+        try {
+          tags = typeof row.tags === 'string' ? JSON.parse(row.tags) : row.tags;
+        } catch (e) {
+          console.warn("태그 파싱 실패:", e);
+        }
+      }
+      return {
+        id: row.id,
+        text: row.text,
+        purpose: row.purpose,
+        tags: tags.length > 0 ? tags : undefined,
+        isTemplate: row.is_template || false,
+        templateName: row.template_name || undefined,
+        templateCategory: row.template_category || undefined,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      };
+    });
   } catch (error: any) {
     // 컬럼이 존재하지 않는 경우 (42703) 또는 테이블이 없는 경우 (PGRST205)
     if (error.code !== "PGRST205" && error.code !== "42703") {
