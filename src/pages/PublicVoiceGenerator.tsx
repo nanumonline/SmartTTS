@@ -4048,7 +4048,8 @@ const PublicVoiceGenerator = () => {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      // 즉시 revoke 시 일부 브라우저에서 다운로드 중 GET blob 에러가 날 수 있어 지연 처리
+      setTimeout(() => window.URL.revokeObjectURL(url), 2000);
     } catch (error) {
       console.error("다운로드 오류:", error);
       setAlertDialog({ open: true, title: "다운로드 오류", message: "다운로드 중 오류가 발생했습니다." });

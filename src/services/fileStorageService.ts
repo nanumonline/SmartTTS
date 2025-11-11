@@ -139,7 +139,8 @@ async function saveFileBrowser(blob: Blob, filename: string): Promise<boolean> {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    // 다운로드 트리거 직후 즉시 revoke하면 일부 브라우저에서 GET blob 실패 가능성
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
     return true;
   } catch (e) {
     console.error('브라우저 파일 저장 실패:', e);
