@@ -1224,10 +1224,6 @@ const PublicVoiceGenerator = () => {
       let base64Audio = payload?.audio_base64 ?? payload?.audioBase64 ?? payload?.audio ?? payload?.audio_data ?? payload?.audioData ?? null;
       let remoteUrl = payload?.audio_url ?? payload?.audioUrl ?? payload?.url ?? payload?.file_url ?? payload?.fileUrl ?? null;
       duration = payload?.duration ?? payload?.audio_duration ?? payload?.length ?? payload?.meta?.duration ?? json.duration ?? json.audioLength ?? null;
-      if (typeof duration === 'string') {
-        const parsedDur = parseFloat(duration as any);
-        duration = Number.isNaN(parsedDur) ? null : parsedDur;
-      }
       const mimeType = payload?.mime_type ?? payload?.mimetype ?? payload?.content_type ?? json.contentType ?? "audio/mpeg";
 
       if (base64Audio) {
@@ -3258,31 +3254,6 @@ const PublicVoiceGenerator = () => {
     return chunks;
   };
 
-  // 각 줄의 길이를 limit 이하로 강제하는 래퍼 (공백/문장 경계 우선)
-  const ensureLineLimit = (text: string, limit: number = 300): string => {
-    const lines = text.replace(/\r\n?/g, '\n').split('\n');
-    const wrapped: string[] = [];
-    for (const line of lines) {
-      if (line.length <= limit) { wrapped.push(line); continue; }
-      const tokens = line.split(/(\s+)/); // 공백 유지
-      let cur = '';
-      for (const tok of tokens) {
-        if ((cur + tok).length > limit && cur.length > 0) {
-          wrapped.push(cur);
-          cur = tok.trimStart();
-          while (cur.length > limit) {
-            wrapped.push(cur.slice(0, limit));
-            cur = cur.slice(limit);
-          }
-        } else {
-          cur += tok;
-        }
-      }
-      if (cur.length) wrapped.push(cur);
-    }
-    return wrapped.join('\n');
-  };
-
   // 예상 오디오 길이 예측 함수 (Supabase Edge Function 프록시 사용)
   // 참고: https://docs.supertoneapi.com/en/user-guide/text-to-speech
   // 이 API는 크레딧을 소비하지 않음
@@ -3580,9 +3551,6 @@ const PublicVoiceGenerator = () => {
       });
     }
 
-    // 각 줄이 300자를 넘지 않도록 강제 개행 (Supertone per-line 제한 대응)
-    processedText = ensureLineLimit(processedText, 300);
-
     // 선택된 음성의 지원 언어/모델 파악
     const selected = availableVoices.find((v: any) => v.voice_id === selectedVoice) || selectedVoiceInfo;
     const supportedLanguages: string[] = Array.isArray(selected?.language) ? selected.language : (selected?.language ? [selected.language] : []);
@@ -3865,7 +3833,9 @@ const PublicVoiceGenerator = () => {
       }
       finalMimeType = audioResult.mimeType || "audio/mpeg";
 
-      console.log(`✅ 청크 ${i + 1}/${textChunks.length} 생성 완료 (${audioResult.duration?.toFixed(2) || '추정'}초)`);
+      const _durNum = typeof audioResult.duration === 'number' ? audioResult.duration : Number(audioResult.duration);
+      const _durLabel = Number.isFinite(_durNum) ? _durNum.toFixed(2) : '추정';
+      console.log(`✅ 청크 ${i + 1}/${textChunks.length} 생성 완료 (${_durLabel}초)`);
       }
 
       // 여러 청크가 있으면 결합, 하나면 그대로 사용
