@@ -3491,6 +3491,16 @@ const PublicVoiceGenerator = () => {
       return;
     }
 
+    // 300자 초과 시 자동 분할 처리 (에러 대신 진행)
+    const needsSplitting = trimmedText.length > 300;
+    if (needsSplitting) {
+      console.log(`장문 텍스트 감지 (${trimmedText.length}자). 300자 단위로 분할하여 생성합니다.`);
+      toast({ 
+        title: "장문 텍스트 분할 생성", 
+        description: `텍스트가 ${trimmedText.length}자로, ${Math.ceil(trimmedText.length / 300)}개 청크로 분할하여 생성합니다.`,
+      });
+    }
+
     // 실제 Supertone voice_id인지 확인 (기본 템플릿 id는 차단)
     const isRealVoiceId = availableVoices.some((v: any) => v.voice_id === selectedVoice);
     if (!isRealVoiceId) {
@@ -3541,67 +3551,6 @@ const PublicVoiceGenerator = () => {
       });
     }
 
-    // Supertone API: 전체 텍스트가 300자를 초과하면 청크로 분할
-    // SSML 태그를 고려하여 안전하게 분할
-    const splitIntoChunks = (text: string, maxLength: number = 280): string[] => {
-      // 280자로 제한 (SSML 태그 추가 시 여유 공간 확보)
-      if (text.length <= maxLength) {
-        return [text];
-      }
-
-      const chunks: string[] = [];
-      const sentences = text.split(/(<break[^>]*>)/); // break 태그로 분할
-      let currentChunk = '';
-
-      for (const segment of sentences) {
-        if (!segment) continue;
-
-        // 현재 청크에 추가했을 때 maxLength를 초과하는지 확인
-        if (currentChunk.length + segment.length > maxLength) {
-          if (currentChunk.trim()) {
-            chunks.push(currentChunk.trim());
-            currentChunk = segment;
-          } else {
-            // segment 자체가 maxLength를 넘는 경우
-            // 문장 단위로 더 세밀하게 분할
-            const words = segment.split(/\s+/);
-            let tempChunk = '';
-            for (const word of words) {
-              if (tempChunk.length + word.length + 1 > maxLength) {
-                if (tempChunk.trim()) {
-                  chunks.push(tempChunk.trim());
-                }
-                tempChunk = word;
-              } else {
-                tempChunk += (tempChunk ? ' ' : '') + word;
-              }
-            }
-            if (tempChunk.trim()) {
-              currentChunk = tempChunk;
-            }
-          }
-        } else {
-          currentChunk += segment;
-        }
-      }
-
-      if (currentChunk.trim()) {
-        chunks.push(currentChunk.trim());
-      }
-
-      return chunks.length > 0 ? chunks : [text.slice(0, maxLength)];
-    };
-
-    const textChunks = splitIntoChunks(processedText, 280);
-    const needsMultipleRequests = textChunks.length > 1;
-
-    if (needsMultipleRequests) {
-      console.log(`텍스트 길이 ${processedText.length}자 → ${textChunks.length}개 청크로 분할`);
-      textChunks.forEach((chunk, idx) => {
-        console.log(`  청크 ${idx + 1}: ${chunk.length}자`);
-      });
-    }
-
     // 선택된 음성의 지원 언어/모델 파악
     const selected = availableVoices.find((v: any) => v.voice_id === selectedVoice) || selectedVoiceInfo;
     const supportedLanguages: string[] = Array.isArray(selected?.language) ? selected.language : (selected?.language ? [selected.language] : []);
@@ -3623,7 +3572,7 @@ const PublicVoiceGenerator = () => {
       }
     }
 
-    const targetFormat = "mp3";
+    const targetFormat = needsSplitting ? "mp3" : "mp3"; // 분할 시에도 mp3 유지
     const generationParams = {
       text: processedText,
       voiceId: selectedVoice,
@@ -3736,28 +3685,31 @@ const PublicVoiceGenerator = () => {
     setIsGenerating(true);
     setGenerationProgress(null);
 
+    // 300자 초과 시 분할 처리
+    const textChunks = needsSplitting ? splitTextIntoChunks(processedText, 300) : [processedText];
     const estimatedDuration = estimateDurationFromText(trimmedText);
 
     try {
       cleanupGeneratedAudioUrl(generatedAudio);
 
-      const audioChunks: { blob: Blob; duration: number; mimeType: string }[] = [];
+      let finalAudioBlob: Blob | null = null;
+      let finalDuration: number = 0;
+      let finalMimeType: string = "audio/mpeg";
+      const audioChunks: Blob[] = [];
+      let totalDuration = 0;
 
       // 각 청크를 순차적으로 생성
       for (let i = 0; i < textChunks.length; i++) {
         const chunk = textChunks[i];
-        
-        if (needsMultipleRequests) {
-          setGenerationProgress({ current: i + 1, total: textChunks.length });
-        }
+        setGenerationProgress({ current: i + 1, total: textChunks.length });
 
-        // Supertone API 요청 본문 구성
+        // Supertone API 요청 본문 구성 (필수 파라미터만 포함)
         const requestBody: Record<string, any> = {
           text: chunk,
           language: chosenLanguage || "ko",
         };
 
-        // style이 있으면 추가
+        // style이 있으면 추가 (일부 모델만 지원)
         if (styleValue && styleValue !== "neutral") {
           requestBody.style = styleValue;
         }
@@ -3767,7 +3719,7 @@ const PublicVoiceGenerator = () => {
           requestBody.model = chosenModel;
         }
 
-        // voice_settings 구성
+        // voice_settings 구성 (필수 필드만 포함)
         const voiceSettingsObj: Record<string, any> = {};
         if (speedValue !== undefined && speedValue !== 1.0) {
           voiceSettingsObj.speed = speedValue;
@@ -3775,93 +3727,146 @@ const PublicVoiceGenerator = () => {
         if (pitchShift !== undefined && pitchShift !== 0) {
           voiceSettingsObj.pitch_shift = pitchShift;
         }
+        // pitch_variance는 선택사항이므로 제거 또는 기본값만 사용
         if (voiceSettings.playbackSpeed !== undefined && voiceSettings.playbackSpeed !== 1.0) {
           voiceSettingsObj.playback_speed = voiceSettings.playbackSpeed;
         }
 
+        // voice_settings에 내용이 있으면 추가
         if (Object.keys(voiceSettingsObj).length > 0) {
           requestBody.voice_settings = voiceSettingsObj;
         }
 
         let audioResult: { blob: Blob; duration: number | null; mimeType?: string } | null = null;
+      let source = "프록시";
 
-        // Supabase Edge Function 프록시 시도
-        const proxyResponse = await fetchWithSupabaseProxy(`/text-to-speech/${selectedVoice}?output_format=mp3`, {
-          method: "POST",
-          body: JSON.stringify(requestBody),
-        });
+      // 1. Supabase Edge Function 프록시 시도
+      // voice_id는 URL에 포함되므로 body에서 제거 (Edge Function이 자동으로 처리)
+      const proxyResponse = await fetchWithSupabaseProxy(`/text-to-speech/${selectedVoice}?output_format=mp3`, {
+        method: "POST",
+        body: JSON.stringify(requestBody), // voice_id 제거 (URL에 포함)
+      });
 
-        if (proxyResponse?.ok) {
-          audioResult = await parseSupertoneResponse(proxyResponse);
-        } else if (proxyResponse) {
-          let errorMsg = `청크 ${i + 1}/${textChunks.length} 프록시 오류 (${proxyResponse.status})`;
+      if (proxyResponse?.ok) {
+        audioResult = await parseSupertoneResponse(proxyResponse);
+      } else if (proxyResponse) {
+        let firstErrorMsg = `프록시 오류 (${proxyResponse.status})`;
+        try {
+          const errJson = await proxyResponse.clone().json();
+          const msg = errJson?.error?.message || errJson?.error || errJson?.message || errJson?.detail;
+          if (msg) firstErrorMsg += `: ${formatErrorDetail(msg)}`;
+        } catch {
+          const text = await proxyResponse.text();
+          if (text) firstErrorMsg += `: ${text}`;
+        }
+        console.warn(firstErrorMsg);
+
+        let finalFailed = true;
+        // 400인 경우 최소 필드로 재시도 (text만, 또는 text + language)
+        if (proxyResponse.status === 400) {
           try {
-            const errJson = await proxyResponse.clone().json();
-            const msg = errJson?.error?.message || errJson?.error || errJson?.message || errJson?.detail;
-            if (msg) errorMsg += `: ${formatErrorDetail(msg)}`;
-          } catch {
-            const text = await proxyResponse.text();
-            if (text) errorMsg += `: ${text}`;
-          }
-          console.warn(errorMsg);
-
-          // 400 에러 시 최소 필드로 재시도
-          if (proxyResponse.status === 400) {
-            const minimalBody = { text: chunk, language: chosenLanguage || "ko" };
+            // 에러 상세 정보 로깅 (개발용)
+            try {
+              const errorJson = await proxyResponse.clone().json();
+              console.warn("400 에러 상세:", errorJson);
+            } catch {}
+            
+            const minimalBody: Record<string, any> = { text: chunk };
+            if (chosenLanguage) minimalBody.language = chosenLanguage;
             const retryResp = await fetchWithSupabaseProxy(`/text-to-speech/${selectedVoice}?output_format=mp3`, {
               method: "POST",
               body: JSON.stringify(minimalBody),
             });
-            
             if (retryResp?.ok) {
               audioResult = await parseSupertoneResponse(retryResp);
-              console.log(`✅ 청크 ${i + 1} 재시도 성공`);
-            } else {
-              throw new Error(errorMsg);
+              console.log(`✅ 청크 ${i + 1}/${textChunks.length} 최소 필드로 재시도 성공`);
+              finalFailed = false;
+              if (i === 0) {
+                toast({ title: "⚠️ 제한된 옵션으로 생성", description: "일부 파라미터 미지원으로 기본값으로 생성되었습니다.", });
+              }
+            } else if (retryResp) {
+              let retryMsg = `재시도 실패 (${retryResp.status})`;
+              try {
+                const j = await retryResp.clone().json();
+                const m = j?.error?.message || j?.error || j?.message || j?.detail;
+                if (m) retryMsg += `: ${formatErrorDetail(m)}`;
+              } catch {
+                const t = await retryResp.text();
+                if (t) retryMsg += `: ${t}`;
+              }
+              console.warn(retryMsg);
+              firstErrorMsg = retryMsg;
             }
-          } else {
-            throw new Error(errorMsg);
+          } catch (e: any) {
+            console.warn("재시도 예외:", e?.message || e);
+            firstErrorMsg = e?.message || "재시도 중 오류";
           }
         }
 
-        if (!audioResult) {
-          // Mock 폴백
-          const mockBlob = base64ToBlob(MOCK_AUDIO_BASE64, "audio/wav");
-          audioResult = {
-            blob: mockBlob,
-            duration: chunk.length * 0.1,
-            mimeType: "audio/wav",
-          };
+        if (!audioResult && finalFailed) {
+          throw new Error(`청크 ${i + 1}/${textChunks.length} 생성 실패: ${firstErrorMsg}`);
         }
-
-        audioChunks.push({
-          blob: audioResult.blob,
-          duration: audioResult.duration || chunk.length * 0.1,
-          mimeType: audioResult.mimeType || "audio/mpeg",
-        });
-
-        console.log(`✅ 청크 ${i + 1}/${textChunks.length} 완료 (${audioResult.duration?.toFixed(2) || '추정'}초)`);
       }
 
-      // 오디오 결합
-      let finalAudioBlob: Blob;
-      let finalDuration: number = 0;
-      let finalMimeType: string;
+      // 2. Mock 폴백
+      if (!audioResult) {
+        source = "Mock";
+        const mockBlob = base64ToBlob(MOCK_AUDIO_BASE64, "audio/wav");
+        const chunkDuration = chunk.length * 0.1;
+        audioResult = {
+          blob: mockBlob,
+          duration: chunkDuration,
+          mimeType: "audio/wav",
+        };
+      }
 
-      if (audioChunks.length > 1) {
-        console.log(`${audioChunks.length}개 청크 결합 중...`);
-        const blobs = audioChunks.map(c => c.blob);
-        finalAudioBlob = await concatenateAudios(blobs, true);
-        finalDuration = audioChunks.reduce((sum, c) => sum + c.duration, 0);
-        finalMimeType = "audio/wav";
-        console.log("✅ 오디오 결합 완료");
+      if (!audioResult) {
+        throw new Error(`청크 ${i + 1}/${textChunks.length} 음성 데이터를 생성할 수 없습니다.`);
+      }
+
+      // 각 청크의 blob 저장
+      audioChunks.push(audioResult.blob);
+      if (audioResult.duration) {
+        totalDuration += audioResult.duration;
       } else {
-        finalAudioBlob = audioChunks[0].blob;
-        finalDuration = audioChunks[0].duration;
-        finalMimeType = audioChunks[0].mimeType;
+        totalDuration += chunk.length * 0.1; // 대략 추정
+      }
+      finalMimeType = audioResult.mimeType || "audio/mpeg";
+
+      console.log(`✅ 청크 ${i + 1}/${textChunks.length} 생성 완료 (${audioResult.duration?.toFixed(2) || '추정'}초)`);
       }
 
-      const roundedDuration = Math.round(finalDuration * 100) / 100;
+      // 여러 청크가 있으면 결합, 하나면 그대로 사용
+      if (audioChunks.length > 1) {
+        console.log(`${audioChunks.length}개 청크를 결합합니다...`);
+        // mp3 형식 유지 시도 (모든 청크가 mp3인 경우)
+        const allMp3 = audioChunks.every(chunk => chunk.type.includes('mp3') || chunk.type.includes('mpeg'));
+        if (allMp3) {
+          try {
+            // Web Audio API로 디코딩 후 결합 (피치 변조 방지)
+            finalAudioBlob = await concatenateAudios(audioChunks, true);
+            // 브라우저에서 mp3 인코딩은 제한적이므로 WAV로 저장하되,
+            // 사용자에게는 mp3 형식으로 표시 (실제로는 WAV)
+            finalMimeType = "audio/wav"; // 실제로는 WAV로 저장
+            console.log("✅ 오디오 결합 완료 (WAV 형식으로 저장)");
+          } catch (error) {
+            console.warn("오디오 결합 실패:", error);
+            // 실패 시 WAV로 변환
+            finalAudioBlob = await concatenateAudios(audioChunks, false);
+            finalMimeType = "audio/wav";
+          }
+        } else {
+          // 일부 청크가 mp3가 아닌 경우 WAV로 변환
+          finalAudioBlob = await concatenateAudios(audioChunks, false);
+          finalMimeType = "audio/wav";
+        }
+      } else {
+        finalAudioBlob = audioChunks[0];
+        // 단일 청크의 경우 원본 형식 유지
+        finalMimeType = audioChunks[0].type || "audio/mpeg";
+      }
+
+      const roundedDuration = Math.round(totalDuration * 100) / 100;
 
       // 캐시에 blob 데이터 먼저 저장 (blob URL 생성 전에 저장하여 안정성 확보)
       cacheRef.current.set(cacheKey, {
@@ -3893,16 +3898,16 @@ const PublicVoiceGenerator = () => {
       setPredictedDuration(roundedDuration);
       setGenerationProgress(null);
 
-      const description = needsMultipleRequests
-        ? `${textChunks.length}개 청크 결합 완료 | 길이: ${roundedDuration.toFixed(2)}초`
-        : `오디오 길이: ${roundedDuration.toFixed(2)}초`;
+      const description = needsSplitting
+        ? `총 ${textChunks.length}개 청크 생성 완료 | 길이: ${roundedDuration.toFixed(2)}초 | 형식: ${finalMimeType}`
+        : `오디오 길이: ${roundedDuration.toFixed(2)}초 | 형식: ${finalMimeType}`;
 
       toast({
         title: "✅ 음성 생성 완료",
         description,
       });
 
-      console.log(`음성 생성 성공 - ${needsMultipleRequests ? `${textChunks.length}개 청크` : '단일'} | ${roundedDuration.toFixed(2)}초`);
+      console.log(`음성 생성 성공 - ${needsSplitting ? `${textChunks.length}개 청크 결합` : '단일 생성'}`);
 
       const finalExtension = guessExtensionFromMime(finalMimeType);
       const storagePath = buildStoragePath(selectedVoice, paramHash, finalExtension);
