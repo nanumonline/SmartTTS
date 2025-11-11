@@ -2087,6 +2087,11 @@ const PublicVoiceGenerator = () => {
   };
 
   useEffect(() => {
+    return () => {
+      cleanupGeneratedAudioUrl(generatedAudio);
+    };
+  }, [generatedAudio]);
+
   // 네트워크 상태 감지 및 오프라인 모드 처리
   useEffect(() => {
     const handleOnline = () => {
@@ -2116,11 +2121,6 @@ const PublicVoiceGenerator = () => {
       window.removeEventListener("offline", handleOffline);
     };
   }, [isOffline, user?.id, loadDataFromDB, toast]);
-
-    return () => {
-      cleanupGeneratedAudioUrl(generatedAudio);
-    };
-  }, [generatedAudio]);
 
   // 고급 음성 설정 상태
   const [voiceSettings, setVoiceSettings] = useState({
