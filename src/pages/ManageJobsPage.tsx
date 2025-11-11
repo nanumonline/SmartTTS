@@ -139,9 +139,14 @@ export default function ManageJobsPage() {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <div className="space-y-2 p-4">
+            <div className="space-y-2 p-4" role="list" aria-label="작업 목록">
               {filteredJobs.map((job) => (
-                <div key={job.id} className="rounded-lg border bg-card p-3 hover:bg-muted/50 transition-colors">
+                <div
+                  key={job.id}
+                  role="listitem"
+                  tabIndex={0}
+                  className="rounded-lg border bg-card p-3 hover:bg-muted/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                >
                   <div className="flex items-center justify-between gap-4">
                     <div className="min-w-0">
                       <p className="font-medium truncate">{getJobTypeLabel(job.type)}</p>
@@ -164,7 +169,7 @@ export default function ManageJobsPage() {
                         </div>
                       )}
                     </div>
-                    <div className="flex-shrink-0">{getStatusBadge(job.status)}</div>
+                    <div className="flex-shrink-0" aria-label={`상태: ${job.status}`}>{getStatusBadge(job.status)}</div>
                   </div>
                 </div>
               ))}

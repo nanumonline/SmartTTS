@@ -147,17 +147,19 @@ export default function AudioHistoryPage() {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <div className="space-y-2 p-4">
+            <div className="space-y-2 p-4" role="list" aria-label="생성 내역 목록">
               {filteredGenerations.map((gen) => (
                 <div
                   key={gen.id}
-                  className="rounded-lg border bg-card p-3 hover:bg-muted/50 transition-colors"
+                  role="listitem"
+                  tabIndex={0}
+                  className="rounded-lg border bg-card p-3 hover:bg-muted/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 >
                   <div className="flex items-center gap-4">
                     {/* 왼쪽 정보 */}
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-2 mb-1 text-sm text-muted-foreground">
-                        <Badge variant="outline">{gen.purpose}</Badge>
+                        <Badge variant="outline">{purposeOptions.find(p => p.id === gen.purpose)?.label || gen.purpose}</Badge>
                         <span>{gen.voiceName}</span>
                         {gen.duration && (
                           <span className="text-xs">
@@ -181,16 +183,17 @@ export default function AudioHistoryPage() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        aria-label={selectedGeneration === gen.id ? "미리듣기 닫기" : "미리듣기"}
                         onClick={() =>
                           setSelectedGeneration(selectedGeneration === gen.id ? null : gen.id || null)
                         }
-                        title={selectedGeneration === gen.id ? "미리듣기 닫기" : "미리듣기"}
                       >
                         <Play className="w-4 h-4" />
                       </Button>
                       <Button
                         variant="outline"
                         size="sm"
+                        aria-label="믹싱으로 이동"
                         onClick={() => {
                           navigate(`/mix/board?generation=${gen.id}`);
                           toast({ title: "믹싱 페이지로 이동", description: "선택한 음원을 믹싱할 수 있습니다." });
@@ -202,6 +205,7 @@ export default function AudioHistoryPage() {
                       <Button
                         variant="outline"
                         size="sm"
+                        aria-label="스케줄 관리로 이동"
                         onClick={() => {
                           navigate(`/send/schedule?generation=${gen.id}`);
                           toast({ title: "스케줄 관리로 이동", description: "선택한 음원을 예약할 수 있습니다." });
@@ -213,6 +217,7 @@ export default function AudioHistoryPage() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        aria-label="다운로드"
                         onClick={async () => {
                           let downloadUrl = gen.audioUrl;
                           if (!downloadUrl && user?.id && gen.id) {
@@ -243,13 +248,13 @@ export default function AudioHistoryPage() {
                             document.body.removeChild(link);
                           }
                         }}
-                        title="다운로드"
                       >
                         <Download className="w-4 h-4" />
                       </Button>
                       <Button
                         variant="ghost"
                         size="icon"
+                        aria-label="삭제"
                         onClick={() => gen.id && handleDelete(gen.id)}
                         title="삭제"
                         className="text-destructive hover:text-destructive hover:bg-destructive/10"
