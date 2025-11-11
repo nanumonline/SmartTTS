@@ -336,7 +336,44 @@ export async function loadGenerationBlob(userId: string, id: string): Promise<{ 
       return null;
     }
     
-    const buf = data?.audio_blob ? new Uint8Array(data.audio_blob as any).buffer : null;
+    if (!data?.audio_blob) {
+      console.warn(`[loadGenerationBlob] audio_blob 없음: ${id}`);
+      return null;
+    }
+
+    let buf: ArrayBuffer | null = null;
+    const rawBlob: any = data.audio_blob;
+
+    // PostgreSQL bytea는 hex 문자열 형식("\\x5b37...") 또는 배열로 반환됨
+    if (typeof rawBlob === 'string') {
+      // hex 문자열 형식: "\\x5b37332c..."
+      if (rawBlob.startsWith('\\x')) {
+        const hexString = rawBlob.slice(2); // "\\x" 제거
+        const bytes = new Uint8Array(hexString.length / 2);
+        for (let i = 0; i < hexString.length; i += 2) {
+          bytes[i / 2] = parseInt(hexString.substr(i, 2), 16);
+        }
+        buf = bytes.buffer;
+        console.log(`[loadGenerationBlob] hex 디코딩 완료: ${bytes.length} bytes`);
+      } else {
+        console.warn(`[loadGenerationBlob] 알 수 없는 문자열 형식: ${rawBlob.substring(0, 20)}...`);
+        return null;
+      }
+    } else if (Array.isArray(rawBlob)) {
+      // 배열 형식: [91, 55, 51, ...]
+      buf = new Uint8Array(rawBlob as number[]).buffer;
+      console.log(`[loadGenerationBlob] 배열 디코딩 완료: ${(rawBlob as number[]).length} bytes`);
+    } else {
+      // 이미 ArrayBuffer나 TypedArray인 경우
+      buf = new Uint8Array(rawBlob).buffer;
+      console.log(`[loadGenerationBlob] 직접 변환 완료`);
+    }
+
+    if (!buf || buf.byteLength === 0) {
+      console.warn(`[loadGenerationBlob] 빈 buffer: ${id}`);
+      return null;
+    }
+
     return { audioBlob: buf, mimeType: data?.mime_type };
   } catch (error: any) {
     // 500 에러는 서버 문제로 조용히 처리
@@ -344,6 +381,7 @@ export async function loadGenerationBlob(userId: string, id: string): Promise<{ 
       console.warn("loadGenerationBlob 500 에러 (서버 문제):", error.message);
       return null;
     }
+    console.error("[loadGenerationBlob] 예외:", error);
     return null;
   }
 }
