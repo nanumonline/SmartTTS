@@ -1749,24 +1749,22 @@ const PublicVoiceGenerator = () => {
       let actualStoragePath = entry.storagePath || null;
       if (audioBlob && entry.storagePath) {
         try {
-          // 사용자 설정에서 저장 경로 가져오기
-          const userSettings = await dbService.loadUserSettings(user.id);
-          const rootPath = userSettings?.storagePath || null;
-          
-          // 파일 저장
-          const savedFilePath = await fileStorageService.saveAudioFile(
-            entry.storagePath,
-            audioBlob,
-            rootPath
-          );
-          
-          // 저장된 전체 경로 사용 (Electron) 또는 상대 경로 유지 (브라우저)
-          if (savedFilePath) {
-            actualStoragePath = savedFilePath;
+          // 브라우저에서는 자동 다운로드를 방지하고, Electron 환경에서만 자동 저장 수행
+          const isElectron = typeof window !== 'undefined' && (((window as any).electron !== undefined) || ((window as any).require !== undefined));
+          if (isElectron) {
+            const userSettings = await dbService.loadUserSettings(user.id);
+            const rootPath = userSettings?.storagePath || null;
+            const savedFilePath = await fileStorageService.saveAudioFile(
+              entry.storagePath,
+              audioBlob,
+              rootPath
+            );
+            if (savedFilePath) {
+              actualStoragePath = savedFilePath;
+            }
           }
         } catch (fileError) {
           console.warn("파일 저장 실패 (DB는 저장됨):", fileError);
-          // 파일 저장 실패해도 DB 저장은 계속 진행
         }
       }
       
