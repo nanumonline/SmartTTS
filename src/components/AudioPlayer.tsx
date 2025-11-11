@@ -98,9 +98,17 @@ const AudioPlayer = ({
       }
     };
     const handleLoadedMetadata = () => {
-      // 메타데이터 로드 시 duration 업데이트
+      // 메타데이터 로드 시 duration 업데이트 및 복원 해제
       if (audio.duration && isFinite(audio.duration)) {
         setActualDuration(audio.duration);
+      }
+      if (isRecoveringRef.current) {
+        isRecoveringRef.current = false;
+        setIsRecovering(false);
+        if (recoveryTimeoutRef.current) {
+          clearTimeout(recoveryTimeoutRef.current);
+          recoveryTimeoutRef.current = null;
+        }
       }
     };
     const handleEnded = () => {
@@ -110,7 +118,18 @@ const AudioPlayer = ({
       setCurrentTime(maxTime);
     };
     const handleLoadStart = () => setIsLoading(true);
-    const handleCanPlay = () => setIsLoading(false);
+    const handleCanPlay = () => {
+      setIsLoading(false);
+      // 메타데이터/재생 가능 시 복원 상태 해제
+      if (isRecoveringRef.current) {
+        isRecoveringRef.current = false;
+        setIsRecovering(false);
+        if (recoveryTimeoutRef.current) {
+          clearTimeout(recoveryTimeoutRef.current);
+          recoveryTimeoutRef.current = null;
+        }
+      }
+    };
     const handleError = (e: any) => {
       const audio = e.target || audioRef.current;
       if (!audio) return;
