@@ -3958,14 +3958,21 @@ const PublicVoiceGenerator = () => {
         // _audioUrl은 나중에 생성
       });
       
-      // blob URL 생성 (cacheRef에 저장된 후 생성)
-      const audioUrl = URL.createObjectURL(finalAudioBlob);
+      // blob URL 생성 전 유효성 검사 및 MIME type 명시
+      if (!finalAudioBlob || finalAudioBlob.size === 0) {
+        throw new Error("생성된 오디오 blob이 유효하지 않습니다.");
+      }
+      
+      // MIME type을 명시하여 새 Blob 생성 (디코딩 오류 방지)
+      const validBlob = new Blob([finalAudioBlob], { type: finalMimeType });
+      const audioUrl = URL.createObjectURL(validBlob);
       
       // cacheRef에 blob URL도 저장
       const cached = cacheRef.current.get(cacheKey);
       if (cached) {
         cacheRef.current.set(cacheKey, {
           ...cached,
+          blob: validBlob, // 유효한 blob으로 업데이트
           _audioUrl: audioUrl,
         });
       }
