@@ -136,6 +136,9 @@ type ReviewState = {
 
 const PublicVoiceGenerator = () => {
   const [saveDialog, setSaveDialog] = useState<{ open: boolean; entry?: any; filename?: string; format?: string }>({ open: false });
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [offlineToastShown, setOfflineToastShown] = useState(false);
+
 
   const { user } = useAuth();
   const { toast } = useToast();
@@ -1297,7 +1300,23 @@ const PublicVoiceGenerator = () => {
 
     try {
       // 생성 이력
-      const dbHistory = await dbService.loadGenerations(user.id, 100);
+      let dbHistory: any[] = [];
+      try {
+        dbHistory = await dbService.loadGenerations(user.id, 100);
+      } catch (err: any) {
+        const errMsg = (err?.message || "") + " " + (err?.details || "");
+        if (errMsg.toLowerCase().includes("cors") || errMsg.toLowerCase().includes("522") || errMsg.toLowerCase().includes("failed to fetch")) {
+          if (!offlineToastShown) {
+            setOfflineToastShown(true);
+            toast({
+              title: "오프라인 모드",
+              description: "네트워크 연결이 불안정합니다. 일부 기능이 제한될 수 있습니다.",
+              variant: "default",
+            });
+          }
+        }
+        dbHistory = [];
+      }
       if (dbHistory.length > 0) {
         const normalized = dbHistory.map((item: any) => {
           // Blob URL 복원 (우선순위: audioBlob > cacheRef > audioUrl)
@@ -1449,7 +1468,7 @@ const PublicVoiceGenerator = () => {
     } catch (error: any) {
       // DB에서 데이터 로드 실패 (무시 가능)
     }
-  }, [user?.id]);
+  }, [user?.id, offlineToastShown, toast]);
 
   // localStorage에서 DB로 마이그레이션
   const migrateLocalStorageToDB = useCallback(async () => {
@@ -2068,6 +2087,36 @@ const PublicVoiceGenerator = () => {
   };
 
   useEffect(() => {
+  // 네트워크 상태 감지 및 오프라인 모드 처리
+  useEffect(() => {
+    const handleOnline = () => {
+      if (isOffline) {
+        setIsOffline(false);
+        setOfflineToastShown(false);
+        // 네트워크 복귀 시 자동 재로드
+        if (user?.id) {
+          loadDataFromDB();
+        }
+        toast({
+          title: "네트워크 연결 복구",
+          description: "데이터를 다시 불러오는 중입니다.",
+        });
+      }
+    };
+
+    const handleOffline = () => {
+      setIsOffline(true);
+    };
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, [isOffline, user?.id, loadDataFromDB, toast]);
+
     return () => {
       cleanupGeneratedAudioUrl(generatedAudio);
     };
@@ -3035,7 +3084,23 @@ const PublicVoiceGenerator = () => {
     setIsLoadingTemplates(true);
     try {
       // 모든 템플릿 로드 (카테고리 필터 없이)
-      const allTemplates = await dbService.loadTemplates(user.id);
+      let allTemplates: dbService.TemplateEntry[] = [];
+      try {
+        allTemplates = await dbService.loadTemplates(user.id);
+      } catch (err: any) {
+        const errMsg = (err?.message || "") + " " + (err?.details || "");
+        if (errMsg.toLowerCase().includes("cors") || errMsg.toLowerCase().includes("522") || errMsg.toLowerCase().includes("failed to fetch")) {
+          if (!offlineToastShown) {
+            setOfflineToastShown(true);
+            toast({
+              title: "오프라인 모드",
+              description: "네트워크 연결이 불안정합니다. 일부 기능이 제한될 수 있습니다.",
+              variant: "default",
+            });
+          }
+        }
+        allTemplates = [];
+      }
       
       // 카테고리별로 분류
       const greeting: dbService.TemplateEntry[] = [];
@@ -3079,7 +3144,7 @@ const PublicVoiceGenerator = () => {
     } finally {
       setIsLoadingTemplates(false);
     }
-  }, [user?.id]);
+  }, [user?.id, offlineToastShown, toast]);
 
   // DB에서 템플릿 로드
   useEffect(() => {
