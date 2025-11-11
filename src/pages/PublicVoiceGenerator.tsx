@@ -3980,10 +3980,11 @@ const PublicVoiceGenerator = () => {
         });
       }
       
-      // 약간의 지연 후 상태 업데이트 (blob URL이 완전히 준비되도록)
-      await new Promise(resolve => setTimeout(resolve, 50));
+      // blob URL이 완전히 준비될 때까지 충분한 지연 (브라우저가 blob을 메모리에 완전히 로드하도록)
+      await new Promise(resolve => setTimeout(resolve, 150));
       
       // 생성된 audio 상태 설정 (cacheKey 포함)
+      // 지연 후 상태 업데이트하여 AudioPlayer가 안정적으로 blob URL에 접근할 수 있도록 함
       setGeneratedAudio(audioUrl);
       setGeneratedAudioCacheKey(cacheKey); // cacheKey도 함께 저장
       setGeneratedDuration(roundedDuration);

@@ -35,6 +35,7 @@ const AudioPlayer = ({
   const lastErrorTimeRef = useRef(0); // 마지막 에러 발생 시간
   const lastAudioUrlRef = useRef<string | null>(null); // 마지막 audioUrl 추적
   const recoveryTimeoutRef = useRef<number | null>(null); // 복원 타임아웃
+  const blobLoadTimeoutRef = useRef<number | null>(null); // blob URL 로드 타임아웃
   const guessedType = (() => {
     if (mimeType && typeof mimeType === 'string') return mimeType;
     const lower = (audioUrl || '').toLowerCase();
@@ -57,6 +58,11 @@ const AudioPlayer = ({
       if (recoveryTimeoutRef.current) {
         clearTimeout(recoveryTimeoutRef.current);
         recoveryTimeoutRef.current = null;
+      }
+      // 기존 blob 로드 타임아웃 클리어
+      if (blobLoadTimeoutRef.current) {
+        clearTimeout(blobLoadTimeoutRef.current);
+        blobLoadTimeoutRef.current = null;
       }
     }
 
@@ -81,9 +87,24 @@ const AudioPlayer = ({
     // blob URL인 경우, AudioPlayer 컴포넌트가 마운트될 때 에러가 발생할 수 있으므로
     // 에러 발생 시 onError 콜백에서 복원하도록 함
     if (audio.src !== audioUrl && !isRecovering) {
-      // blob URL인 경우, 일단 설정하고 에러 발생 시 onError에서 처리
-      audio.src = audioUrl;
-      audio.load(); // 새 소스 로드
+      // blob URL인 경우, 약간의 지연 후 설정하여 브라우저가 blob을 완전히 준비하도록 함
+      if (audioUrl.startsWith('blob:')) {
+        // 기존 타임아웃이 있으면 클리어
+        if (blobLoadTimeoutRef.current) {
+          clearTimeout(blobLoadTimeoutRef.current);
+        }
+        blobLoadTimeoutRef.current = window.setTimeout(() => {
+          if (audio.src !== audioUrl && !isRecoveringRef.current && audioRef.current) {
+            audioRef.current.src = audioUrl;
+            audioRef.current.load(); // 새 소스 로드
+          }
+          blobLoadTimeoutRef.current = null;
+        }, 50);
+      } else {
+        // 일반 URL인 경우 즉시 설정
+        audio.src = audioUrl;
+        audio.load(); // 새 소스 로드
+      }
     }
 
     const updateTime = () => {
@@ -266,6 +287,11 @@ const AudioPlayer = ({
       if (recoveryTimeoutRef.current) {
         clearTimeout(recoveryTimeoutRef.current);
         recoveryTimeoutRef.current = null;
+      }
+      // blob 로드 타임아웃 클리어
+      if (blobLoadTimeoutRef.current) {
+        clearTimeout(blobLoadTimeoutRef.current);
+        blobLoadTimeoutRef.current = null;
       }
       audio.removeEventListener('error', handleError);
     };
