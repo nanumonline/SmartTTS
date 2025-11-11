@@ -27,6 +27,13 @@ async function withRetry<T>(fn: () => Promise<T>, retries: number = 1, delayMs: 
     }
     throw err;
   }
+
+// CORS/엣지(522) 오류 감지 및 완화
+function isCorsOrEdgeError(err: any): boolean {
+  const msg = ((err?.message || "") + " " + (err?.details || "")).toLowerCase();
+  return msg.includes("cors") || msg.includes("access-control-allow-origin") || msg.includes("522");
+}
+
 }
 
 // ==================== 음원 생성 이력 ====================
@@ -221,6 +228,11 @@ export async function loadGenerations(userId: string, limit: number = 200): Prom
       // 400 에러는 컬럼이 없을 가능성이 높음 (이미 기본 컬럼으로 시도했으므로 조용히 처리)
       if (error.message?.includes("400") || error.code === "42703" || error.message?.includes("column")) {
         console.warn("DB 조회 실패 (컬럼 누락): 마이그레이션을 적용해주세요:", error.message);
+        return [];
+      }
+      // CORS/엣지(522) 오류는 오프라인 모드처럼 조용히 빈 배열 반환
+      if (isCorsOrEdgeError(error)) {
+        console.warn("생성 이력 조회 실패 (CORS/엣지): 오프라인 모드로 계속합니다.");
         return [];
       }
       console.error("생성 이력 조회 실패:", error);
@@ -641,6 +653,11 @@ export async function loadUserSettings(userId: string): Promise<UserSettings | n
       if (error.code === "PGRST116") return null; // 없음
       if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
         return null; // 테이블 없음 (조용히 처리)
+      }
+      // CORS/엣지(522) 오류는 조용히 null 반환
+      if (isCorsOrEdgeError(error)) {
+        console.warn("설정 조회 실패 (CORS/엣지): 오프라인 모드로 계속합니다.");
+        return null;
       }
       // RLS 정책 위반이나 권한 에러는 조용히 처리
       if (error.code === "42501" || error.message?.includes("401") || error.message?.includes("406")) {
@@ -1473,12 +1490,18 @@ export async function syncVoiceCatalog(voices: any[], forceSync: boolean = false
 // 음성 카탈로그 조회
 export async function loadVoiceCatalog(): Promise<any[]> {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await withRetry(() => supabase
       .from("tts_voice_catalog")
       .select("voice_data")
-      .order("synced_at", { ascending: false });
+      .order("synced_at", { ascending: false })
+    , 1);
 
     if (error) {
+    // CORS/엣지 오류 시 조용히 오프라인 모드로 폴백
+    if (isCorsOrEdgeError(error)) {
+      console.warn("음성 카탈로그 조회 실패 (CORS/엣지): 오프라인 모드로 계속합니다.");
+      return [];
+    }
       if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
         return [];
       }
