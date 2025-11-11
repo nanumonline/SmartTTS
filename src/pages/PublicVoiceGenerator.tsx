@@ -3328,7 +3328,8 @@ const PublicVoiceGenerator = () => {
       if (allMp3) {
         try {
           // Web Audio API로 디코딩 후 결합 (피치 변조 방지)
-          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 44100 });
+          const targetSampleRate = 44100;
+          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: targetSampleRate });
           const audioBuffers: AudioBuffer[] = [];
 
           // 모든 오디오를 디코딩
@@ -3338,14 +3339,14 @@ const PublicVoiceGenerator = () => {
             audioBuffers.push(audioBuffer);
           }
 
-          // 전체 길이 계산
-          const totalLength = audioBuffers.reduce((sum, buf) => sum + buf.length, 0);
-          const sampleRate = audioBuffers[0].sampleRate;
+          // 전체 길이(초) 계산: 샘플레이트가 다른 청크가 섞여도 안전하게 동작
+          const totalDurationSec = audioBuffers.reduce((sum, buf) => sum + buf.duration, 0);
           const numChannels = audioBuffers[0].numberOfChannels;
 
-          // 오프라인 컨텍스트로 결합 (피치 변조 없이)
-          const offlineCtx = new OfflineAudioContext(numChannels, totalLength, sampleRate);
-          let currentOffset = 0;
+          // 오프라인 컨텍스트로 결합 (피치 변조 없이, 타임라인은 초 단위)
+          const totalFrames = Math.ceil(totalDurationSec * targetSampleRate);
+          const offlineCtx = new OfflineAudioContext(numChannels, totalFrames, targetSampleRate);
+          let currentStartTimeSec = 0;
 
           for (const buffer of audioBuffers) {
             const source = offlineCtx.createBufferSource();
@@ -3353,8 +3354,8 @@ const PublicVoiceGenerator = () => {
             // 피치 변조 없이 원본 그대로 재생
             source.playbackRate.value = 1.0;
             source.connect(offlineCtx.destination);
-            source.start(currentOffset / sampleRate);
-            currentOffset += buffer.length;
+            source.start(currentStartTimeSec);
+            currentStartTimeSec += buffer.duration;
           }
 
           const renderedBuffer = await offlineCtx.startRendering();
@@ -3363,7 +3364,7 @@ const PublicVoiceGenerator = () => {
           // 실제로는 서버 측에서 mp3로 변환하는 것이 이상적입니다
           const { encodeWavPCM16, mixDownToStereo } = await import("@/lib/audioMixer");
           const interleaved = mixDownToStereo(renderedBuffer);
-          const wavBlob = encodeWavPCM16(interleaved, sampleRate, numChannels);
+          const wavBlob = encodeWavPCM16(interleaved, targetSampleRate, numChannels);
 
           // mp3 형식으로 저장하려면 서버 측 변환이 필요하지만,
           // 현재는 WAV로 반환하고 mimeType을 mp3로 표시하지 않음
