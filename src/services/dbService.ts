@@ -40,9 +40,47 @@ export async function blobToArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
   return await blob.arrayBuffer();
 }
 
-// ArrayBuffer를 Blob으로 변환
-export function arrayBufferToBlob(buffer: ArrayBuffer, mimeType: string = "audio/mpeg"): Blob {
-  return new Blob([buffer], { type: mimeType });
+// 오디오 바이트 시그니처로 MIME 추론
+export function detectAudioMime(buffer: ArrayBuffer | Uint8Array): string | null {
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  const len = bytes.length;
+
+  // WAV: 'RIFF'....'WAVE'
+  if (len >= 12 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x41 && bytes[10] === 0x56 && bytes[11] === 0x45) {
+    return 'audio/wav';
+  }
+  // OGG: 'OggS'
+  if (len >= 4 && bytes[0] === 0x4F && bytes[1] === 0x67 && bytes[2] === 0x67 && bytes[3] === 0x53) {
+    return 'audio/ogg';
+  }
+  // FLAC: 'fLaC'
+  if (len >= 4 && bytes[0] === 0x66 && bytes[1] === 0x4C && bytes[2] === 0x61 && bytes[3] === 0x43) {
+    return 'audio/flac';
+  }
+  // MP4/M4A: 'ftyp' at offset 4
+  if (len >= 8 && bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) {
+    return 'audio/mp4';
+  }
+  // MP3: 'ID3' tag
+  if (len >= 3 && bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) {
+    return 'audio/mpeg';
+  }
+  // MP3: frame sync
+  if (len >= 2 && bytes[0] === 0xFF && (bytes[1] & 0xE0) === 0xE0) {
+    return 'audio/mpeg';
+  }
+  // WebM/Matroska: 1A 45 DF A3
+  if (len >= 4 && bytes[0] === 0x1A && bytes[1] === 0x45 && bytes[2] === 0xDF && bytes[3] === 0xA3) {
+    return 'audio/webm';
+  }
+  return null;
+}
+
+// ArrayBuffer를 Blob으로 변환 (자동 MIME 판별 포함)
+export function arrayBufferToBlob(buffer: ArrayBuffer, mimeType?: string): Blob {
+  const detected = detectAudioMime(buffer);
+  const finalType = detected || mimeType || 'audio/mpeg';
+  return new Blob([buffer], { type: finalType });
 }
 
 // 생성 이력 저장
@@ -353,8 +391,60 @@ export async function loadGenerationBlob(userId: string, id: string): Promise<{ 
         for (let i = 0; i < hexString.length; i += 2) {
           bytes[i / 2] = parseInt(hexString.substr(i, 2), 16);
         }
-        buf = bytes.buffer;
-        console.log(`[loadGenerationBlob] hex 디코딩 완료: ${bytes.length} bytes`);
+        // 1차 디코딩 결과: bytes (문자열일 수도, 실제 오디오 바이트일 수도 있음)
+        // 헤더 문자열로 형태 판별
+        let headStr = "";
+        try {
+          headStr = new TextDecoder().decode(bytes.subarray(0, Math.min(64, bytes.length)));
+        } catch {}
+
+        if (headStr.startsWith('RIFF') || headStr.startsWith('ID3') || headStr.startsWith('OggS') || headStr.startsWith('fLaC')) {
+          // 이미 순수 오디오 바이트
+          buf = bytes.buffer;
+          console.log(`[loadGenerationBlob] hex 디코딩 완료(바이트): ${bytes.length} bytes`);
+        } else if (headStr.startsWith('data:audio')) {
+          // data URL 텍스트가 bytea로 저장된 케이스
+          try {
+            const fullStr = new TextDecoder().decode(bytes);
+            const base64 = fullStr.substring(fullStr.indexOf(',') + 1);
+            const bstr = atob(base64);
+            const out = new Uint8Array(bstr.length);
+            for (let i = 0; i < bstr.length; i++) out[i] = bstr.charCodeAt(i);
+            buf = out.buffer;
+            console.log(`[loadGenerationBlob] data:audio URL → 바이너리 변환 완료: ${out.length} bytes`);
+          } catch (e) {
+            console.warn('[loadGenerationBlob] data URL 파싱 실패, 원본 바이트 사용');
+            buf = bytes.buffer;
+          }
+        } else if (headStr.startsWith('[') || headStr.startsWith('"')) {
+          // JSON 배열 또는 JSON 문자열(base64) 텍스트가 bytea로 저장된 케이스
+          try {
+            const fullStr = new TextDecoder().decode(bytes);
+            const jsonParsed = JSON.parse(fullStr);
+            if (Array.isArray(jsonParsed)) {
+              const out = new Uint8Array(jsonParsed as number[]);
+              buf = out.buffer;
+              console.log(`[loadGenerationBlob] JSON 배열 → 바이너리 변환 완료: ${out.length} bytes`);
+            } else if (typeof jsonParsed === 'string') {
+              // base64 문자열로 간주
+              const bstr = atob(jsonParsed.includes(',') ? jsonParsed.split(',').pop() as string : jsonParsed);
+              const out = new Uint8Array(bstr.length);
+              for (let i = 0; i < bstr.length; i++) out[i] = bstr.charCodeAt(i);
+              buf = out.buffer;
+              console.log(`[loadGenerationBlob] JSON 문자열(base64) → 바이너리 변환 완료: ${out.length} bytes`);
+            } else {
+              // 알 수 없는 포맷이면 원본 바이트 유지
+              buf = bytes.buffer;
+            }
+          } catch (e) {
+            console.warn('[loadGenerationBlob] JSON 파싱 실패, 원본 바이트 사용');
+            buf = bytes.buffer;
+          }
+        } else {
+          // 알 수 없는 포맷이면 원본 바이트 유지
+          buf = bytes.buffer;
+          console.log(`[loadGenerationBlob] hex 디코딩 완료(원본 유지): ${bytes.length} bytes`);
+        }
       } else {
         console.warn(`[loadGenerationBlob] 알 수 없는 문자열 형식: ${rawBlob.substring(0, 20)}...`);
         return null;
