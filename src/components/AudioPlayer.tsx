@@ -34,6 +34,7 @@ const AudioPlayer = ({
   const isRecoveringRef = useRef(false); // 복원 중 중복 호출 방지
   const lastErrorTimeRef = useRef(0); // 마지막 에러 발생 시간
   const lastAudioUrlRef = useRef<string | null>(null); // 마지막 audioUrl 추적
+  const recoveryTimeoutRef = useRef<number | null>(null); // 복원 타임아웃
   const guessedType = (() => {
     if (mimeType && typeof mimeType === 'string') return mimeType;
     const lower = (audioUrl || '').toLowerCase();
@@ -51,6 +52,11 @@ const AudioPlayer = ({
       isRecoveringRef.current = false;
       setIsRecovering(false);
       lastAudioUrlRef.current = audioUrl;
+      // 기존 복원 타임아웃 클리어
+      if (recoveryTimeoutRef.current) {
+        clearTimeout(recoveryTimeoutRef.current);
+        recoveryTimeoutRef.current = null;
+      }
     }
 
     // audioUrl이 빈 문자열이면 src를 비우고 리턴
@@ -155,6 +161,15 @@ const AudioPlayer = ({
             setTimeout(() => {
               onError();
             }, 100);
+            
+            // 5초 후에도 복원되지 않으면 타임아웃
+            recoveryTimeoutRef.current = window.setTimeout(() => {
+              if (isRecoveringRef.current) {
+                console.warn('음원 복원 타임아웃');
+                isRecoveringRef.current = false;
+                setIsRecovering(false);
+              }
+            }, 5000);
           } else {
             // onError가 없으면 즉시 복원 상태 해제
             setTimeout(() => {
@@ -172,6 +187,15 @@ const AudioPlayer = ({
         setTimeout(() => {
           onError();
         }, 100);
+        
+        // 5초 후에도 복원되지 않으면 타임아웃
+        recoveryTimeoutRef.current = window.setTimeout(() => {
+          if (isRecoveringRef.current) {
+            console.warn('음원 복원 타임아웃');
+            isRecoveringRef.current = false;
+            setIsRecovering(false);
+          }
+        }, 5000);
       } else {
         // 일반 오류는 로그만 출력 (복원 시도하지 않음)
         console.warn('Audio loading/playing error:', e);
@@ -198,6 +222,12 @@ const AudioPlayer = ({
       audio.removeEventListener('canplay', handleCanPlay);
       audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
       audio.removeEventListener('durationchange', handleDurationChange);
+      
+      // 복원 타임아웃 클리어
+      if (recoveryTimeoutRef.current) {
+        clearTimeout(recoveryTimeoutRef.current);
+        recoveryTimeoutRef.current = null;
+      }
       audio.removeEventListener('error', handleError);
     };
   }, [audioUrl, onError, isRecovering]);
@@ -300,7 +330,11 @@ const AudioPlayer = ({
   return (
     <Card className={`border-primary/20 bg-primary/5 ${className}`}>
       <CardContent className="p-4">
-        <audio key={audioUrl} ref={audioRef} preload="metadata">
+        <audio 
+          key={audioUrl} 
+          ref={audioRef} 
+          preload={audioUrl.startsWith('blob:') ? 'auto' : 'metadata'}
+        >
           {/* type 지정으로 NotSupportedError 감소 */}
           <source src={audioUrl} type={guessedType} />
         </audio>

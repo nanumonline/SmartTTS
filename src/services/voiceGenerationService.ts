@@ -66,7 +66,9 @@ class VoiceGenerationService {
 
       // 오디오 데이터 처리
       if (data instanceof Blob) {
-        const audioUrl = URL.createObjectURL(data);
+        // MIME type을 명시적으로 설정하여 audio 재생 에러 방지
+        const audioBlob = new Blob([data], { type: 'audio/mpeg' });
+        const audioUrl = URL.createObjectURL(audioBlob);
         return {
           success: true,
           audioUrl,
