@@ -3751,8 +3751,10 @@ const PublicVoiceGenerator = () => {
         audioResult = await parseSupertoneResponse(proxyResponse);
       } else if (proxyResponse) {
         let firstErrorMsg = `프록시 오류 (${proxyResponse.status})`;
+        let errorDetails: any = null;
         try {
           const errJson = await proxyResponse.clone().json();
+          errorDetails = errJson;
           const msg = errJson?.error?.message || errJson?.error || errJson?.message || errJson?.detail;
           if (msg) firstErrorMsg += `: ${formatErrorDetail(msg)}`;
         } catch {
@@ -3765,11 +3767,16 @@ const PublicVoiceGenerator = () => {
         // 400인 경우 최소 필드로 재시도 (text만, 또는 text + language)
         if (proxyResponse.status === 400) {
           try {
-            // 에러 상세 정보 로깅 (개발용)
-            try {
-              const errorJson = await proxyResponse.clone().json();
-              console.warn("400 에러 상세:", errorJson);
-            } catch {}
+            // 텍스트 길이 초과 에러인지 확인
+            const isTextTooLong = errorDetails?.message?.some?.((m: string) => m.includes("300 characters") || m.includes("300자")) ||
+                                  errorDetails?.error?.message?.includes?.("300 characters") ||
+                                  firstErrorMsg.includes("300 characters") ||
+                                  firstErrorMsg.includes("300자");
+            
+            if (isTextTooLong && chunk.length >= 300) {
+              // 청크가 여전히 300자 이상이면 더 작게 분할 필요
+              throw new Error(`청크 ${i + 1}의 텍스트가 너무 깁니다 (${chunk.length}자). 자동 분할을 시도하지만, 텍스트를 더 짧게 나누어주세요.`);
+            }
             
             const minimalBody: Record<string, any> = { text: chunk };
             if (chosenLanguage) minimalBody.language = chosenLanguage;
@@ -3800,11 +3807,18 @@ const PublicVoiceGenerator = () => {
           } catch (e: any) {
             console.warn("재시도 예외:", e?.message || e);
             firstErrorMsg = e?.message || "재시도 중 오류";
+            // 텍스트 길이 초과 에러는 그대로 throw
+            if (e?.message?.includes("너무 깁니다")) {
+              throw e;
+            }
           }
         }
 
         if (!audioResult && finalFailed) {
-          throw new Error(`청크 ${i + 1}/${textChunks.length} 생성 실패: ${firstErrorMsg}`);
+          const userFriendlyMsg = firstErrorMsg.includes("300 characters") || firstErrorMsg.includes("300자")
+            ? `텍스트가 너무 깁니다 (최대 300자). 자동으로 분할하여 재시도합니다.`
+            : firstErrorMsg;
+          throw new Error(`청크 ${i + 1}/${textChunks.length} 생성 실패: ${userFriendlyMsg}`);
         }
       }
 
@@ -6264,34 +6278,49 @@ const PublicVoiceGenerator = () => {
         <DialogContent className="sm:max-w-[520px]">
           <DialogHeader>
             <DialogTitle>음원 저장</DialogTitle>
-            <DialogDescription>파일명을 확인하고 저장을 진행하세요.</DialogDescription>
+            <DialogDescription>파일명과 형식을 확인하고 저장을 진행하세요.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label htmlFor="filename">파일명</Label>
+              <Label htmlFor="filename">파일명 (확장자 제외)</Label>
               <Input
                 id="filename"
-                value={saveDialog.filename ?? (saveDialog.entry?.savedName || formatDateTime(saveDialog.entry?.createdAt || new Date().toISOString()))}
-                onChange={(e) => setSaveDialog((prev) => ({ ...prev, filename: e.target.value }))}
+                value={(() => {
+                  const base = saveDialog.filename ?? (saveDialog.entry?.savedName || formatDateTime(saveDialog.entry?.createdAt || new Date().toISOString()));
+                  // 확장자 제거
+                  return base.replace(/\.(mp3|wav|ogg|flac|m4a)$/i, '');
+                })()}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\.(mp3|wav|ogg|flac|m4a)$/i, '');
+                  setSaveDialog((prev) => ({ ...prev, filename: val }));
+                }}
+                placeholder="파일명을 입력하세요"
               />
             </div>
             <div>
-              <Label htmlFor="format">형식</Label>
+              <Label htmlFor="format">파일 형식</Label>
               <Select
-                value={saveDialog.format ?? (saveDialog.entry?.format || 'mp3')}
+                value={saveDialog.format ?? (saveDialog.entry?.format || guessExtensionFromMime(saveDialog.entry?.mimeType) || 'mp3')}
                 onValueChange={(v) => setSaveDialog((prev) => ({ ...prev, format: v }))}
               >
                 <SelectTrigger id="format">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="mp3">MP3</SelectItem>
-                  <SelectItem value="wav">WAV</SelectItem>
+                  <SelectItem value="mp3">MP3 (권장)</SelectItem>
+                  <SelectItem value="wav">WAV (무손실)</SelectItem>
                   <SelectItem value="ogg">OGG</SelectItem>
-                  <SelectItem value="flac">FLAC</SelectItem>
+                  <SelectItem value="flac">FLAC (무손실)</SelectItem>
                   <SelectItem value="m4a">M4A</SelectItem>
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                저장될 파일: {(() => {
+                  const name = (saveDialog.filename ?? (saveDialog.entry?.savedName || formatDateTime(saveDialog.entry?.createdAt || new Date().toISOString()))).replace(/\.(mp3|wav|ogg|flac|m4a)$/i, '');
+                  const ext = (saveDialog.format ?? (saveDialog.entry?.format || guessExtensionFromMime(saveDialog.entry?.mimeType) || 'mp3')).toLowerCase();
+                  return `${name || '음원'}.${ext}`;
+                })()}
+              </p>
             </div>
           </div>
           <DialogFooter>
@@ -6300,10 +6329,20 @@ const PublicVoiceGenerator = () => {
               onClick={async () => {
                 const entry = saveDialog.entry;
                 if (!entry) { setSaveDialog({ open: false }); return; }
-                const name = (saveDialog.filename || entry.savedName || formatDateTime(entry.createdAt || new Date().toISOString())).trim();
-                const ext = (saveDialog.format || entry.format || 'mp3').toLowerCase();
+                const baseName = (saveDialog.filename ?? (entry.savedName || formatDateTime(entry.createdAt || new Date().toISOString()))).replace(/\.(mp3|wav|ogg|flac|m4a)$/i, '').trim() || '음원';
+                const ext = (saveDialog.format ?? (entry.format || guessExtensionFromMime(entry.mimeType) || 'mp3')).toLowerCase();
                 try {
-                  await downloadGeneration({ ...entry, format: ext, savedName: name });
+                  await downloadGeneration({ ...entry, format: ext, savedName: baseName });
+                  toast({
+                    title: "저장 완료",
+                    description: `${baseName}.${ext} 파일이 저장되었습니다.`,
+                  });
+                } catch (error: any) {
+                  toast({
+                    title: "저장 실패",
+                    description: error.message || "파일 저장 중 오류가 발생했습니다.",
+                    variant: "destructive",
+                  });
                 } finally {
                   setSaveDialog({ open: false });
                 }
