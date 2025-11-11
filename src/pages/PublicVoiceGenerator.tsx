@@ -5341,13 +5341,21 @@ const PublicVoiceGenerator = () => {
                         const cached = cacheRef.current.get(cacheKeyToUse);
                         if (cached?.blob) {
                           try {
+                            console.log(`[복원] cacheRef에서 blob 찾음 (size: ${cached.blob.size}, type: ${cached.blob.type})`);
+                            // blob이 유효한지 확인
+                            if (cached.blob.size === 0) {
+                              throw new Error('blob 크기가 0입니다');
+                            }
                             // 기존 blob URL 해제
                             if (cached._audioUrl) {
                               URL.revokeObjectURL(cached._audioUrl);
                             }
-                            // 새 blob URL 생성
-                            const newUrl = URL.createObjectURL(cached.blob);
-                            cacheRef.current.set(cacheKeyToUse, { ...cached, _audioUrl: newUrl });
+                            // MIME type을 명시하여 새 blob 생성 (range request 에러 방지)
+                            const mimeType = cached.mimeType || cached.blob.type || 'audio/mpeg';
+                            const validBlob = new Blob([cached.blob], { type: mimeType });
+                            const newUrl = URL.createObjectURL(validBlob);
+                            console.log(`[복원] 새 blob URL 생성: ${newUrl.substring(0, 80)}, MIME: ${mimeType}`);
+                            cacheRef.current.set(cacheKeyToUse, { ...cached, blob: validBlob, _audioUrl: newUrl });
                             setGeneratedAudio(newUrl);
                             console.log(`✅ 생성된 음원 복원 완료 (cacheRef): ${cacheKeyToUse}`);
                           } catch (e) {

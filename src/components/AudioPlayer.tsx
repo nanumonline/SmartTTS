@@ -49,6 +49,7 @@ const AudioPlayer = ({
 
     // audioUrl이 변경되면 복원 상태 리셋
     if (audioUrl !== lastAudioUrlRef.current) {
+      console.log(`[AudioPlayer] audioUrl 변경: ${lastAudioUrlRef.current?.substring(0, 50)} → ${audioUrl?.substring(0, 50)}`);
       isRecoveringRef.current = false;
       setIsRecovering(false);
       lastAudioUrlRef.current = audioUrl;
@@ -98,11 +99,13 @@ const AudioPlayer = ({
       }
     };
     const handleLoadedMetadata = () => {
+      console.log(`[AudioPlayer] loadedmetadata - duration: ${audio.duration}, recovering: ${isRecoveringRef.current}`);
       // 메타데이터 로드 시 duration 업데이트 및 복원 해제
       if (audio.duration && isFinite(audio.duration)) {
         setActualDuration(audio.duration);
       }
       if (isRecoveringRef.current) {
+        console.log('[AudioPlayer] ✅ 복원 상태 해제 (loadedmetadata)');
         isRecoveringRef.current = false;
         setIsRecovering(false);
         if (recoveryTimeoutRef.current) {
@@ -119,9 +122,11 @@ const AudioPlayer = ({
     };
     const handleLoadStart = () => setIsLoading(true);
     const handleCanPlay = () => {
+      console.log(`[AudioPlayer] canplay - recovering: ${isRecoveringRef.current}`);
       setIsLoading(false);
       // 메타데이터/재생 가능 시 복원 상태 해제
       if (isRecoveringRef.current) {
+        console.log('[AudioPlayer] ✅ 복원 상태 해제 (canplay)');
         isRecoveringRef.current = false;
         setIsRecovering(false);
         if (recoveryTimeoutRef.current) {
@@ -143,6 +148,7 @@ const AudioPlayer = ({
       const now = Date.now();
       if (isRecoveringRef.current && (now - lastErrorTimeRef.current) < 2000) {
         // 2초 이내에 같은 에러가 반복 발생하면 무시
+        console.log('[AudioPlayer] ⚠️ 복원 중 에러 무시 (중복 방지)');
         return;
       }
       
@@ -154,6 +160,15 @@ const AudioPlayer = ({
       // blob URL 관련 오류 감지
       const isBlobUrl = audioUrl.startsWith('blob:');
       const error = e.target?.error;
+      
+      console.log(`[AudioPlayer] ❌ 에러 발생:`, {
+        isBlobUrl,
+        errorCode: error?.code,
+        errorMessage: error?.message,
+        networkState: audio?.networkState,
+        readyState: audio?.readyState,
+        audioUrl: audioUrl?.substring(0, 80)
+      });
       
       // ERR_REQUEST_RANGE_NOT_SATISFIABLE 또는 일반 blob URL 오류 감지
       const isBlobError = isBlobUrl && (error?.code === 4 || 
@@ -167,6 +182,7 @@ const AudioPlayer = ({
       if (isBlobError) {
         // 복원 중 상태로 전환 (추가 에러 방지)
         if (!isRecoveringRef.current) {
+          console.log('[AudioPlayer] 🔄 blob 에러 감지 - 복원 시작');
           isRecoveringRef.current = true;
           setIsRecovering(true);
           
@@ -178,18 +194,20 @@ const AudioPlayer = ({
           if (onError) {
             // 약간의 지연 후 복원 시도 (상태 업데이트 시간 확보)
             setTimeout(() => {
+              console.log('[AudioPlayer] 📞 onError 콜백 호출');
               onError();
             }, 100);
             
             // 5초 후에도 복원되지 않으면 타임아웃
             recoveryTimeoutRef.current = window.setTimeout(() => {
               if (isRecoveringRef.current) {
-                console.warn('음원 복원 타임아웃');
+                console.warn('[AudioPlayer] ⏱️ 음원 복원 타임아웃');
                 isRecoveringRef.current = false;
                 setIsRecovering(false);
               }
             }, 5000);
           } else {
+            console.log('[AudioPlayer] ⚠️ onError 콜백 없음 - 복원 불가');
             // onError가 없으면 즉시 복원 상태 해제
             setTimeout(() => {
               isRecoveringRef.current = false;
@@ -199,25 +217,27 @@ const AudioPlayer = ({
         }
       } else if (isBlobUrl && onError && !isRecoveringRef.current) {
         // 다른 blob URL 오류도 복원 시도
+        console.log('[AudioPlayer] 🔄 blob URL 일반 에러 - 복원 시작');
         isRecoveringRef.current = true;
         setIsRecovering(true);
         audio.src = '';
         audio.load();
         setTimeout(() => {
+          console.log('[AudioPlayer] 📞 onError 콜백 호출 (일반)');
           onError();
         }, 100);
         
         // 5초 후에도 복원되지 않으면 타임아웃
         recoveryTimeoutRef.current = window.setTimeout(() => {
           if (isRecoveringRef.current) {
-            console.warn('음원 복원 타임아웃');
+            console.warn('[AudioPlayer] ⏱️ 음원 복원 타임아웃 (일반)');
             isRecoveringRef.current = false;
             setIsRecovering(false);
           }
         }, 5000);
       } else {
         // 일반 오류는 로그만 출력 (복원 시도하지 않음)
-        console.warn('Audio loading/playing error:', e);
+        console.warn('[AudioPlayer] ⚠️ 일반 오디오 에러 (복원 안함):', e);
       }
     };
 
