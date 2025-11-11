@@ -64,16 +64,44 @@ class VoiceGenerationService {
         };
       }
 
-      // 오디오 데이터 처리
-      if (data instanceof Blob) {
-        // MIME type을 명시적으로 설정하여 audio 재생 에러 방지
-        const audioBlob = new Blob([data], { type: 'audio/mpeg' });
-        const audioUrl = URL.createObjectURL(audioBlob);
-        return {
-          success: true,
-          audioUrl,
-          duration: this.calculateDuration(request.text, request.settings)
-        };
+      // base64로 인코딩된 오디오 데이터 처리
+      if (data && data.audioData) {
+        try {
+          // base64 디코딩
+          const binaryString = atob(data.audioData);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          
+          // Blob 생성 (MIME type을 명시적으로 설정)
+          const mimeType = data.contentType || 'audio/mpeg';
+          const audioBlob = new Blob([bytes], { type: mimeType });
+          
+          console.log('음성 생성 완료:', {
+            blobSize: audioBlob.size,
+            mimeType: mimeType,
+            audioLength: data.audioLength
+          });
+          
+          // blob 크기가 0이면 에러
+          if (audioBlob.size === 0) {
+            throw new Error('생성된 오디오 데이터가 비어있습니다.');
+          }
+          
+          const audioUrl = URL.createObjectURL(audioBlob);
+          return {
+            success: true,
+            audioUrl,
+            duration: data.audioLength || this.calculateDuration(request.text, request.settings)
+          };
+        } catch (decodeError: any) {
+          console.error('오디오 디코딩 오류:', decodeError);
+          return {
+            success: false,
+            error: `오디오 디코딩 실패: ${decodeError.message}`
+          };
+        }
       }
 
       return {

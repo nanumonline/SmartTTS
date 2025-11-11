@@ -140,40 +140,48 @@ Deno.serve(async (req: Request) => {
 
     // 응답 데이터 가져오기
     const contentType = response.headers.get("content-type") || "";
-    let responseData;
 
     if (contentType.includes("application/json")) {
-      responseData = await response.json();
-    } else {
-      // 오디오 파일인 경우
-      responseData = await response.blob();
-    }
-
-    // 응답 헤더 구성
-    const responseHeaders: Record<string, string> = {
-      ...corsHeaders,
-      "Content-Type": contentType,
-    };
-
-    // X-Audio-Length 헤더 전달
-    const audioLength = response.headers.get("X-Audio-Length");
-    if (audioLength) {
-      responseHeaders["X-Audio-Length"] = audioLength;
-    }
-
-    // JSON 응답인 경우
-    if (contentType.includes("application/json")) {
-      return new Response(JSON.stringify(responseData), {
+      const jsonData = await response.json();
+      return new Response(JSON.stringify(jsonData), {
         status: response.status,
-        headers: responseHeaders,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
       });
     }
 
-    // Blob 응답인 경우 (오디오 파일)
-    return new Response(responseData, {
-      status: response.status,
-      headers: responseHeaders,
-    });
+    // 오디오 파일인 경우 - base64로 인코딩하여 JSON으로 반환
+    const audioBlob = await response.blob();
+    const arrayBuffer = await audioBlob.arrayBuffer();
+    const uint8Array = new Uint8Array(arrayBuffer);
+    
+    // base64 인코딩
+    let binaryString = '';
+    for (let i = 0; i < uint8Array.length; i++) {
+      binaryString += String.fromCharCode(uint8Array[i]);
+    }
+    const base64Audio = btoa(binaryString);
+
+    // X-Audio-Length 헤더 값 추출
+    const audioLength = response.headers.get("X-Audio-Length");
+
+    // JSON으로 응답
+    return new Response(
+      JSON.stringify({
+        audioData: base64Audio,
+        contentType: contentType,
+        audioLength: audioLength || null,
+      }),
+      {
+        status: response.status,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
+      }
+    );
   } catch (error: any) {
     console.error("Supertone Proxy Error:", error);
     return new Response(
