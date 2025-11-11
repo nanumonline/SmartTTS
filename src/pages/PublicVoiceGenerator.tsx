@@ -135,6 +135,8 @@ type ReviewState = {
 // type OperationLog = ...
 
 const PublicVoiceGenerator = () => {
+  const [saveDialog, setSaveDialog] = useState<{ open: boolean; entry?: any; filename?: string; format?: string }>({ open: false });
+
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -6230,7 +6232,7 @@ const PublicVoiceGenerator = () => {
                                 size="sm"
                                 variant="outline"
                                 className="landio-button"
-                                onClick={() => downloadGeneration(entry)}
+                                onClick={() => setSaveDialog({ open: true, entry })}
                                 // audioUrl이 없어도 버튼 활성화 (다운로드 시 생성)
                               >
                                 <Download className="w-3 h-3 mr-1" />
@@ -6257,6 +6259,62 @@ const PublicVoiceGenerator = () => {
             </Card>
           </div>
         </div>
+      {/* 저장 다이얼로그 */}
+      <Dialog open={saveDialog.open} onOpenChange={(open) => setSaveDialog(open ? saveDialog : { open: false })}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>음원 저장</DialogTitle>
+            <DialogDescription>파일명을 확인하고 저장을 진행하세요.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="filename">파일명</Label>
+              <Input
+                id="filename"
+                value={saveDialog.filename ?? (saveDialog.entry?.savedName || formatDateTime(saveDialog.entry?.createdAt || new Date().toISOString()))}
+                onChange={(e) => setSaveDialog((prev) => ({ ...prev, filename: e.target.value }))}
+              />
+            </div>
+            <div>
+              <Label htmlFor="format">형식</Label>
+              <Select
+                value={saveDialog.format ?? (saveDialog.entry?.format || 'mp3')}
+                onValueChange={(v) => setSaveDialog((prev) => ({ ...prev, format: v }))}
+              >
+                <SelectTrigger id="format">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="mp3">MP3</SelectItem>
+                  <SelectItem value="wav">WAV</SelectItem>
+                  <SelectItem value="ogg">OGG</SelectItem>
+                  <SelectItem value="flac">FLAC</SelectItem>
+                  <SelectItem value="m4a">M4A</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSaveDialog({ open: false })}>취소</Button>
+            <Button
+              onClick={async () => {
+                const entry = saveDialog.entry;
+                if (!entry) { setSaveDialog({ open: false }); return; }
+                const name = (saveDialog.filename || entry.savedName || formatDateTime(entry.createdAt || new Date().toISOString())).trim();
+                const ext = (saveDialog.format || entry.format || 'mp3').toLowerCase();
+                try {
+                  await downloadGeneration({ ...entry, format: ext, savedName: name });
+                } finally {
+                  setSaveDialog({ open: false });
+                }
+              }}
+            >
+              저장
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
 
       {/* Dialogs */}
       <Dialog open={isVoiceFinderOpen} onOpenChange={setIsVoiceFinderOpen}>
