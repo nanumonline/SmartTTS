@@ -3965,6 +3965,9 @@ const PublicVoiceGenerator = () => {
       
       // MIME type을 명시하여 새 Blob 생성 (디코딩 오류 방지)
       const validBlob = new Blob([finalAudioBlob], { type: finalMimeType });
+      
+      // blob URL 생성 (검증은 AudioPlayer의 onError에서 처리)
+      // 복원 로직이 이미 잘 작동하므로, 여기서는 바로 URL 생성
       const audioUrl = URL.createObjectURL(validBlob);
       
       // cacheRef에 blob URL도 저장
