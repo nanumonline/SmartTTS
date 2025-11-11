@@ -87,19 +87,21 @@ const AudioPlayer = ({
     // blob URL인 경우, AudioPlayer 컴포넌트가 마운트될 때 에러가 발생할 수 있으므로
     // 에러 발생 시 onError 콜백에서 복원하도록 함
     if (audio.src !== audioUrl && !isRecovering) {
-      // blob URL인 경우, 약간의 지연 후 설정하여 브라우저가 blob을 완전히 준비하도록 함
+      // blob URL인 경우, 충분한 지연 후 설정하여 브라우저가 blob을 완전히 준비하도록 함
       if (audioUrl.startsWith('blob:')) {
         // 기존 타임아웃이 있으면 클리어
         if (blobLoadTimeoutRef.current) {
           clearTimeout(blobLoadTimeoutRef.current);
         }
+        // PublicVoiceGenerator에서 이미 200ms 지연 후 전달하고 blob을 재구성하므로,
+        // 추가로 150ms 지연하여 브라우저가 blob URL을 완전히 준비하도록 함
         blobLoadTimeoutRef.current = window.setTimeout(() => {
           if (audio.src !== audioUrl && !isRecoveringRef.current && audioRef.current) {
             audioRef.current.src = audioUrl;
             audioRef.current.load(); // 새 소스 로드
           }
           blobLoadTimeoutRef.current = null;
-        }, 50);
+        }, 150);
       } else {
         // 일반 URL인 경우 즉시 설정
         audio.src = audioUrl;

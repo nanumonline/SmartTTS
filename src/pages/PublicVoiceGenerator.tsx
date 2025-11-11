@@ -3964,10 +3964,18 @@ const PublicVoiceGenerator = () => {
       }
       
       // MIME type을 명시하여 새 Blob 생성 (디코딩 오류 방지)
-      const validBlob = new Blob([finalAudioBlob], { type: finalMimeType });
+      // blob을 ArrayBuffer로 읽어서 다시 Blob으로 변환하여 "깨끗하게" 재구성
+      // 이렇게 하면 브라우저가 blob을 더 안정적으로 인식할 수 있습니다
+      let validBlob: Blob;
+      try {
+        const arrayBuffer = await finalAudioBlob.arrayBuffer();
+        validBlob = new Blob([arrayBuffer], { type: finalMimeType });
+      } catch (e) {
+        console.warn('[생성] blob 재구성 실패, 원본 사용:', e);
+        validBlob = new Blob([finalAudioBlob], { type: finalMimeType });
+      }
       
-      // blob URL 생성 (검증은 AudioPlayer의 onError에서 처리)
-      // 복원 로직이 이미 잘 작동하므로, 여기서는 바로 URL 생성
+      // blob URL 생성
       const audioUrl = URL.createObjectURL(validBlob);
       
       // cacheRef에 blob URL도 저장
@@ -3975,13 +3983,13 @@ const PublicVoiceGenerator = () => {
       if (cached) {
         cacheRef.current.set(cacheKey, {
           ...cached,
-          blob: validBlob, // 유효한 blob으로 업데이트
+          blob: validBlob, // 재구성된 blob으로 업데이트
           _audioUrl: audioUrl,
         });
       }
       
       // blob URL이 완전히 준비될 때까지 충분한 지연 (브라우저가 blob을 메모리에 완전히 로드하도록)
-      await new Promise(resolve => setTimeout(resolve, 150));
+      await new Promise(resolve => setTimeout(resolve, 200));
       
       // 생성된 audio 상태 설정 (cacheKey 포함)
       // 지연 후 상태 업데이트하여 AudioPlayer가 안정적으로 blob URL에 접근할 수 있도록 함
