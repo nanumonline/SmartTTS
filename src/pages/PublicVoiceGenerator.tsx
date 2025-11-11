@@ -7589,7 +7589,6 @@ const PublicVoiceGenerator = () => {
             </div>
           </div>
           <DialogFooter className="flex justify-end gap-2">
-            {/* 취소 버튼만 제공 */}
             <Button
               variant="outline"
               className="border-gray-600 hover:bg-gray-800 hover:text-white h-10 text-sm font-medium px-4"
@@ -7602,6 +7601,36 @@ const PublicVoiceGenerator = () => {
             >
               <X className="w-4 h-4 mr-2" />
               취소
+            </Button>
+            <Button
+              className="bg-gradient-to-r from-purple-600 to-cyan-500 hover:from-purple-700 hover:to-cyan-600 text-white h-10 text-sm font-medium px-4"
+              onClick={async () => {
+                const savedName = saveNameInput.trim() || null;
+                if (pendingGeneration) {
+                  const savedEntry = await pushHistory({
+                    ...pendingGeneration,
+                    savedName,
+                  });
+                  // 저장 후 자동으로 믹싱 페이지로 이동
+                  if (savedEntry?.id) {
+                    navigate(`/mix/board?generation=${savedEntry.id}`);
+                    toast({
+                      title: "저장 완료",
+                      description: "음원이 저장되었습니다. 믹싱 페이지로 이동합니다.",
+                    });
+                  } else {
+                    toast({
+                      title: "저장 완료",
+                      description: "음원이 저장되었습니다.",
+                    });
+                  }
+                }
+                setIsSaveNameDialogOpen(false);
+                setSaveNameInput("");
+                setPendingGeneration(null);
+              }}
+            >
+              저장
             </Button>
           </DialogFooter>
         </DialogContent>
