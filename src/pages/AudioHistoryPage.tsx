@@ -137,167 +137,162 @@ export default function AudioHistoryPage() {
       </div>
 
       {/* 생성 내역 목록 */}
-      <div className="grid gap-4">
-        {filteredGenerations.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <Play className="w-12 h-12 text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">생성된 음원이 없습니다.</p>
-            </CardContent>
-          </Card>
-        ) : (
-          filteredGenerations.map((gen) => (
-            <Card key={gen.id} className="hover:shadow-md transition-shadow">
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <CardTitle className="text-lg mb-2">
-                      {gen.savedName || formatDateTime(gen.createdAt || new Date().toISOString())}
-                    </CardTitle>
-                    <div className="flex items-center gap-2 flex-wrap text-sm text-muted-foreground">
-                      <Badge variant="outline">{gen.purpose}</Badge>
-                      <span>{gen.voiceName}</span>
-                      {gen.duration && (
-                        <span className="text-xs">
-                          {Math.floor(gen.duration / 60)}:
-                          {Math.floor(gen.duration % 60)
-                            .toString()
-                            .padStart(2, "0")}
-                        </span>
+      {filteredGenerations.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <Play className="w-12 h-12 text-muted-foreground mb-4" />
+            <p className="text-muted-foreground">생성된 음원이 없습니다.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="p-0">
+            <div className="space-y-2 p-4">
+              {filteredGenerations.map((gen) => (
+                <div
+                  key={gen.id}
+                  className="rounded-lg border bg-card p-3 hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex items-center gap-4">
+                    {/* 왼쪽 정보 */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 mb-1 text-sm text-muted-foreground">
+                        <Badge variant="outline">{gen.purpose}</Badge>
+                        <span>{gen.voiceName}</span>
+                        {gen.duration && (
+                          <span className="text-xs">
+                            {Math.floor(gen.duration / 60)}:{Math.floor(gen.duration % 60).toString().padStart(2, "0")}
+                          </span>
+                        )}
+                        <span className="text-xs">{formatDateTime(gen.createdAt || new Date().toISOString())}</span>
+                      </div>
+                      <p className="font-medium truncate">
+                        {gen.savedName || formatDateTime(gen.createdAt || new Date().toISOString())}
+                      </p>
+                      {gen.textPreview && (
+                        <p className="text-sm text-muted-foreground whitespace-pre-wrap line-clamp-2 mt-1">
+                          {gen.textPreview}
+                        </p>
                       )}
-                      <span className="text-xs">
-                        {formatDateTime(gen.createdAt || new Date().toISOString())}
-                      </span>
+                    </div>
+
+                    {/* 오른쪽 액션 */}
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() =>
+                          setSelectedGeneration(selectedGeneration === gen.id ? null : gen.id || null)
+                        }
+                        title={selectedGeneration === gen.id ? "미리듣기 닫기" : "미리듣기"}
+                      >
+                        <Play className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          navigate(`/mix/board?generation=${gen.id}`);
+                          toast({ title: "믹싱 페이지로 이동", description: "선택한 음원을 믹싱할 수 있습니다." });
+                        }}
+                      >
+                        <Music2 className="w-4 h-4 mr-2" />
+                        믹싱
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          navigate(`/send/schedule?generation=${gen.id}`);
+                          toast({ title: "스케줄 관리로 이동", description: "선택한 음원을 예약할 수 있습니다." });
+                        }}
+                      >
+                        <Calendar className="w-4 h-4 mr-2" />
+                        예약
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={async () => {
+                          let downloadUrl = gen.audioUrl;
+                          if (!downloadUrl && user?.id && gen.id) {
+                            try {
+                              const res = await dbService.loadGenerationBlob(user.id, String(gen.id));
+                              if (res?.audioBlob) {
+                                const blob = dbService.arrayBufferToBlob(
+                                  res.audioBlob,
+                                  res.mimeType || (gen as any).mimeType || "audio/mpeg"
+                                );
+                                downloadUrl = URL.createObjectURL(blob);
+                                setGenerations((prev) =>
+                                  prev.map((g) => (g.id === gen.id ? { ...g, audioUrl: downloadUrl! } : g))
+                                );
+                              }
+                            } catch (e) {
+                              console.error("다운로드용 blob URL 생성 실패:", e);
+                              toast({ title: "다운로드 실패", description: "음원 데이터를 불러올 수 없습니다.", variant: "destructive" });
+                              return;
+                            }
+                          }
+                          if (downloadUrl) {
+                            const link = document.createElement('a');
+                            link.href = downloadUrl;
+                            link.download = `${gen.savedName || formatDateTime(gen.createdAt)}.${resolveFormat(gen)}`;
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                          }
+                        }}
+                        title="다운로드"
+                      >
+                        <Download className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => gen.id && handleDelete(gen.id)}
+                        title="삭제"
+                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() =>
-                        setSelectedGeneration(
-                          selectedGeneration === gen.id ? null : gen.id || null
-                        )
-                      }
-                    >
-                      <Play className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        navigate(`/mix/board?generation=${gen.id}`);
-                        toast({
-                          title: "믹싱 페이지로 이동",
-                          description: "선택한 음원을 믹싱할 수 있습니다.",
-                        });
-                      }}
-                      title="믹싱"
-                    >
-                      <Music2 className="w-4 h-4 mr-2" />
-                      믹싱
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        navigate(`/send/schedule?generation=${gen.id}`);
-                        toast({
-                          title: "스케줄 관리로 이동",
-                          description: "선택한 음원을 예약할 수 있습니다.",
-                        });
-                      }}
-                      title="예약"
-                    >
-                      <Calendar className="w-4 h-4 mr-2" />
-                      예약
-                    </Button>
-                    <Button 
-                      variant="ghost" 
-                      size="icon"
-                      onClick={async () => {
-                        // 다운로드를 위해 blob URL 생성 또는 재생성
-                        let downloadUrl = gen.audioUrl;
-                        if (!downloadUrl && user?.id && gen.id) {
+
+                  {selectedGeneration === gen.id && (
+                    <div className="pt-3">
+                      <AudioPlayer
+                        audioUrl={gen.audioUrl || ""}
+                        title={gen.savedName || "생성된 음원"}
+                        duration={gen.duration || 0}
+                        mimeType={(gen as any).mimeType || "audio/mpeg"}
+                        cacheKey={(gen as any).cacheKey}
+                        onError={async () => {
                           try {
-                            const res = await dbService.loadGenerationBlob(user.id, String(gen.id));
+                            const uid = (gen as any).userId || user?.id;
+                            if (!uid || !gen.id) return;
+                            const res = await dbService.loadGenerationBlob(uid, String(gen.id));
                             if (res?.audioBlob) {
-                              const blob = dbService.arrayBufferToBlob(res.audioBlob, res.mimeType || (gen as any).mimeType || "audio/mpeg");
-                              downloadUrl = URL.createObjectURL(blob);
-                              // 상태 업데이트
-                              setGenerations((prev) =>
-                                prev.map((g) =>
-                                  g.id === gen.id ? { ...g, audioUrl: downloadUrl! } : g
-                                )
+                              const blob = dbService.arrayBufferToBlob(
+                                res.audioBlob,
+                                res.mimeType || (gen as any).mimeType || "audio/mpeg"
                               );
+                              const newUrl = URL.createObjectURL(blob);
+                              setGenerations((prev) => prev.map((g) => (g.id === gen.id ? { ...g, audioUrl: newUrl } : g)));
                             }
                           } catch (e) {
-                            console.error("다운로드용 blob URL 생성 실패:", e);
-                            toast({
-                              title: "다운로드 실패",
-                              description: "음원 데이터를 불러올 수 없습니다.",
-                              variant: "destructive",
-                            });
-                            return;
+                            console.error("생성내역 미리듣기 복원 실패:", e);
                           }
-                        }
-                        if (downloadUrl) {
-                          const link = document.createElement('a');
-                          link.href = downloadUrl;
-                          link.download = `${gen.savedName || formatDateTime(gen.createdAt)}.${resolveFormat(gen)}`;
-                          document.body.appendChild(link);
-                          link.click();
-                          document.body.removeChild(link);
-                        }
-                      }}
-                    >
-                      <Download className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => gen.id && handleDelete(gen.id)}
-                    >
-                      <Trash2 className="w-4 h-4 text-red-600 hover:text-red-700" />
-                    </Button>
-                  </div>
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
-              </CardHeader>
-              {selectedGeneration === gen.id && (
-                <CardContent>
-                  <AudioPlayer
-                    audioUrl={gen.audioUrl || ""}
-                    title={gen.savedName || "생성된 음원"}
-                    duration={gen.duration || 0}
-                    mimeType={(gen as any).mimeType || "audio/mpeg"}
-                    cacheKey={(gen as any).cacheKey}
-                    onError={async () => {
-                      try {
-                        // 단건 blob로 복원
-                        const uid = (gen as any).userId || user?.id;
-                        if (!uid || !gen.id) return;
-                        const res = await dbService.loadGenerationBlob(uid, String(gen.id));
-                        if (res?.audioBlob) {
-                          const blob = dbService.arrayBufferToBlob(res.audioBlob, res.mimeType || (gen as any).mimeType || "audio/mpeg");
-                          const newUrl = URL.createObjectURL(blob);
-                          // 로컬 상태에 반영하여 AudioPlayer가 새 URL을 받도록 함
-                          setGenerations((prev) =>
-                            prev.map((g) =>
-                              g.id === gen.id ? { ...g, audioUrl: newUrl } : g
-                            )
-                          );
-                        }
-                      } catch (e) {
-                        console.error("생성내역 미리듣기 복원 실패:", e);
-                      }
-                    }}
-                  />
-                </CardContent>
-              )}
-            </Card>
-          ))
-        )}
-      </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
       </div>
 
       {/* 삭제 확인 다이얼로그 */}

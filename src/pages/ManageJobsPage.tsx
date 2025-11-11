@@ -129,56 +129,49 @@ export default function ManageJobsPage() {
       </div>
 
       {/* 작업 목록 */}
-      <div className="grid gap-4">
-        {filteredJobs.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <Clock className="w-12 h-12 text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">실행 중인 작업이 없습니다.</p>
-            </CardContent>
-          </Card>
-        ) : (
-          filteredJobs.map((job) => (
-            <Card key={job.id} className="hover:shadow-md transition-shadow">
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <CardTitle className="text-lg mb-2">
-                      {getJobTypeLabel(job.type)}
-                    </CardTitle>
-                    <CardDescription className="flex items-center gap-2">
-                      <Clock className="w-3 h-3" />
-                      <span>{new Date(job.createdAt).toLocaleString("ko-KR")}</span>
-                      {job.completedAt && (
-                        <>
-                          <span>•</span>
-                          <span>완료: {new Date(job.completedAt).toLocaleString("ko-KR")}</span>
-                        </>
+      {filteredJobs.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <Clock className="w-12 h-12 text-muted-foreground mb-4" />
+            <p className="text-muted-foreground">실행 중인 작업이 없습니다.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="p-0">
+            <div className="space-y-2 p-4">
+              {filteredJobs.map((job) => (
+                <div key={job.id} className="rounded-lg border bg-card p-3 hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <p className="font-medium truncate">{getJobTypeLabel(job.type)}</p>
+                      <p className="text-sm text-muted-foreground mt-1 flex items-center gap-2">
+                        <Clock className="w-3 h-3" />
+                        <span>{new Date(job.createdAt).toLocaleString("ko-KR")}</span>
+                        {job.completedAt && (
+                          <>
+                            <span>•</span>
+                            <span>완료: {new Date(job.completedAt).toLocaleString("ko-KR")}</span>
+                          </>
+                        )}
+                      </p>
+                      {job.progress !== undefined && (
+                        <div className="mt-2">
+                          <div className="w-full bg-muted rounded-full h-2">
+                            <div className="bg-primary h-2 rounded-full transition-all" style={{ width: `${job.progress}%` }} />
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-2 text-center">{job.progress}%</p>
+                        </div>
                       )}
-                    </CardDescription>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {getStatusBadge(job.status)}
+                    </div>
+                    <div className="flex-shrink-0">{getStatusBadge(job.status)}</div>
                   </div>
                 </div>
-              </CardHeader>
-              {job.progress !== undefined && (
-                <CardContent>
-                  <div className="w-full bg-muted rounded-full h-2">
-                    <div
-                      className="bg-primary h-2 rounded-full transition-all"
-                      style={{ width: `${job.progress}%` }}
-                    />
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-2 text-center">
-                    {job.progress}%
-                  </p>
-                </CardContent>
-              )}
-            </Card>
-          ))
-        )}
-      </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
