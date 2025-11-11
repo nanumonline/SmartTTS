@@ -3491,15 +3491,7 @@ const PublicVoiceGenerator = () => {
       return;
     }
 
-    // 300자 초과 시 자동 분할 처리 (에러 대신 진행)
-    const needsSplitting = trimmedText.length > 300;
-    if (needsSplitting) {
-      console.log(`장문 텍스트 감지 (${trimmedText.length}자). 300자 단위로 분할하여 생성합니다.`);
-      toast({ 
-        title: "장문 텍스트 분할 생성", 
-        description: `텍스트가 ${trimmedText.length}자로, ${Math.ceil(trimmedText.length / 300)}개 청크로 분할하여 생성합니다.`,
-      });
-    }
+    // 분할 여부는 가공된 텍스트 길이로 이후에 판단합니다.
 
     // 실제 Supertone voice_id인지 확인 (기본 템플릿 id는 차단)
     const isRealVoiceId = availableVoices.some((v: any) => v.voice_id === selectedVoice);
@@ -3572,7 +3564,7 @@ const PublicVoiceGenerator = () => {
       }
     }
 
-    const targetFormat = needsSplitting ? "mp3" : "mp3"; // 분할 시에도 mp3 유지
+    const targetFormat = "mp3"; // 분할 시에도 mp3 유지
     const generationParams = {
       text: processedText,
       voiceId: selectedVoice,
@@ -3685,8 +3677,16 @@ const PublicVoiceGenerator = () => {
     setIsGenerating(true);
     setGenerationProgress(null);
 
-    // 300자 초과 시 분할 처리
-    const textChunks = needsSplitting ? splitTextIntoChunks(processedText, 300) : [processedText];
+    // 가공된 텍스트 기준으로 분할 필요성 판단 (API 제한: 300 미만)
+    const needsSplitting = processedText.length >= 300;
+    if (needsSplitting) {
+      console.log(`장문 텍스트 감지 (${processedText.length}자). 280자 단위로 분할하여 생성합니다.`);
+      toast({ 
+        title: "장문 텍스트 분할 생성", 
+        description: `텍스트가 ${processedText.length}자로, ${Math.ceil(processedText.length / 280)}개 청크로 분할하여 생성합니다.`,
+      });
+    }
+    const textChunks = needsSplitting ? splitTextIntoChunks(processedText, 280) : [processedText];
     const estimatedDuration = estimateDurationFromText(trimmedText);
 
     try {
