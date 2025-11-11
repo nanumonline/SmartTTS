@@ -1220,13 +1220,17 @@ const PublicVoiceGenerator = () => {
       const json = await resp.json();
       const payload = json.data ?? json.result ?? json;
       const errorMessage = json.error || json.message || payload?.error || payload?.message || payload?.detail;
-      let base64Audio = payload?.audio_base64 ?? payload?.audioBase64 ?? payload?.audio ?? payload?.audio_data ?? null;
+      // Our edge function may return { audioData, contentType, audioLength }
+      let base64Audio = payload?.audio_base64 ?? payload?.audioBase64 ?? payload?.audio ?? payload?.audio_data ?? payload?.audioData ?? null;
       let remoteUrl = payload?.audio_url ?? payload?.audioUrl ?? payload?.url ?? payload?.file_url ?? payload?.fileUrl ?? null;
-      duration = payload?.duration ?? payload?.audio_duration ?? payload?.length ?? payload?.meta?.duration ?? json.duration ?? null;
-      const mimeType = payload?.mime_type ?? payload?.mimetype ?? payload?.content_type ?? "audio/mpeg";
+      duration = payload?.duration ?? payload?.audio_duration ?? payload?.length ?? payload?.meta?.duration ?? json.duration ?? json.audioLength ?? null;
+      const mimeType = payload?.mime_type ?? payload?.mimetype ?? payload?.content_type ?? json.contentType ?? "audio/mpeg";
 
       if (base64Audio) {
         const blob = base64ToBlob(base64Audio, mimeType);
+        if (!blob || blob.size === 0) {
+          throw new Error("생성된 오디오 데이터가 비어있습니다.");
+        }
         return {
           blob, // blob 데이터 저장
           duration,
@@ -5344,7 +5348,39 @@ const PublicVoiceGenerator = () => {
                             console.log(`[복원] cacheRef에서 blob 찾음 (size: ${cached.blob.size}, type: ${cached.blob.type})`);
                             // blob이 유효한지 확인
                             if (cached.blob.size === 0) {
-                              throw new Error('blob 크기가 0입니다');
+                              console.warn('[복원] cacheRef blob size 0 - DB에서 재복원 시도');
+                              const entryId = pendingGeneration?.id;
+                              if (user?.id && entryId) {
+                                try {
+                                  console.log(`🔍 DB에서 blob 로드 시도: ${entryId}`);
+                                  const single = await dbService.loadGenerationBlob(user.id, String(entryId));
+                                  if (single?.audioBlob) {
+                                    const mimeType = single.mimeType || pendingGeneration?.mimeType || "audio/mpeg";
+                                    const blob = dbService.arrayBufferToBlob(single.audioBlob, mimeType);
+                                    const newUrl = URL.createObjectURL(blob);
+                                    const newCacheKey = cacheKeyToUse || `restored_${entryId}_${Date.now()}`;
+                                    cacheRef.current.set(newCacheKey, {
+                                      blob,
+                                      duration: pendingGeneration?.duration || null,
+                                      mimeType: mimeType,
+                                      _audioUrl: newUrl,
+                                    });
+                                    setGeneratedAudio(newUrl);
+                                    setGeneratedAudioCacheKey(newCacheKey);
+                                    console.log(`✅ 생성된 음원 복원 완료 (DB): ${entryId}`);
+                                  } else {
+                                    console.warn(`⚠️ DB에 audioBlob 없음: ${entryId}`);
+                                    toast({ title: "음원 복원 실패", description: "음원 데이터를 찾을 수 없습니다.", variant: "destructive" });
+                                  }
+                                } catch (e) {
+                                  console.error("DB에서 blob 로드 실패:", e);
+                                  toast({ title: "음원 복원 실패", description: "음원을 복원하는 중 오류가 발생했습니다.", variant: "destructive" });
+                                }
+                              } else {
+                                console.warn(`⚠️ 복원 불가: user.id=${user?.id}, entryId=${entryId}`);
+                                toast({ title: "음원 복원 실패", description: "음원 데이터를 불러올 수 없습니다.", variant: "destructive" });
+                              }
+                              return;
                             }
                             // 기존 blob URL 해제
                             if (cached._audioUrl) {
