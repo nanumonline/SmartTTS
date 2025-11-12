@@ -3975,26 +3975,99 @@ const PublicVoiceGenerator = () => {
         validBlob = new Blob([finalAudioBlob], { type: finalMimeType });
       }
       
-      // blob URL 생성
-      const audioUrl = URL.createObjectURL(validBlob);
-      
-      // cacheRef에 blob URL도 저장
+      // 재구성된 validBlob을 cacheRef에 업데이트
       const cached = cacheRef.current.get(cacheKey);
       if (cached) {
         cacheRef.current.set(cacheKey, {
           ...cached,
           blob: validBlob, // 재구성된 blob으로 업데이트
-          _audioUrl: audioUrl,
+          mimeType: finalMimeType,
         });
       }
       
-      // blob URL이 완전히 준비될 때까지 충분한 지연 (브라우저가 blob을 메모리에 완전히 로드하도록)
-      await new Promise(resolve => setTimeout(resolve, 200));
+      // blob URL 생성
+      let audioUrl = URL.createObjectURL(validBlob);
+      
+      // blob URL이 유효한지 Audio 객체로 사전 검증
+      // 검증 실패 시 복원 로직을 즉시 실행하여 첫 번째 시도에서 실패하는 것을 방지
+      let isValidUrl = false;
+      try {
+        const testAudio = new Audio(audioUrl);
+        await new Promise<void>((resolve, reject) => {
+          let timeoutId: number;
+          
+          const handleCanPlay = () => {
+            if (timeoutId) clearTimeout(timeoutId);
+            testAudio.removeEventListener('error', handleError);
+            resolve();
+          };
+          
+          const handleError = (e: Event) => {
+            if (timeoutId) clearTimeout(timeoutId);
+            testAudio.removeEventListener('canplaythrough', handleCanPlay);
+            reject(e);
+          };
+          
+          timeoutId = window.setTimeout(() => {
+            testAudio.removeEventListener('canplaythrough', handleCanPlay);
+            testAudio.removeEventListener('error', handleError);
+            // 타임아웃 시 성공으로 간주 (blob이 준비되는 데 시간이 걸릴 수 있음)
+            resolve();
+          }, 300);
+          
+          testAudio.addEventListener('canplaythrough', handleCanPlay);
+          testAudio.addEventListener('error', handleError);
+          testAudio.load();
+        });
+        isValidUrl = true;
+        // 검증 성공 시 testAudio 정리
+        testAudio.src = '';
+        testAudio.load();
+      } catch (e) {
+        console.warn('[생성] blob URL 검증 실패, 즉시 복원 로직 실행:', e);
+        // 검증 실패 시 기존 blob URL 해제
+        URL.revokeObjectURL(audioUrl);
+        
+        // 즉시 복원 로직 실행: cacheRef에서 blob을 가져와서 새 URL 생성
+        const cached = cacheRef.current.get(cacheKey);
+        if (cached?.blob) {
+          try {
+            const mimeType = cached.mimeType || finalMimeType;
+            const restoredBlob = new Blob([cached.blob], { type: mimeType });
+            audioUrl = URL.createObjectURL(restoredBlob);
+            isValidUrl = true;
+            console.log('[생성] ✅ 복원 로직으로 새 blob URL 생성 성공');
+            // cacheRef 업데이트
+            cacheRef.current.set(cacheKey, {
+              ...cached,
+              blob: restoredBlob,
+              _audioUrl: audioUrl,
+            });
+          } catch (restoreError) {
+            console.error('[생성] 복원 로직 실패:', restoreError);
+            audioUrl = ''; // 복원 실패 시 빈 문자열
+          }
+        } else {
+          audioUrl = ''; // cacheRef에 blob이 없으면 빈 문자열
+        }
+      }
+      
+      // cacheRef에 blob URL도 저장 (검증 성공 또는 복원 성공한 경우)
+      if (isValidUrl) {
+        const cached = cacheRef.current.get(cacheKey);
+        if (cached) {
+          cacheRef.current.set(cacheKey, {
+            ...cached,
+            blob: validBlob, // 재구성된 blob으로 업데이트
+            _audioUrl: audioUrl,
+          });
+        }
+      }
       
       // 생성된 audio 상태 설정 (cacheKey 포함)
-      // 지연 후 상태 업데이트하여 AudioPlayer가 안정적으로 blob URL에 접근할 수 있도록 함
-      setGeneratedAudio(audioUrl);
-      setGeneratedAudioCacheKey(cacheKey); // cacheKey도 함께 저장
+      // 검증 성공 또는 복원 성공한 경우 audioUrl 전달, 실패 시 빈 문자열로 설정하여 AudioPlayer의 복원 로직 트리거
+      setGeneratedAudio(isValidUrl ? audioUrl : '');
+      setGeneratedAudioCacheKey(cacheKey); // cacheKey는 항상 전달하여 복원 가능하도록 함
       setGeneratedDuration(roundedDuration);
       setPredictedDuration(roundedDuration);
       setGenerationProgress(null);
