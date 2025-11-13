@@ -5507,12 +5507,19 @@ const PublicVoiceGenerator = () => {
                             }
                             // MIME type을 명시하여 새 blob 생성 (range request 에러 방지)
                             const mimeType = cached.mimeType || cached.blob.type || 'audio/mpeg';
-                            const validBlob = new Blob([cached.blob], { type: mimeType });
+                            // blob을 ArrayBuffer로 읽어서 다시 Blob으로 변환하여 "깨끗하게" 재구성
+                            const arrayBuffer = await cached.blob.arrayBuffer();
+                            const validBlob = new Blob([arrayBuffer], { type: mimeType });
                             const newUrl = URL.createObjectURL(validBlob);
                             console.log(`[복원] 새 blob URL 생성: ${newUrl.substring(0, 80)}, MIME: ${mimeType}`);
+                            
+                            // blob URL이 준비될 때까지 약간의 지연
+                            await new Promise(resolve => setTimeout(resolve, 200));
+                            
                             cacheRef.current.set(cacheKeyToUse, { ...cached, blob: validBlob, _audioUrl: newUrl });
+                            // 상태 업데이트: 새 URL을 직접 설정 (AudioPlayer가 audioUrl 변경을 감지하여 복원 상태를 자동으로 리셋)
                             setGeneratedAudio(newUrl);
-                            setGeneratedAudioCacheKey(cacheKeyToUse); // cacheKey도 업데이트하여 AudioPlayer가 인식하도록 함
+                            setGeneratedAudioCacheKey(cacheKeyToUse);
                             console.log(`✅ 생성된 음원 복원 완료 (cacheRef): ${cacheKeyToUse}`);
                           } catch (e) {
                             console.error("Blob URL 생성 실패:", e);
@@ -5531,9 +5538,16 @@ const PublicVoiceGenerator = () => {
                               const single = await dbService.loadGenerationBlob(user.id, String(entryId));
                               if (single?.audioBlob) {
                                 const mimeType = single.mimeType || pendingGeneration?.mimeType || "audio/mpeg";
-                                const blob = dbService.arrayBufferToBlob(single.audioBlob, mimeType);
+                                // blob을 ArrayBuffer로 읽어서 다시 Blob으로 변환하여 "깨끗하게" 재구성
+                                const tempBlob = dbService.arrayBufferToBlob(single.audioBlob, mimeType);
+                                const arrayBuffer = await tempBlob.arrayBuffer();
+                                const blob = new Blob([arrayBuffer], { type: mimeType });
                                 const newUrl = URL.createObjectURL(blob);
                                 const newCacheKey = cacheKeyToUse || `restored_${entryId}_${Date.now()}`;
+                                
+                                // blob URL이 준비될 때까지 약간의 지연
+                                await new Promise(resolve => setTimeout(resolve, 200));
+                                
                                 cacheRef.current.set(newCacheKey, {
                                   blob,
                                   duration: pendingGeneration?.duration || null,
@@ -5541,7 +5555,7 @@ const PublicVoiceGenerator = () => {
                                   _audioUrl: newUrl,
                                 });
                                 
-                                // generatedAudio 및 cacheKey 업데이트
+                                // 상태 업데이트: 새 URL을 직접 설정 (AudioPlayer가 audioUrl 변경을 감지하여 복원 상태를 자동으로 리셋)
                                 setGeneratedAudio(newUrl);
                                 setGeneratedAudioCacheKey(newCacheKey);
                                 console.log(`✅ 생성된 음원 복원 완료 (DB): ${entryId}`);
