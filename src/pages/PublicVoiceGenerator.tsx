@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Slider } from "@/components/ui/slider";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -190,6 +191,7 @@ const PublicVoiceGenerator = () => {
   const [isPredictingDuration, setIsPredictingDuration] = useState(false);
   const [predictedCredit, setPredictedCredit] = useState<number | null>(null);
   const [generationProgress, setGenerationProgress] = useState<{ current: number; total: number } | null>(null);
+  const [chunkLogs, setChunkLogs] = useState<Array<{ index: number; text: string; charCount: number; startTime: number; endTime?: number; duration?: number; status: 'pending' | 'generating' | 'complete' | 'error'; error?: string }>>([]);
   const [selectedVoiceInfo, setSelectedVoiceInfo] = useState<any | null>(null);
   const [playingSample, setPlayingSample] = useState<string | null>(null);
   const audioSampleRef = useRef<HTMLAudioElement | null>(null);
@@ -3803,6 +3805,7 @@ const PublicVoiceGenerator = () => {
 
     setIsGenerating(true);
     setGenerationProgress(null);
+    setChunkLogs([]);
 
     // 가공된 텍스트 기준으로 분할 필요성 판단 (API 제한: 300 미만)
     const needsSplitting = processedText.length >= 300;
@@ -3816,6 +3819,15 @@ const PublicVoiceGenerator = () => {
     const textChunks = needsSplitting ? splitTextIntoChunks(processedText, 280) : [processedText];
     const estimatedDuration = estimateDurationFromText(trimmedText);
 
+    // 초기 청크 로그 설정
+    setChunkLogs(textChunks.map((chunk, idx) => ({
+      index: idx + 1,
+      text: chunk,
+      charCount: chunk.length,
+      startTime: 0,
+      status: 'pending' as const
+    })));
+
     try {
       cleanupGeneratedAudioUrl(generatedAudio);
 
@@ -3828,6 +3840,13 @@ const PublicVoiceGenerator = () => {
       // 각 청크를 순차적으로 생성
       for (let i = 0; i < textChunks.length; i++) {
         const chunk = textChunks[i];
+        const chunkStartTime = Date.now();
+        
+        // 청크 상태 업데이트: generating
+        setChunkLogs(prev => prev.map((log, idx) => 
+          idx === i ? { ...log, status: 'generating' as const, startTime: chunkStartTime } : log
+        ));
+        
         setGenerationProgress({ current: i + 1, total: textChunks.length });
 
         // Supertone API 요청 본문 구성 (필수 파라미터만 포함)
@@ -3945,6 +3964,17 @@ const PublicVoiceGenerator = () => {
           const userFriendlyMsg = firstErrorMsg.includes("300 characters") || firstErrorMsg.includes("300자")
             ? `텍스트가 너무 깁니다 (최대 300자). 자동으로 분할하여 재시도합니다.`
             : firstErrorMsg;
+          
+          // 청크 상태 업데이트: error
+          setChunkLogs(prev => prev.map((log, idx) => 
+            idx === i ? { 
+              ...log, 
+              status: 'error' as const,
+              endTime: Date.now(),
+              error: userFriendlyMsg
+            } : log
+          ));
+          
           throw new Error(`청크 ${i + 1}/${textChunks.length} 생성 실패: ${userFriendlyMsg}`);
         }
       }
@@ -3962,6 +3992,16 @@ const PublicVoiceGenerator = () => {
       }
 
       if (!audioResult) {
+        // 청크 상태 업데이트: error
+        setChunkLogs(prev => prev.map((log, idx) => 
+          idx === i ? { 
+            ...log, 
+            status: 'error' as const,
+            endTime: Date.now(),
+            error: '음성 데이터를 생성할 수 없습니다'
+          } : log
+        ));
+        
         throw new Error(`청크 ${i + 1}/${textChunks.length} 음성 데이터를 생성할 수 없습니다.`);
       }
 
@@ -3977,6 +4017,17 @@ const PublicVoiceGenerator = () => {
       const _durNum = typeof audioResult.duration === 'number' ? audioResult.duration : Number(audioResult.duration);
       const _durLabel = Number.isFinite(_durNum) ? _durNum.toFixed(2) : '추정';
       console.log(`✅ 청크 ${i + 1}/${textChunks.length} 생성 완료 (${_durLabel}초)`);
+      
+      // 청크 상태 업데이트: complete
+      const chunkEndTime = Date.now();
+      setChunkLogs(prev => prev.map((log, idx) => 
+        idx === i ? { 
+          ...log, 
+          status: 'complete' as const, 
+          endTime: chunkEndTime,
+          duration: (chunkEndTime - log.startTime) / 1000
+        } : log
+      ));
       }
 
       // 여러 청크가 있으면 결합, 하나면 그대로 사용
@@ -5516,6 +5567,79 @@ const PublicVoiceGenerator = () => {
                         : `청크 ${generationProgress.current}/${generationProgress.total} 처리 중...`}
                     </p>
                   </div>
+                )}
+
+                {/* 청크 로그 뷰어 */}
+                {chunkLogs.length > 0 && (
+                  <Collapsible className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <CollapsibleTrigger asChild>
+                        <Button variant="ghost" size="sm" className="gap-2">
+                          <BarChart3 className="w-4 h-4" />
+                          청크 생성 로그 ({chunkLogs.length}개)
+                          <ChevronRight className="w-4 h-4 transition-transform duration-200 data-[state=open]:rotate-90" />
+                        </Button>
+                      </CollapsibleTrigger>
+                    </div>
+                    <CollapsibleContent className="space-y-2">
+                      <ScrollArea className="h-[300px] rounded-md border p-3">
+                        <div className="space-y-3">
+                          {chunkLogs.map((log) => (
+                            <Card key={log.index} className={`p-3 ${
+                              log.status === 'complete' ? 'border-green-500/50 bg-green-500/5' :
+                              log.status === 'generating' ? 'border-primary/50 bg-primary/5' :
+                              log.status === 'error' ? 'border-destructive/50 bg-destructive/5' :
+                              'border-muted'
+                            }`}>
+                              <div className="space-y-2">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <Badge variant={
+                                      log.status === 'complete' ? 'default' :
+                                      log.status === 'generating' ? 'secondary' :
+                                      log.status === 'error' ? 'destructive' :
+                                      'outline'
+                                    } className="text-xs">
+                                      청크 {log.index}
+                                    </Badge>
+                                    <span className="text-xs text-muted-foreground">
+                                      {log.charCount}자
+                                    </span>
+                                    {log.status === 'generating' && (
+                                      <div className="flex items-center gap-1">
+                                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-primary"></div>
+                                        <span className="text-xs text-primary">생성 중...</span>
+                                      </div>
+                                    )}
+                                    {log.status === 'complete' && log.duration && (
+                                      <Badge variant="outline" className="text-xs bg-green-500/10">
+                                        <Clock className="w-3 h-3 mr-1" />
+                                        {log.duration.toFixed(2)}초
+                                      </Badge>
+                                    )}
+                                    {log.status === 'error' && (
+                                      <Badge variant="destructive" className="text-xs">
+                                        <AlertCircle className="w-3 h-3 mr-1" />
+                                        실패
+                                      </Badge>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="text-xs break-all text-muted-foreground bg-muted/50 p-2 rounded">
+                                  {log.text.length > 100 ? `${log.text.slice(0, 100)}...` : log.text}
+                                </div>
+                                {log.error && (
+                                  <div className="text-xs text-destructive bg-destructive/10 p-2 rounded">
+                                    {log.error}
+                                  </div>
+                                )}
+                              </div>
+                            </Card>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    </CollapsibleContent>
+                  </Collapsible>
                 )}
 
                 {/* 생성된 음성 */}
