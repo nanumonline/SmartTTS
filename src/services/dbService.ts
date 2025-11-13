@@ -27,13 +27,12 @@ async function withRetry<T>(fn: () => Promise<T>, retries: number = 1, delayMs: 
     }
     throw err;
   }
+}
 
 // CORS/엣지(522) 오류 감지 및 완화
 function isCorsOrEdgeError(err: any): boolean {
   const msg = ((err?.message || "") + " " + (err?.details || "")).toLowerCase();
   return msg.includes("cors") || msg.includes("access-control-allow-origin") || msg.includes("522");
-}
-
 }
 
 // ==================== 음원 생성 이력 ====================
@@ -213,7 +212,7 @@ export async function loadGenerations(userId: string, limit: number = 200): Prom
     // 기본 컬럼만으로 조회 (안정성 우선)
     // 마이그레이션이 적용되면 extendedColumns가 자동으로 사용됨
     // 지금은 기본 컬럼만 사용하여 400 에러 방지
-    let { data, error } = await withRetry(() => buildQuery(baseColumns), 1);
+    const { data, error } = await buildQuery(baseColumns);
     
     // extendedColumns 쿼리는 실행하지 않음 (마이그레이션 미적용 시 400 에러 방지)
     // 마이그레이션 적용 후에는 별도로 extendedColumns를 조회할 필요 없음
@@ -614,11 +613,11 @@ export async function saveUserSettings(userId: string, settings: UserSettings): 
       updateData.storage_path = settings.storagePath;
     }
     
-    const { error } = await withRetry(() => supabase
+    const { error } = await supabase
       .from("tts_user_settings")
       .upsert(updateData, {
         onConflict: "user_id"
-      }), 1);
+      });
 
     if (error) {
       if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
@@ -1246,13 +1245,13 @@ export async function deleteTemplate(userId: string, id: string): Promise<boolea
 export async function loadTemplates(userId: string, category?: string): Promise<TemplateEntry[]> {
   try {
     // is_template 컬럼이 없을 수 있으므로, 먼저 모든 데이터를 가져온 후 필터링
-    let query = supabase
+    const query = supabase
       .from("tts_message_history")
       .select("*")
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
 
-    const { data, error } = await withRetry(() => query, 1);
+    const { data, error } = await query;
 
     if (error) {
       // 컬럼이 존재하지 않는 경우 (42703) 또는 테이블이 없는 경우 (PGRST205)
@@ -1359,13 +1358,11 @@ export async function deleteMessage(userId: string, id: string): Promise<boolean
 export async function loadMessages(userId: string): Promise<MessageHistoryEntry[]> {
   try {
     // is_template 컬럼이 없을 수 있으므로, 먼저 모든 데이터를 가져온 후 필터링
-    const { data, error } = await withRetry(() =>
-      supabase
-        .from("tts_message_history")
-        .select("*")
-        .eq("user_id", userId)
-        .order("updated_at", { ascending: false })
-    , 1);
+    const { data, error } = await supabase
+      .from("tts_message_history")
+      .select("*")
+      .eq("user_id", userId)
+      .order("updated_at", { ascending: false });
 
     if (error) {
       // 컬럼이 존재하지 않는 경우 (42703) 또는 테이블이 없는 경우 (PGRST205)
@@ -1500,13 +1497,11 @@ export async function loadMessageFavorites(userId: string): Promise<string[]> {
     }
 
     // tts_message_history 테이블에서 is_favorite가 true인 메시지 조회
-    const { data, error } = await withRetry(() =>
-      (supabase as any)
-        .from("tts_message_history")
-        .select("id")
-        .eq("user_id", userId)
-        .eq("is_favorite", true)
-    , 1);
+    const { data, error } = await (supabase as any)
+      .from("tts_message_history")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("is_favorite", true);
 
     if (error) {
       // 컬럼이 없으면 빈 배열 반환
@@ -1616,11 +1611,10 @@ export async function syncVoiceCatalog(voices: any[], forceSync: boolean = false
 // 음성 카탈로그 조회
 export async function loadVoiceCatalog(): Promise<any[]> {
   try {
-    const { data, error } = await withRetry(() => supabase
+    const { data, error } = await supabase
       .from("tts_voice_catalog")
       .select("voice_data")
-      .order("synced_at", { ascending: false })
-    , 1);
+      .order("synced_at", { ascending: false });
 
     if (error) {
     // CORS/엣지 오류 시 조용히 오프라인 모드로 폴백
