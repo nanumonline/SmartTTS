@@ -1411,6 +1411,112 @@ export async function loadMessages(userId: string): Promise<MessageHistoryEntry[
   }
 }
 
+// ==================== 메시지 즐겨찾기 ====================
+
+// 메시지 즐겨찾기 추가
+export async function addMessageFavorite(userId: string, messageId: string): Promise<boolean> {
+  try {
+    if (!userId || userId === "undefined") {
+      console.warn("유효하지 않은 userId로 메시지 즐겨찾기를 추가할 수 없습니다.");
+      return false;
+    }
+
+    const { error } = await (supabase as any)
+      .from("tts_message_favorites")
+      .insert({ user_id: userId, message_id: messageId })
+      .select();
+
+    // 이미 존재하면 에러 무시 (UNIQUE 제약)
+    if (error && !error.message.includes("duplicate")) {
+      // 테이블이 없으면 조용히 실패
+      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
+        return false;
+      }
+      if (error.code === "22P02") {
+        console.warn("유효하지 않은 userId 형식:", userId);
+        return false;
+      }
+      throw error;
+    }
+    return true;
+  } catch (error: any) {
+    if (error.code !== "PGRST205" && error.code !== "22P02") {
+      console.error("메시지 즐겨찾기 추가 실패:", error);
+    }
+    return false;
+  }
+}
+
+// 메시지 즐겨찾기 제거
+export async function removeMessageFavorite(userId: string, messageId: string): Promise<boolean> {
+  try {
+    if (!userId || userId === "undefined") {
+      console.warn("유효하지 않은 userId로 메시지 즐겨찾기를 제거할 수 없습니다.");
+      return false;
+    }
+
+    const { error } = await (supabase as any)
+      .from("tts_message_favorites")
+      .delete()
+      .eq("user_id", userId)
+      .eq("message_id", messageId);
+
+    if (error) {
+      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
+        return false;
+      }
+      if (error.code === "22P02") {
+        console.warn("유효하지 않은 userId 형식:", userId);
+        return false;
+      }
+      throw error;
+    }
+    return true;
+  } catch (error: any) {
+    if (error.code !== "PGRST205" && error.code !== "22P02") {
+      console.error("메시지 즐겨찾기 제거 실패:", error);
+    }
+    return false;
+  }
+}
+
+// 메시지 즐겨찾기 목록 조회
+export async function loadMessageFavorites(userId: string): Promise<string[]> {
+  try {
+    if (!userId || userId === "undefined") {
+      console.warn("유효하지 않은 userId로 메시지 즐겨찾기를 로드할 수 없습니다.");
+      return [];
+    }
+
+    const { data, error } = await withRetry(() => (supabase as any)
+      .from("tts_message_favorites")
+      .select("message_id")
+      .eq("user_id", userId)
+    , 1);
+
+    if (error) {
+      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
+        return [];
+      }
+      if (error.code === "22P02") {
+        console.warn("유효하지 않은 userId 형식:", userId);
+        return [];
+      }
+      if (isCorsOrEdgeError(error)) {
+        console.warn("메시지 즐겨찾기 조회 실패 (CORS/엣지): 오프라인 모드로 계속합니다.");
+        return [];
+      }
+      throw error;
+    }
+    return (data || []).map((row: any) => String(row.message_id));
+  } catch (error: any) {
+    if (error.code !== "PGRST205" && error.code !== "22P02") {
+      console.error("메시지 즐겨찾기 조회 실패:", error);
+    }
+    return [];
+  }
+}
+
 // ==================== 음성 카탈로그 ====================
 
 // 음성 카탈로그 일별 동기화 (forceSync=true이면 일별 체크 무시)

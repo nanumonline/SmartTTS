@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Search, FileText, Plus, Edit, Trash2, Volume2, ChevronLeft, ChevronRight, Save, X, Filter, Calendar, AlertCircle } from "lucide-react";
+import { Search, FileText, Plus, Edit, Trash2, Volume2, ChevronLeft, ChevronRight, Save, X, Filter, Calendar, AlertCircle, Star } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/components/ui/use-toast";
 import * as dbService from "@/services/dbService";
@@ -31,12 +31,57 @@ export default function ScriptsPage() {
   const [filterDate, setFilterDate] = useState<string>("all");
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
   const itemsPerPage = 7; // 페이지당 문구 개수 (7개 단위)
+  const [messageFavorites, setMessageFavorites] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (user?.id) {
       loadScripts();
+      loadFavorites();
     }
   }, [user?.id]);
+
+  const loadFavorites = async () => {
+    if (!user?.id) return;
+    try {
+      const favoriteIds = await dbService.loadMessageFavorites(user.id);
+      setMessageFavorites(new Set(favoriteIds));
+    } catch (error) {
+      console.error("즐겨찾기 로드 실패:", error);
+    }
+  };
+
+  const toggleFavorite = async (messageId: string) => {
+    if (!user?.id) return;
+    const isFavorite = messageFavorites.has(String(messageId));
+    try {
+      if (isFavorite) {
+        await dbService.removeMessageFavorite(user.id, String(messageId));
+        setMessageFavorites(prev => {
+          const next = new Set(prev);
+          next.delete(String(messageId));
+          return next;
+        });
+        toast({
+          title: "즐겨찾기 제거",
+          description: "즐겨찾기에서 제거되었습니다.",
+        });
+      } else {
+        await dbService.addMessageFavorite(user.id, String(messageId));
+        setMessageFavorites(prev => new Set(prev).add(String(messageId)));
+        toast({
+          title: "즐겨찾기 추가",
+          description: "즐겨찾기에 추가되었습니다.",
+        });
+      }
+    } catch (error) {
+      console.error("즐겨찾기 변경 실패:", error);
+      toast({
+        title: "즐겨찾기 변경 실패",
+        description: "즐겨찾기를 변경하는데 실패했습니다.",
+        variant: "destructive",
+      });
+    }
+  };
 
   useEffect(() => {
     // 검색어 또는 필터 변경 시 첫 페이지로 리셋
@@ -371,6 +416,18 @@ export default function ScriptsPage() {
                           </div>
                           {/* 오른쪽: 버튼들 (한 줄) */}
                           <div className="flex items-center gap-2 flex-shrink-0">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (script.id) toggleFavorite(script.id);
+                              }}
+                              className={messageFavorites.has(String(script.id)) ? "text-yellow-500 hover:text-yellow-600" : "text-muted-foreground hover:text-yellow-500"}
+                              aria-label={messageFavorites.has(String(script.id)) ? "즐겨찾기 제거" : "즐겨찾기 추가"}
+                            >
+                              <Star className={`w-4 h-4 ${messageFavorites.has(String(script.id)) ? "fill-current" : ""}`} />
+                            </Button>
                             <Button
                               size="sm"
                               variant="default"

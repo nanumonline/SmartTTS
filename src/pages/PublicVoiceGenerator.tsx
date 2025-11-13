@@ -157,6 +157,13 @@ const PublicVoiceGenerator = () => {
   const [templatePage, setTemplatePage] = useState(1);
   const templateItemsPerPage = 5; // 페이지당 템플릿 개수
   const [templateSearchQuery, setTemplateSearchQuery] = useState("");
+  // 문구목록 즐겨찾기 관련 상태
+  const [messageFavorites, setMessageFavorites] = useState<Set<string>>(new Set());
+  const [favoriteMessages, setFavoriteMessages] = useState<dbService.MessageHistoryEntry[]>([]);
+  const [isLoadingFavorites, setIsLoadingFavorites] = useState(false);
+  const [favoriteSearchQuery, setFavoriteSearchQuery] = useState("");
+  const [favoritePage, setFavoritePage] = useState(1);
+  const favoriteItemsPerPage = 5; // 페이지당 즐겨찾기 문구 개수
   const [openAIPrompt, setOpenAIPrompt] = useState("");
   const [openAIInstruction, setOpenAIInstruction] = useState("");
   const [lastAIPrompt, setLastAIPrompt] = useState("");
@@ -3153,6 +3160,35 @@ const PublicVoiceGenerator = () => {
     }
   }, [user?.id, loadTemplatesFromDB]);
 
+  // 즐겨찾기 문구 로드
+  const loadFavoriteMessages = useCallback(async () => {
+    if (!user?.id) return;
+    setIsLoadingFavorites(true);
+    try {
+      // 즐겨찾기 ID 목록 로드
+      const favoriteIds = await dbService.loadMessageFavorites(user.id);
+      setMessageFavorites(new Set(favoriteIds));
+      
+      // 모든 문구 로드
+      const allMessages = await dbService.loadMessages(user.id);
+      
+      // 즐겨찾기된 문구만 필터링
+      const favorites = allMessages.filter(msg => favoriteIds.includes(String(msg.id)));
+      setFavoriteMessages(favorites);
+    } catch (error) {
+      console.error("즐겨찾기 문구 로드 실패:", error);
+    } finally {
+      setIsLoadingFavorites(false);
+    }
+  }, [user?.id]);
+
+  // 즐겨찾기 문구 로드
+  useEffect(() => {
+    if (user?.id) {
+      loadFavoriteMessages();
+    }
+  }, [user?.id, loadFavoriteMessages]);
+
   // 저장된 메시지 불러오기 함수
   const loadMessageById = useCallback(async (messageId: string) => {
     if (!user?.id) return;
@@ -5607,27 +5643,27 @@ const PublicVoiceGenerator = () => {
             </Card>
           </div>
 
-          {/* 템플릿 선택 - 오른쪽 */}
+          {/* 문구목록 즐겨찾기 - 오른쪽 */}
           <div className="lg:col-span-1 flex flex-col">
             <Card className="landio-card landio-fade-up flex flex-col h-full">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <FileText className="w-5 h-5" />
-                  메시지 템플릿
+                  <Star className="w-5 h-5" />
+                  문구목록 즐겨찾기
                 </CardTitle>
                 <CardDescription>
-                  공공기관 특화 메시지 템플릿을 선택하세요
+                  즐겨찾기한 문구를 선택하세요
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col flex-1 min-h-0">
                 <div className="flex items-center gap-2 mb-4">
                   <div className="flex-1">
                     <Input
-                      placeholder="템플릿 검색..."
-                      value={templateSearchQuery}
+                      placeholder="문구 검색..."
+                      value={favoriteSearchQuery}
                       onChange={(e) => {
-                        setTemplateSearchQuery(e.target.value);
-                        setTemplatePage(1); // 검색 시 첫 페이지로 리셋
+                        setFavoriteSearchQuery(e.target.value);
+                        setFavoritePage(1); // 검색 시 첫 페이지로 리셋
                       }}
                       className="h-9"
                     />
@@ -5635,89 +5671,95 @@ const PublicVoiceGenerator = () => {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => navigate("/scripts/templates")}
+                    onClick={() => navigate("/scripts")}
                   >
                     <FileText className="w-4 h-4 mr-2" />
-                    템플릿 관리
+                    문구 관리
                   </Button>
                 </div>
                 <div className="flex flex-col flex-1 min-h-0">
-                  {isLoadingTemplates ? (
-                    <div className="text-center py-8 text-muted-foreground">템플릿 로딩 중...</div>
+                  {isLoadingFavorites ? (
+                    <div className="text-center py-8 text-muted-foreground">즐겨찾기 로딩 중...</div>
                   ) : (() => {
-                    // 모든 템플릿을 하나의 배열로 합치기
-                    let allTemplates = [
-                      ...dbTemplates.greeting,
-                      ...dbTemplates.announcement,
-                      ...dbTemplates.policy,
-                    ];
-                    
                     // 검색어로 필터링
-                    if (templateSearchQuery.trim()) {
-                      const query = templateSearchQuery.trim().toLowerCase();
-                      allTemplates = allTemplates.filter((template) => {
-                        const name = (template.templateName || "").toLowerCase();
-                        const text = (template.text || "").toLowerCase();
-                        const variables = (template.variables || []).join(" ").toLowerCase();
-                        return name.includes(query) || text.includes(query) || variables.includes(query);
+                    let filteredFavorites = favoriteMessages;
+                    if (favoriteSearchQuery.trim()) {
+                      const query = favoriteSearchQuery.trim().toLowerCase();
+                      filteredFavorites = favoriteMessages.filter((msg) => {
+                        const text = (msg.text || "").toLowerCase();
+                        const purpose = (msg.purpose || "").toLowerCase();
+                        const tags = (msg.tags || []).join(" ").toLowerCase();
+                        return text.includes(query) || purpose.includes(query) || tags.includes(query);
                       });
                     }
                     
-                    if (allTemplates.length === 0) {
+                    if (filteredFavorites.length === 0) {
                       return (
                         <div className="text-center py-8 text-muted-foreground">
-                          {templateSearchQuery.trim() ? "검색 결과가 없습니다." : "등록된 템플릿이 없습니다."}
+                          {favoriteSearchQuery.trim() ? "검색 결과가 없습니다." : "즐겨찾기한 문구가 없습니다."}
                           <br />
                           <Button
                             variant="link"
                             className="mt-2"
-                            onClick={() => navigate("/scripts/templates")}
+                            onClick={() => navigate("/scripts")}
                           >
-                            템플릿 만들기
+                            문구목록에서 즐겨찾기 추가하기
                           </Button>
                         </div>
                       );
                     }
                     
-                    const totalPages = Math.ceil(allTemplates.length / templateItemsPerPage);
-                    const startIndex = (templatePage - 1) * templateItemsPerPage;
-                    const endIndex = startIndex + templateItemsPerPage;
-                    const paginatedTemplates = allTemplates.slice(startIndex, endIndex);
+                    const totalPages = Math.ceil(filteredFavorites.length / favoriteItemsPerPage);
+                    const startIndex = (favoritePage - 1) * favoriteItemsPerPage;
+                    const endIndex = startIndex + favoriteItemsPerPage;
+                    const paginatedFavorites = filteredFavorites.slice(startIndex, endIndex);
                     
                     return (
                       <>
                         <ScrollArea className="flex-1 min-h-0 pr-4">
                           <div className="space-y-3">
-                            {paginatedTemplates.map((template) => (
-                              <Card 
-                                key={template.id}
-                                className={`cursor-pointer transition-all hover:shadow-md ${
-                                  selectedTemplate === template.id ? 'ring-2 ring-primary' : ''
-                                }`}
-                                onClick={() => handleTemplateSelect(template)}
-                              >
-                                <CardContent className="p-4">
-                                  <div className="flex items-start gap-3">
-                                    <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
-                                      <FileText className="w-4 h-4 text-primary" />
-                                    </div>
-                                    <div className="flex-1">
-                                      <h3 className="font-medium">{template.templateName}</h3>
-                                      <p className="text-sm text-muted-foreground line-clamp-2">{template.text}</p>
-                                      {(template.variables || []).length > 0 && (
-                                        <div className="mt-2 flex flex-wrap gap-1">
-                                          {(template.variables || []).map((varName) => (
-                                            <Badge key={varName} variant="secondary" className="text-xs">
-                                              {`{${varName}}`}
-                                            </Badge>
-                                          ))}
+                            {paginatedFavorites.map((msg) => {
+                              const purposeLabel = purposeOptions.find(p => p.id === msg.purpose)?.label || msg.purpose;
+                              return (
+                                <Card 
+                                  key={msg.id}
+                                  className="cursor-pointer transition-all hover:shadow-md"
+                                  onClick={() => {
+                                    setCustomText(msg.text);
+                                    setSelectedPurpose(msg.purpose || "announcement");
+                                    toast({
+                                      title: "문구 선택 완료",
+                                      description: "선택한 문구가 입력란에 적용되었습니다.",
+                                    });
+                                  }}
+                                >
+                                  <CardContent className="p-4">
+                                    <div className="flex items-start gap-3">
+                                      <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
+                                        <Star className="w-4 h-4 text-primary fill-primary" />
+                                      </div>
+                                      <div className="flex-1">
+                                        <div className="flex items-center gap-2 mb-1">
+                                          <Badge variant="outline" className="text-xs">
+                                            {purposeLabel}
+                                          </Badge>
+                                          {msg.tags && msg.tags.length > 0 && (
+                                            <div className="flex flex-wrap gap-1">
+                                              {msg.tags.slice(0, 2).map((tag) => (
+                                                <Badge key={tag} variant="secondary" className="text-xs">
+                                                  {tag}
+                                                </Badge>
+                                              ))}
+                                            </div>
+                                          )}
                                         </div>
-                                      )}
+                                        <p className="text-sm text-muted-foreground line-clamp-2">{msg.text}</p>
+                                      </div>
                                     </div>
-                                  </div>
-                                </CardContent>
-                              </Card>
-                            ))}
+                                  </CardContent>
+                                </Card>
+                              );
+                            })}
                           </div>
                         </ScrollArea>
                         {totalPages > 1 && (
@@ -5728,8 +5770,8 @@ const PublicVoiceGenerator = () => {
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => setTemplatePage(prev => Math.max(1, prev - 1))}
-                                    disabled={templatePage === 1}
+                                    onClick={() => setFavoritePage(prev => Math.max(1, prev - 1))}
+                                    disabled={favoritePage === 1}
                                     className="gap-1"
                                   >
                                     <ChevronLeft className="h-4 w-4" />
@@ -5738,9 +5780,9 @@ const PublicVoiceGenerator = () => {
                                 {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
                                   <PaginationItem key={page}>
                                     <Button
-                                      variant={templatePage === page ? "outline" : "ghost"}
+                                      variant={favoritePage === page ? "outline" : "ghost"}
                                       size="sm"
-                                      onClick={() => setTemplatePage(page)}
+                                      onClick={() => setFavoritePage(page)}
                                       className="min-w-[2.5rem]"
                                     >
                                       {page}
@@ -5751,8 +5793,8 @@ const PublicVoiceGenerator = () => {
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => setTemplatePage(prev => Math.min(totalPages, prev + 1))}
-                                    disabled={templatePage === totalPages}
+                                    onClick={() => setFavoritePage(prev => Math.min(totalPages, prev + 1))}
+                                    disabled={favoritePage === totalPages}
                                     className="gap-1"
                                   >
                                     <ChevronRight className="h-4 w-4" />
