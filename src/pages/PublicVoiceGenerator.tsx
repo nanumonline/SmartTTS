@@ -162,6 +162,7 @@ const PublicVoiceGenerator = () => {
   const [favoriteMessages, setFavoriteMessages] = useState<dbService.MessageHistoryEntry[]>([]);
   const [isLoadingFavorites, setIsLoadingFavorites] = useState(false);
   const [favoriteSearchQuery, setFavoriteSearchQuery] = useState("");
+  const [favoriteFilterPurpose, setFavoriteFilterPurpose] = useState<string>("all"); // 목적별 필터
   const [favoritePage, setFavoritePage] = useState(1);
   const favoriteItemsPerPage = 5; // 페이지당 즐겨찾기 문구 개수
   const [openAIPrompt, setOpenAIPrompt] = useState("");
@@ -5679,36 +5680,67 @@ const PublicVoiceGenerator = () => {
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col flex-1 min-h-0">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="flex-1">
-                    <Input
-                      placeholder="문구 검색..."
-                      value={favoriteSearchQuery}
-                      onChange={(e) => {
-                        setFavoriteSearchQuery(e.target.value);
-                        setFavoritePage(1); // 검색 시 첫 페이지로 리셋
-                      }}
-                      className="h-9"
-                    />
+                <div className="space-y-2 mb-4">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1">
+                      <Input
+                        placeholder="문구 검색..."
+                        value={favoriteSearchQuery}
+                        onChange={(e) => {
+                          setFavoriteSearchQuery(e.target.value);
+                          setFavoritePage(1); // 검색 시 첫 페이지로 리셋
+                        }}
+                        className="h-9"
+                      />
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => navigate("/scripts")}
+                    >
+                      <FileText className="w-4 h-4 mr-2" />
+                      문구 관리
+                    </Button>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => navigate("/scripts")}
+                  <Select
+                    value={favoriteFilterPurpose}
+                    onValueChange={(value) => {
+                      setFavoriteFilterPurpose(value);
+                      setFavoritePage(1); // 필터 변경 시 첫 페이지로 리셋
+                    }}
                   >
-                    <FileText className="w-4 h-4 mr-2" />
-                    문구 관리
-                  </Button>
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="전체 목적" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">전체</SelectItem>
+                      {purposeOptions.map((option) => {
+                        const count = favoriteMessages.filter((msg) => msg.purpose === option.id).length;
+                        return (
+                          <SelectItem key={option.id} value={option.id}>
+                            {option.label} ({count})
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="flex flex-col flex-1 min-h-0">
                   {isLoadingFavorites ? (
                     <div className="text-center py-8 text-muted-foreground">즐겨찾기 로딩 중...</div>
                   ) : (() => {
-                    // 검색어로 필터링
+                    // 검색어 및 목적 필터로 필터링
                     let filteredFavorites = favoriteMessages;
+                    
+                    // 목적 필터
+                    if (favoriteFilterPurpose !== "all") {
+                      filteredFavorites = filteredFavorites.filter((msg) => msg.purpose === favoriteFilterPurpose);
+                    }
+                    
+                    // 검색어 필터
                     if (favoriteSearchQuery.trim()) {
                       const query = favoriteSearchQuery.trim().toLowerCase();
-                      filteredFavorites = favoriteMessages.filter((msg) => {
+                      filteredFavorites = filteredFavorites.filter((msg) => {
                         const text = (msg.text || "").toLowerCase();
                         const purpose = (msg.purpose || "").toLowerCase();
                         const tags = (msg.tags || []).join(" ").toLowerCase();
@@ -5717,9 +5749,16 @@ const PublicVoiceGenerator = () => {
                     }
                     
                     if (filteredFavorites.length === 0) {
+                      const hasFilter = favoriteFilterPurpose !== "all" || favoriteSearchQuery.trim();
                       return (
                         <div className="text-center py-8 text-muted-foreground">
-                          {favoriteSearchQuery.trim() ? "검색 결과가 없습니다." : "즐겨찾기한 문구가 없습니다."}
+                          {hasFilter 
+                            ? (favoriteFilterPurpose !== "all" && favoriteSearchQuery.trim()
+                                ? "선택한 목적과 검색어에 해당하는 즐겨찾기가 없습니다."
+                                : favoriteFilterPurpose !== "all"
+                                ? `${purposeOptions.find(p => p.id === favoriteFilterPurpose)?.label || favoriteFilterPurpose} 목적의 즐겨찾기가 없습니다.`
+                                : "검색 결과가 없습니다.")
+                            : "즐겨찾기한 문구가 없습니다."}
                           <br />
                           <Button
                             variant="link"
