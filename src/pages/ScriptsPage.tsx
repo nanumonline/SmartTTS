@@ -45,6 +45,11 @@ export default function ScriptsPage() {
     try {
       const favoriteIds = await dbService.loadMessageFavorites(user.id);
       setMessageFavorites(new Set(favoriteIds));
+      // scripts에서도 isFavorite 필드를 확인하여 동기화
+      setScripts(prev => prev.map(script => ({
+        ...script,
+        isFavorite: favoriteIds.includes(String(script.id))
+      })));
     } catch (error) {
       console.error("즐겨찾기 로드 실패:", error);
     }
@@ -52,7 +57,8 @@ export default function ScriptsPage() {
 
   const toggleFavorite = async (messageId: string) => {
     if (!user?.id) return;
-    const isFavorite = messageFavorites.has(String(messageId));
+    const script = scripts.find(s => String(s.id) === String(messageId));
+    const isFavorite = messageFavorites.has(String(messageId)) || script?.isFavorite === true;
     try {
       if (isFavorite) {
         const success = await dbService.removeMessageFavorite(user.id, String(messageId));
@@ -62,6 +68,10 @@ export default function ScriptsPage() {
             next.delete(String(messageId));
             return next;
           });
+          // scripts 상태도 업데이트
+          setScripts(prev => prev.map(s => 
+            String(s.id) === String(messageId) ? { ...s, isFavorite: false } : s
+          ));
           toast({
             title: "즐겨찾기 제거",
             description: "즐겨찾기에서 제거되었습니다.",
@@ -69,7 +79,7 @@ export default function ScriptsPage() {
         } else {
           toast({
             title: "즐겨찾기 제거 실패",
-            description: "즐겨찾기를 제거하는데 실패했습니다. DB 테이블이 없을 수 있습니다.",
+            description: "즐겨찾기를 제거하는데 실패했습니다. DB 테이블에 is_favorite 컬럼이 없을 수 있습니다.",
             variant: "destructive",
           });
         }
@@ -77,6 +87,10 @@ export default function ScriptsPage() {
         const success = await dbService.addMessageFavorite(user.id, String(messageId));
         if (success) {
           setMessageFavorites(prev => new Set(prev).add(String(messageId)));
+          // scripts 상태도 업데이트
+          setScripts(prev => prev.map(s => 
+            String(s.id) === String(messageId) ? { ...s, isFavorite: true } : s
+          ));
           toast({
             title: "즐겨찾기 추가",
             description: "즐겨찾기에 추가되었습니다.",
@@ -84,7 +98,7 @@ export default function ScriptsPage() {
         } else {
           toast({
             title: "즐겨찾기 추가 실패",
-            description: "즐겨찾기를 추가하는데 실패했습니다. DB 테이블이 없을 수 있습니다.",
+            description: "즐겨찾기를 추가하는데 실패했습니다. DB 테이블에 is_favorite 컬럼이 없을 수 있습니다.",
             variant: "destructive",
           });
         }
@@ -439,10 +453,10 @@ export default function ScriptsPage() {
                                 e.stopPropagation();
                                 if (script.id) toggleFavorite(script.id);
                               }}
-                              className={messageFavorites.has(String(script.id)) ? "text-yellow-500 hover:text-yellow-600" : "text-muted-foreground hover:text-yellow-500"}
-                              aria-label={messageFavorites.has(String(script.id)) ? "즐겨찾기 제거" : "즐겨찾기 추가"}
+                              className={(messageFavorites.has(String(script.id)) || script.isFavorite === true) ? "text-yellow-500 hover:text-yellow-600" : "text-muted-foreground hover:text-yellow-500"}
+                              aria-label={(messageFavorites.has(String(script.id)) || script.isFavorite === true) ? "즐겨찾기 제거" : "즐겨찾기 추가"}
                             >
-                              <Star className={`w-4 h-4 ${messageFavorites.has(String(script.id)) ? "fill-current" : ""}`} />
+                              <Star className={`w-4 h-4 ${(messageFavorites.has(String(script.id)) || script.isFavorite === true) ? "fill-current" : ""}`} />
                             </Button>
                             <Button
                               size="sm"

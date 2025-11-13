@@ -1037,6 +1037,7 @@ export interface MessageHistoryEntry {
   isTemplate?: boolean;
   templateName?: string;
   templateCategory?: string;
+  isFavorite?: boolean; // 즐겨찾기 여부
   createdAt?: string;
   updatedAt?: string;
 }
@@ -1398,6 +1399,7 @@ export async function loadMessages(userId: string): Promise<MessageHistoryEntry[
         isTemplate: row.is_template || false,
         templateName: row.template_name || undefined,
         templateCategory: row.template_category || undefined,
+        isFavorite: row.is_favorite === true || row.is_favorite === 1, // 즐겨찾기 여부
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       };
@@ -1412,6 +1414,7 @@ export async function loadMessages(userId: string): Promise<MessageHistoryEntry[
 }
 
 // ==================== 메시지 즐겨찾기 ====================
+// tts_message_history 테이블의 is_favorite 컬럼을 사용하여 즐겨찾기 정보 저장
 
 // 메시지 즐겨찾기 추가
 export async function addMessageFavorite(userId: string, messageId: string): Promise<boolean> {
@@ -1421,21 +1424,17 @@ export async function addMessageFavorite(userId: string, messageId: string): Pro
       return false;
     }
 
-    const { data, error } = await (supabase as any)
-      .from("tts_message_favorites")
-      .insert({ user_id: userId, message_id: messageId })
-      .select();
+    // tts_message_history 테이블의 is_favorite 컬럼 업데이트
+    const { error } = await (supabase as any)
+      .from("tts_message_history")
+      .update({ is_favorite: true })
+      .eq("user_id", userId)
+      .eq("id", messageId);
 
-    // 이미 존재하면 에러 무시 (UNIQUE 제약) - 성공으로 간주
     if (error) {
-      if (error.message?.includes("duplicate") || error.code === "23505") {
-        // 이미 존재하는 경우 성공으로 간주
-        console.log("메시지 즐겨찾기 이미 존재:", messageId);
-        return true;
-      }
-      // 테이블이 없으면 조용히 실패
-      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
-        console.warn("메시지 즐겨찾기 테이블이 없습니다:", error);
+      // 컬럼이 없으면 조용히 실패
+      if (error.code === "PGRST205" || error.code === "42703" || error.message?.includes("schema cache") || error.message?.includes("does not exist")) {
+        console.warn("메시지 즐겨찾기 컬럼이 없습니다 (is_favorite). 테이블 마이그레이션이 필요할 수 있습니다:", error);
         return false;
       }
       if (error.code === "22P02") {
@@ -1446,15 +1445,10 @@ export async function addMessageFavorite(userId: string, messageId: string): Pro
       throw error;
     }
     
-    // 성공적으로 추가됨
-    if (data && data.length > 0) {
-      console.log("메시지 즐겨찾기 추가 성공:", messageId);
-      return true;
-    }
-    
-    return true; // 에러가 없으면 성공으로 간주
+    console.log("메시지 즐겨찾기 추가 성공:", messageId);
+    return true;
   } catch (error: any) {
-    if (error.code !== "PGRST205" && error.code !== "22P02") {
+    if (error.code !== "PGRST205" && error.code !== "42703" && error.code !== "22P02") {
       console.error("메시지 즐겨찾기 추가 실패:", error);
     }
     return false;
@@ -1469,14 +1463,17 @@ export async function removeMessageFavorite(userId: string, messageId: string): 
       return false;
     }
 
+    // tts_message_history 테이블의 is_favorite 컬럼 업데이트
     const { error } = await (supabase as any)
-      .from("tts_message_favorites")
-      .delete()
+      .from("tts_message_history")
+      .update({ is_favorite: false })
       .eq("user_id", userId)
-      .eq("message_id", messageId);
+      .eq("id", messageId);
 
     if (error) {
-      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
+      // 컬럼이 없으면 조용히 실패
+      if (error.code === "PGRST205" || error.code === "42703" || error.message?.includes("schema cache") || error.message?.includes("does not exist")) {
+        console.warn("메시지 즐겨찾기 컬럼이 없습니다 (is_favorite). 테이블 마이그레이션이 필요할 수 있습니다:", error);
         return false;
       }
       if (error.code === "22P02") {
@@ -1487,7 +1484,7 @@ export async function removeMessageFavorite(userId: string, messageId: string): 
     }
     return true;
   } catch (error: any) {
-    if (error.code !== "PGRST205" && error.code !== "22P02") {
+    if (error.code !== "PGRST205" && error.code !== "42703" && error.code !== "22P02") {
       console.error("메시지 즐겨찾기 제거 실패:", error);
     }
     return false;
@@ -1502,15 +1499,19 @@ export async function loadMessageFavorites(userId: string): Promise<string[]> {
       return [];
     }
 
-    const { data, error } = await withRetry(() => (supabase as any)
-      .from("tts_message_favorites")
-      .select("message_id")
-      .eq("user_id", userId)
+    // tts_message_history 테이블에서 is_favorite가 true인 메시지 조회
+    const { data, error } = await withRetry(() =>
+      (supabase as any)
+        .from("tts_message_history")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("is_favorite", true)
     , 1);
 
     if (error) {
-      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
-        console.warn("메시지 즐겨찾기 테이블이 없습니다:", error);
+      // 컬럼이 없으면 빈 배열 반환
+      if (error.code === "PGRST205" || error.code === "42703" || error.message?.includes("schema cache") || error.message?.includes("does not exist")) {
+        console.warn("메시지 즐겨찾기 컬럼이 없습니다 (is_favorite). 테이블 마이그레이션이 필요할 수 있습니다:", error);
         return [];
       }
       if (error.code === "22P02") {
@@ -1525,11 +1526,11 @@ export async function loadMessageFavorites(userId: string): Promise<string[]> {
       throw error;
     }
     
-    const favoriteIds = (data || []).map((row: any) => String(row.message_id));
+    const favoriteIds = (data || []).map((row: any) => String(row.id));
     console.log(`메시지 즐겨찾기 조회 성공: ${favoriteIds.length}개`, favoriteIds);
     return favoriteIds;
   } catch (error: any) {
-    if (error.code !== "PGRST205" && error.code !== "22P02") {
+    if (error.code !== "PGRST205" && error.code !== "42703" && error.code !== "22P02") {
       console.error("메시지 즐겨찾기 조회 실패:", error);
     }
     return [];
