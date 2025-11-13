@@ -3988,69 +3988,13 @@ const PublicVoiceGenerator = () => {
       // blob URL 생성
       let audioUrl = URL.createObjectURL(validBlob);
       
-      // blob URL이 유효한지 Audio 객체로 사전 검증
-      // 검증 실패 시 복원 로직을 즉시 실행하여 첫 번째 시도에서 실패하는 것을 방지
-      let isValidUrl = false;
-      try {
-        const testAudio = new Audio(audioUrl);
-        await new Promise<void>((resolve, reject) => {
-          let timeoutId: number;
-          
-          const handleCanPlay = () => {
-            if (timeoutId) clearTimeout(timeoutId);
-            testAudio.removeEventListener('error', handleError);
-            resolve();
-          };
-          
-          const handleError = (e: Event) => {
-            if (timeoutId) clearTimeout(timeoutId);
-            testAudio.removeEventListener('canplaythrough', handleCanPlay);
-            reject(e);
-          };
-          
-          timeoutId = window.setTimeout(() => {
-            testAudio.removeEventListener('canplaythrough', handleCanPlay);
-            testAudio.removeEventListener('error', handleError);
-            // 타임아웃 시 성공으로 간주 (blob이 준비되는 데 시간이 걸릴 수 있음)
-            resolve();
-          }, 300);
-          
-          testAudio.addEventListener('canplaythrough', handleCanPlay);
-          testAudio.addEventListener('error', handleError);
-          testAudio.load();
-        });
-        isValidUrl = true;
-        // 검증 성공 시 testAudio 정리
-        testAudio.src = '';
-        testAudio.load();
-      } catch (e) {
-        console.warn('[생성] blob URL 검증 실패, 즉시 복원 로직 실행:', e);
-        // 검증 실패 시 기존 blob URL 해제
-        URL.revokeObjectURL(audioUrl);
-        
-        // 즉시 복원 로직 실행: cacheRef에서 blob을 가져와서 새 URL 생성
-        const cached = cacheRef.current.get(cacheKey);
-        if (cached?.blob) {
-          try {
-            const mimeType = cached.mimeType || finalMimeType;
-            const restoredBlob = new Blob([cached.blob], { type: mimeType });
-            audioUrl = URL.createObjectURL(restoredBlob);
-            isValidUrl = true;
-            console.log('[생성] ✅ 복원 로직으로 새 blob URL 생성 성공');
-            // cacheRef 업데이트
-            cacheRef.current.set(cacheKey, {
-              ...cached,
-              blob: restoredBlob,
-              _audioUrl: audioUrl,
-            });
-          } catch (restoreError) {
-            console.error('[생성] 복원 로직 실패:', restoreError);
-            audioUrl = ''; // 복원 실패 시 빈 문자열
-          }
-        } else {
-          audioUrl = ''; // cacheRef에 blob이 없으면 빈 문자열
-        }
-      }
+      // blob URL 생성 후 약간의 지연 (브라우저가 blob을 준비할 시간)
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // blob URL을 바로 사용 (사전 검증 제거 - AudioPlayer의 복원 로직에 의존)
+      // 사전 검증이 너무 엄격해서 항상 실패하는 경우가 있어 제거
+      // AudioPlayer의 onError 콜백이 복원 로직을 처리하므로 안전함
+      let isValidUrl = true;
       
       // cacheRef에 blob URL도 저장 (검증 성공 또는 복원 성공한 경우)
       if (isValidUrl) {
@@ -5568,6 +5512,7 @@ const PublicVoiceGenerator = () => {
                             console.log(`[복원] 새 blob URL 생성: ${newUrl.substring(0, 80)}, MIME: ${mimeType}`);
                             cacheRef.current.set(cacheKeyToUse, { ...cached, blob: validBlob, _audioUrl: newUrl });
                             setGeneratedAudio(newUrl);
+                            setGeneratedAudioCacheKey(cacheKeyToUse); // cacheKey도 업데이트하여 AudioPlayer가 인식하도록 함
                             console.log(`✅ 생성된 음원 복원 완료 (cacheRef): ${cacheKeyToUse}`);
                           } catch (e) {
                             console.error("Blob URL 생성 실패:", e);
