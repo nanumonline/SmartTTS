@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Pagination, PaginationContent, PaginationItem } from "@/components/ui/pagination";
+import { Progress } from "@/components/ui/progress";
 import HomeButton from "@/components/HomeButton";
 import MixingTimeline from "@/components/MixingTimeline";
 import { 
@@ -5492,6 +5493,30 @@ const PublicVoiceGenerator = () => {
                     </>
                   )}
                 </Button>
+
+                {/* 청크 생성 진행률 표시 */}
+                {generationProgress && (
+                  <div className="space-y-3 p-4 border rounded-lg bg-muted/50">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium flex items-center gap-2">
+                        <Activity className="w-4 h-4 animate-pulse text-primary" />
+                        청크 생성 중...
+                      </span>
+                      <span className="text-muted-foreground">
+                        {generationProgress.current} / {generationProgress.total}
+                      </span>
+                    </div>
+                    <Progress 
+                      value={(generationProgress.current / generationProgress.total) * 100} 
+                      className="h-2"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {generationProgress.current === generationProgress.total 
+                        ? "마지막 청크 생성 중... 완료 후 자동으로 결합됩니다."
+                        : `청크 ${generationProgress.current}/${generationProgress.total} 처리 중...`}
+                    </p>
+                  </div>
+                )}
 
                 {/* 생성된 음성 */}
                 {generatedAudio && (
