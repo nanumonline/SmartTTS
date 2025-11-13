@@ -4719,7 +4719,10 @@ const PublicVoiceGenerator = () => {
                         className="min-h-[200px]"
                       />
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>{customText.length}자</span>
+                        <div className="flex flex-col gap-0.5">
+                          <span>공백 포함 : {customText.length}자 {new Blob([customText]).size}byte</span>
+                          <span>공백 제외 : {customText.replace(/\s/g, '').length}자 {new Blob([customText.replace(/\s/g, '')]).size}byte</span>
+                        </div>
                         <div className="flex items-center gap-2">
                           {customText.trim() && (
                             <Button
