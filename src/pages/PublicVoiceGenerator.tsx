@@ -3167,13 +3167,16 @@ const PublicVoiceGenerator = () => {
     try {
       // 즐겨찾기 ID 목록 로드
       const favoriteIds = await dbService.loadMessageFavorites(user.id);
+      console.log(`[즐겨찾기] 즐겨찾기 ID 목록 로드: ${favoriteIds.length}개`, favoriteIds);
       setMessageFavorites(new Set(favoriteIds));
       
       // 모든 문구 로드
       const allMessages = await dbService.loadMessages(user.id);
+      console.log(`[즐겨찾기] 전체 문구 로드: ${allMessages.length}개`);
       
       // 즐겨찾기된 문구만 필터링
       const favorites = allMessages.filter(msg => favoriteIds.includes(String(msg.id)));
+      console.log(`[즐겨찾기] 즐겨찾기 문구 필터링: ${favorites.length}개`, favorites.map(f => ({ id: f.id, text: f.text?.substring(0, 30) })));
       setFavoriteMessages(favorites);
     } catch (error) {
       console.error("즐겨찾기 문구 로드 실패:", error);
@@ -3187,6 +3190,26 @@ const PublicVoiceGenerator = () => {
     if (user?.id) {
       loadFavoriteMessages();
     }
+  }, [user?.id, loadFavoriteMessages]);
+
+  // 페이지 포커스 시 즐겨찾기 새로고침 (다른 페이지에서 즐겨찾기 추가/제거 시 반영)
+  useEffect(() => {
+    const handleFocus = () => {
+      if (user?.id) {
+        loadFavoriteMessages();
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [user?.id, loadFavoriteMessages]);
+
+  // 주기적으로 즐겨찾기 새로고침 (30초마다)
+  useEffect(() => {
+    if (!user?.id) return;
+    const interval = setInterval(() => {
+      loadFavoriteMessages();
+    }, 30000); // 30초마다 새로고침
+    return () => clearInterval(interval);
   }, [user?.id, loadFavoriteMessages]);
 
   // 저장된 메시지 불러오기 함수

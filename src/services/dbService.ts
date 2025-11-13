@@ -1421,24 +1421,38 @@ export async function addMessageFavorite(userId: string, messageId: string): Pro
       return false;
     }
 
-    const { error } = await (supabase as any)
+    const { data, error } = await (supabase as any)
       .from("tts_message_favorites")
       .insert({ user_id: userId, message_id: messageId })
       .select();
 
-    // 이미 존재하면 에러 무시 (UNIQUE 제약)
-    if (error && !error.message.includes("duplicate")) {
+    // 이미 존재하면 에러 무시 (UNIQUE 제약) - 성공으로 간주
+    if (error) {
+      if (error.message?.includes("duplicate") || error.code === "23505") {
+        // 이미 존재하는 경우 성공으로 간주
+        console.log("메시지 즐겨찾기 이미 존재:", messageId);
+        return true;
+      }
       // 테이블이 없으면 조용히 실패
       if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
+        console.warn("메시지 즐겨찾기 테이블이 없습니다:", error);
         return false;
       }
       if (error.code === "22P02") {
         console.warn("유효하지 않은 userId 형식:", userId);
         return false;
       }
+      console.error("메시지 즐겨찾기 추가 에러:", error);
       throw error;
     }
-    return true;
+    
+    // 성공적으로 추가됨
+    if (data && data.length > 0) {
+      console.log("메시지 즐겨찾기 추가 성공:", messageId);
+      return true;
+    }
+    
+    return true; // 에러가 없으면 성공으로 간주
   } catch (error: any) {
     if (error.code !== "PGRST205" && error.code !== "22P02") {
       console.error("메시지 즐겨찾기 추가 실패:", error);
@@ -1496,6 +1510,7 @@ export async function loadMessageFavorites(userId: string): Promise<string[]> {
 
     if (error) {
       if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
+        console.warn("메시지 즐겨찾기 테이블이 없습니다:", error);
         return [];
       }
       if (error.code === "22P02") {
@@ -1506,9 +1521,13 @@ export async function loadMessageFavorites(userId: string): Promise<string[]> {
         console.warn("메시지 즐겨찾기 조회 실패 (CORS/엣지): 오프라인 모드로 계속합니다.");
         return [];
       }
+      console.error("메시지 즐겨찾기 조회 에러:", error);
       throw error;
     }
-    return (data || []).map((row: any) => String(row.message_id));
+    
+    const favoriteIds = (data || []).map((row: any) => String(row.message_id));
+    console.log(`메시지 즐겨찾기 조회 성공: ${favoriteIds.length}개`, favoriteIds);
+    return favoriteIds;
   } catch (error: any) {
     if (error.code !== "PGRST205" && error.code !== "22P02") {
       console.error("메시지 즐겨찾기 조회 실패:", error);

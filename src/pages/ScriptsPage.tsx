@@ -55,23 +55,39 @@ export default function ScriptsPage() {
     const isFavorite = messageFavorites.has(String(messageId));
     try {
       if (isFavorite) {
-        await dbService.removeMessageFavorite(user.id, String(messageId));
-        setMessageFavorites(prev => {
-          const next = new Set(prev);
-          next.delete(String(messageId));
-          return next;
-        });
-        toast({
-          title: "즐겨찾기 제거",
-          description: "즐겨찾기에서 제거되었습니다.",
-        });
+        const success = await dbService.removeMessageFavorite(user.id, String(messageId));
+        if (success) {
+          setMessageFavorites(prev => {
+            const next = new Set(prev);
+            next.delete(String(messageId));
+            return next;
+          });
+          toast({
+            title: "즐겨찾기 제거",
+            description: "즐겨찾기에서 제거되었습니다.",
+          });
+        } else {
+          toast({
+            title: "즐겨찾기 제거 실패",
+            description: "즐겨찾기를 제거하는데 실패했습니다. DB 테이블이 없을 수 있습니다.",
+            variant: "destructive",
+          });
+        }
       } else {
-        await dbService.addMessageFavorite(user.id, String(messageId));
-        setMessageFavorites(prev => new Set(prev).add(String(messageId)));
-        toast({
-          title: "즐겨찾기 추가",
-          description: "즐겨찾기에 추가되었습니다.",
-        });
+        const success = await dbService.addMessageFavorite(user.id, String(messageId));
+        if (success) {
+          setMessageFavorites(prev => new Set(prev).add(String(messageId)));
+          toast({
+            title: "즐겨찾기 추가",
+            description: "즐겨찾기에 추가되었습니다.",
+          });
+        } else {
+          toast({
+            title: "즐겨찾기 추가 실패",
+            description: "즐겨찾기를 추가하는데 실패했습니다. DB 테이블이 없을 수 있습니다.",
+            variant: "destructive",
+          });
+        }
       }
     } catch (error) {
       console.error("즐겨찾기 변경 실패:", error);
