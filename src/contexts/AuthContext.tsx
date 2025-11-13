@@ -75,13 +75,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       setIsLoading(false);
     });
 
-    // 인증 상태 변경 리스너
+    // 인증 상태 변경 리스너 (CRITICAL: async 사용 금지 - 데드락 방지)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         if (event === 'SIGNED_IN' && session?.user) {
           // login 함수에서 이미 처리했으므로 중복 방지
           if (!isLoggingInRef.current) {
-            // 즉시 기본 사용자 정보 설정
+            // 즉시 기본 사용자 정보 설정 (동기 작업만)
             const defaultUser: User = {
               id: session.user.id,
               email: session.user.email || "",
@@ -96,10 +96,12 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
             setUser(defaultUser);
             localStorage.setItem("user", JSON.stringify(defaultUser));
             
-            // 프로필은 백그라운드에서 비동기로 로드
-            loadUserProfile(session.user, true).catch(err => {
-              console.warn("Background profile load failed:", err);
-            });
+            // 프로필 로드는 setTimeout으로 지연하여 데드락 방지
+            setTimeout(() => {
+              loadUserProfile(session.user, true).catch(err => {
+                console.warn("Background profile load failed:", err);
+              });
+            }, 0);
           }
         } else if (event === 'SIGNED_OUT') {
           setUser(null);
@@ -118,21 +120,26 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       setIsLoading(true);
     }
     try {
-      // 프로필 조회 시도 (타임아웃 추가)
-      const profileQuery = supabase
+      // 프로필 조회 시도 (Promise.race로 타임아웃 구현)
+      const profilePromise = supabase
         .from("profiles")
         .select("*")
         .eq("id", authUser.id)
         .maybeSingle();
       
-      // 타임아웃 설정 (3초)
-      const timeoutId = setTimeout(() => {
-        // 타임아웃 시 쿼리 취소는 불가능하지만, 에러로 처리
-      }, 3000);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Profile fetch timeout')), 2000)
+      );
       
-      const { data: profile, error: profileError } = await profileQuery;
-      
-      clearTimeout(timeoutId);
+      // 2초 타임아웃으로 프로필 조회
+      const { data: profile, error: profileError } = await Promise.race([
+        profilePromise,
+        timeoutPromise
+      ]) as any;
+
+      if (profileError) {
+        console.warn("Profile query error:", profileError);
+      }
 
       // 프로필이 없거나 에러가 발생해도 기본 사용자 정보로 생성
       const user: User = {
