@@ -3,9 +3,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Clock, Play, Pause, X, CheckCircle, AlertCircle } from "lucide-react";
+import { Clock, CheckCircle, AlertCircle } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import * as dbService from "@/services/dbService";
+import { Pagination, PaginationContent, PaginationItem } from "@/components/ui/pagination";
 
 interface JobEntry {
   id: string;
@@ -21,6 +22,8 @@ export default function ManageJobsPage() {
   const { user } = useAuth();
   const [jobs, setJobs] = useState<JobEntry[]>([]);
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   useEffect(() => {
     if (user?.id) {
@@ -75,6 +78,17 @@ export default function ManageJobsPage() {
     return job.status === filterStatus;
   });
 
+  // 페이지네이션 계산
+  const totalPages = Math.ceil(filteredJobs.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedJobs = filteredJobs.slice(startIndex, endIndex);
+
+  // 필터 변경 시 첫 페이지로 리셋
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterStatus]);
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "pending":
@@ -107,25 +121,39 @@ export default function ManageJobsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-3xl font-bold">작업 큐</h1>
           <p className="text-muted-foreground mt-1">
             실행 중인 작업을 관리합니다.
           </p>
         </div>
-        <Select value={filterStatus} onValueChange={setFilterStatus}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">전체 상태</SelectItem>
-            <SelectItem value="pending">대기 중</SelectItem>
-            <SelectItem value="processing">처리 중</SelectItem>
-            <SelectItem value="completed">완료</SelectItem>
-            <SelectItem value="failed">실패</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={filterStatus} onValueChange={setFilterStatus}>
+            <SelectTrigger className="w-[150px] sm:w-[180px]">
+              <SelectValue placeholder="상태" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">전체 상태</SelectItem>
+              <SelectItem value="pending">대기 중</SelectItem>
+              <SelectItem value="processing">처리 중</SelectItem>
+              <SelectItem value="completed">완료</SelectItem>
+              <SelectItem value="failed">실패</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={String(itemsPerPage)} onValueChange={(v) => {
+            setItemsPerPage(Number(v));
+            setCurrentPage(1);
+          }}>
+            <SelectTrigger className="w-[120px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="5">5개씩</SelectItem>
+              <SelectItem value="10">10개씩</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* 작업 목록 */}
@@ -137,45 +165,99 @@ export default function ManageJobsPage() {
           </CardContent>
         </Card>
       ) : (
-        <Card>
-          <CardContent className="p-0">
-            <div className="space-y-2 p-4" role="list" aria-label="작업 목록">
-              {filteredJobs.map((job) => (
+        <>
+          <Card>
+            <CardContent className="p-0">
+              <div className="space-y-2 p-4" role="list" aria-label="작업 목록">
+                {paginatedJobs.map((job) => (
                 <div
                   key={job.id}
                   role="listitem"
                   tabIndex={0}
                   className="rounded-lg border bg-card p-3 hover:bg-muted/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 >
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="min-w-0">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                    <div className="min-w-0 space-y-2">
                       <p className="font-medium truncate">{getJobTypeLabel(job.type)}</p>
-                      <p className="text-sm text-muted-foreground mt-1 flex items-center gap-2">
-                        <Clock className="w-3 h-3" />
-                        <span>{new Date(job.createdAt).toLocaleString("ko-KR")}</span>
+                      <div className="text-sm text-muted-foreground space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Clock className="w-3 h-3" />
+                          <span>{new Date(job.createdAt).toLocaleString("ko-KR")}</span>
+                        </div>
                         {job.completedAt && (
-                          <>
-                            <span>•</span>
+                          <p className="flex flex-wrap items-center gap-2 text-xs">
+                            <CheckCircle className="w-3 h-3" />
                             <span>완료: {new Date(job.completedAt).toLocaleString("ko-KR")}</span>
-                          </>
+                          </p>
                         )}
-                      </p>
+                      </div>
                       {job.progress !== undefined && (
-                        <div className="mt-2">
+                        <div className="mt-1">
                           <div className="w-full bg-muted rounded-full h-2">
                             <div className="bg-primary h-2 rounded-full transition-all" style={{ width: `${job.progress}%` }} />
                           </div>
                           <p className="text-xs text-muted-foreground mt-2 text-center">{job.progress}%</p>
                         </div>
                       )}
+                      {job.error && (
+                        <p className="text-xs text-destructive flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" />
+                          {job.error}
+                        </p>
+                      )}
                     </div>
-                    <div className="flex-shrink-0" aria-label={`상태: ${job.status}`}>{getStatusBadge(job.status)}</div>
+                    <div className="flex-shrink-0 self-start sm:self-auto" aria-label={`상태: ${job.status}`}>
+                      {getStatusBadge(job.status)}
+                    </div>
                   </div>
                 </div>
               ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 페이지네이션 */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center mt-4">
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      disabled={currentPage === 1}
+                    >
+                      이전
+                    </Button>
+                  </PaginationItem>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                    <PaginationItem key={page}>
+                      <Button
+                        variant={currentPage === page ? "outline" : "ghost"}
+                        size="sm"
+                        onClick={() => setCurrentPage(page)}
+                        className="min-w-[2.5rem]"
+                      >
+                        {page}
+                      </Button>
+                    </PaginationItem>
+                  ))}
+                  <PaginationItem>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                      disabled={currentPage === totalPages}
+                    >
+                      다음
+                    </Button>
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
             </div>
-          </CardContent>
-        </Card>
+          )}
+        </>
       )}
     </div>
   );

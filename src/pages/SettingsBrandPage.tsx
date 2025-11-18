@@ -263,10 +263,10 @@ export default function SettingsBrandPage() {
               </div>
 
               {/* URL 입력 */}
-              <div className="space-y-2">
+          <div className="space-y-2">
                 <Label className="text-sm text-muted-foreground">또는 로고 URL 입력</Label>
-                <Input
-                  value={brandSettings.logoUrl}
+            <Input
+              value={brandSettings.logoUrl}
                   onChange={(e) => {
                     setBrandSettings({ 
                       ...brandSettings, 
@@ -274,7 +274,7 @@ export default function SettingsBrandPage() {
                       logoDataUrl: undefined, // URL 입력 시 파일 데이터 초기화
                     });
                   }}
-                  placeholder="https://example.com/logo.png"
+              placeholder="https://example.com/logo.png"
                   disabled={!!brandSettings.logoDataUrl}
                 />
                 {brandSettings.logoDataUrl && (

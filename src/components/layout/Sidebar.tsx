@@ -19,9 +19,12 @@ import {
   Database,
   CheckCircle2,
   BookOpen,
+  X,
+  ChevronRight,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { loadBrandSettings, getLogoUrl } from "@/lib/brandSettings";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface NavItem {
   title: string;
@@ -112,9 +115,11 @@ export const navItems: NavItem[] = [
 
 interface SidebarProps {
   className?: string;
+  isOpen?: boolean;
+  onToggle?: () => void;
 }
 
-export default function Sidebar({ className }: SidebarProps) {
+export default function Sidebar({ className, isOpen = true, onToggle }: SidebarProps) {
   const location = useLocation();
   const { isAuthenticated } = useAuth();
   const [expandedItems, setExpandedItems] = React.useState<Set<string>>(
@@ -178,9 +183,8 @@ export default function Sidebar({ className }: SidebarProps) {
   };
 
   const isParentActive = (item: NavItem) => {
-    // 자식이 있으면 부모는 활성화하지 않음 (자식만 활성화)
-    if (item.children) {
-      return false;
+    if (item.children && item.href) {
+      return location.pathname.startsWith(item.href);
     }
     return isActive(item.href);
   };
@@ -189,17 +193,39 @@ export default function Sidebar({ className }: SidebarProps) {
     return null; // 비로그인 시 사이드바 숨김
   }
 
+  const isCompact = !isOpen;
+
+  const withTooltip = (label: string, node: React.ReactNode) => {
+    if (!isCompact) {
+      return node;
+    }
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{node}</TooltipTrigger>
+        <TooltipContent side="right">{label}</TooltipContent>
+      </Tooltip>
+    );
+  };
+
   return (
     <aside
       className={cn(
-        "fixed left-0 top-0 z-40 h-screen w-64 border-r border-border bg-background transition-transform flex-shrink-0",
+        "fixed left-0 top-0 z-40 h-screen border-r border-border bg-background transition-all duration-300 ease-in-out flex-shrink-0",
+        isOpen ? "w-64 translate-x-0" : "w-64 -translate-x-full lg:translate-x-0 lg:w-20",
         className
       )}
+      aria-hidden={false}
+      data-compact={isCompact}
     >
       <div className="flex h-full flex-col">
         {/* Logo */}
-        <div className="flex h-16 items-center gap-3 border-b border-border px-6">
-          {logoUrl ? (
+        <div
+          className={cn(
+            "flex h-16 items-center gap-3 border-b border-border px-4",
+            isCompact && "justify-center"
+          )}
+        >
+          {logoUrl && !isCompact ? (
             <div className="flex items-center gap-3 flex-1 min-w-0">
               <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 bg-white flex items-center justify-center border border-border">
                 <img
@@ -222,58 +248,96 @@ export default function Sidebar({ className }: SidebarProps) {
               <span className="text-lg font-bold gradient-text truncate">Smart TTS</span>
             </div>
           ) : (
-            <>
+            <div className="flex items-center justify-center">
               <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center flex-shrink-0">
                 <Mic2 className="w-5 h-5 text-white" />
               </div>
-              <span className="text-lg font-bold gradient-text">Smart TTS</span>
-            </>
+              {!isCompact && (
+                <span className="ml-3 text-lg font-bold gradient-text">Smart TTS</span>
+              )}
+            </div>
           )}
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 space-y-1 overflow-y-auto p-4">
+        <nav
+          className={cn(
+            "flex-1 space-y-1 overflow-y-auto",
+            isOpen ? "p-4 pb-20" : "p-2 lg:pb-6"
+          )}
+        >
           {navItems.map((item) => {
             const hasChildren = item.children && item.children.length > 0;
             const itemKey = item.href.split("/")[1] || item.href;
             const isExpanded = expandedItems.has(itemKey);
             const active = isParentActive(item);
+            const iconClass = cn("h-4 w-4", !isOpen && "h-5 w-5");
+            const targetHref = hasChildren && item.children ? item.children[0].href : item.href;
 
-            return (
-              <div key={item.href}>
-                {hasChildren ? (
-                  <>
-                    <button
-                      onClick={() => toggleExpanded(itemKey)}
-                      className={cn(
-                        "flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                        active
-                          ? "bg-primary/10 text-primary"
-                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                      )}
-                    >
-                      <div className="flex items-center gap-3">
-                        <item.icon className="h-4 w-4" />
-                        <span>{item.title}</span>
-                      </div>
-                      <span
-                        className={cn(
-                          "h-4 w-4 transition-transform inline-flex items-center justify-center",
-                          isExpanded ? "rotate-90" : ""
-                        )}
-                      >
-                        ▶
-                      </span>
-                    </button>
-                    {isExpanded && (
-                      <div className="ml-4 mt-1 space-y-1 border-l border-border pl-4">
-                        {item.children!.map((child) => (
+            if (hasChildren) {
+              const parentLink = (
+                <Link
+                  to={targetHref}
+                  aria-label={item.title}
+                  className={cn(
+                    "flex flex-1 items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                    active
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                    isOpen ? "gap-3" : "justify-center"
+                  )}
+                  onClick={() => {
+                    if (typeof window !== "undefined" && window.innerWidth < 1024 && onToggle) {
+                      onToggle();
+                    }
+                  }}
+                >
+                  <item.icon className={iconClass} />
+                  {isOpen && <span className="truncate">{item.title}</span>}
+                </Link>
+              );
+
+              const expandToggle = isOpen ? (
+                <button
+                  type="button"
+                  onClick={() => toggleExpanded(itemKey)}
+                  className={cn(
+                    "ml-1 inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors",
+                    "hover:text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  )}
+                  aria-label={isExpanded ? `${item.title} 접기` : `${item.title} 펼치기`}
+                  aria-expanded={isExpanded}
+                >
+                  <ChevronRight className={cn("h-4 w-4 transition-transform", isExpanded && "rotate-90")} />
+                </button>
+              ) : null;
+
+              const parentRow = (
+                <div className={cn("flex", isOpen ? "items-center" : "justify-center")}>
+                  {parentLink}
+                  {expandToggle}
+                </div>
+              );
+
+              return (
+                <div key={item.href}>
+                  {withTooltip(item.title, parentRow)}
+                  {isOpen && isExpanded && (
+                    <div className="ml-4 mt-1 space-y-1 border-l border-border pl-4">
+                      {item.children!.map((child) => {
+                        const childActive = isActive(child.href);
+                        return (
                           <Link
                             key={child.href}
                             to={child.href}
+                            onClick={() => {
+                              if (typeof window !== "undefined" && window.innerWidth < 1024 && onToggle) {
+                                onToggle();
+                              }
+                            }}
                             className={cn(
                               "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
-                              isActive(child.href)
+                              childActive
                                 ? "bg-primary/10 text-primary font-medium"
                                 : "text-muted-foreground hover:bg-muted hover:text-foreground"
                             )}
@@ -281,34 +345,57 @@ export default function Sidebar({ className }: SidebarProps) {
                             <child.icon className="h-3.5 w-3.5" />
                             <span>{child.title}</span>
                           </Link>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <Link
-                    to={item.href}
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                      active
-                        ? "bg-primary/10 text-primary"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    )}
-                  >
-                    <item.icon className="h-4 w-4" />
-                    <span>{item.title}</span>
-                    {item.badge && (
-                      <span className="ml-auto rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
-                        {item.badge}
-                      </span>
-                    )}
-                  </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            const link = (
+              <Link
+                to={item.href}
+                aria-label={item.title}
+                className={cn(
+                  "flex items-center rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                  active
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  isOpen ? "gap-3" : "justify-center"
                 )}
-              </div>
+                onClick={() => {
+                  if (typeof window !== "undefined" && window.innerWidth < 1024 && onToggle) {
+                    onToggle();
+                  }
+                }}
+              >
+                <item.icon className={iconClass} />
+                {isOpen && <span className="truncate">{item.title}</span>}
+                {item.badge && isOpen && (
+                  <span className="ml-auto rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
+                    {item.badge}
+                  </span>
+                )}
+              </Link>
             );
+
+            return <div key={item.href}>{withTooltip(item.title, link)}</div>;
           })}
         </nav>
       </div>
+      {onToggle && (
+        <div className="lg:hidden absolute bottom-3 right-3">
+          <button
+            onClick={onToggle}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:text-foreground hover:bg-muted transition-colors"
+            aria-label="사이드바 닫기"
+          >
+            <span className="sr-only">사이드바 닫기</span>
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
     </aside>
   );
 }

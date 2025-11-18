@@ -16,6 +16,8 @@ import { formatDate, purposeOptions } from "@/lib/pageUtils";
 import PageHeader from "@/components/layout/PageHeader";
 import PageContainer from "@/components/layout/PageContainer";
 import { Pagination, PaginationContent, PaginationItem } from "@/components/ui/pagination";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
 export default function ScriptsPage() {
   const { user } = useAuth();
@@ -282,68 +284,65 @@ export default function ScriptsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* 검색 및 필터 - 이미지 스타일 */}
-            <div className="flex flex-wrap items-center gap-4">
-              {/* 왼쪽 드롭다운 */}
-              <Select value={filterPurpose} onValueChange={setFilterPurpose}>
-                <SelectTrigger className="w-[120px]">
-                  <SelectValue placeholder="전체" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">전체</SelectItem>
-                  {purposeOptions.map((option) => {
-                    const count = scripts.filter((s) => s.purpose === option.id).length;
-                    return (
-                      <SelectItem key={option.id} value={option.id}>
-                        {option.label} ({count})
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-
-              {/* 중앙 검색 입력 */}
-              <div className="relative flex-1 min-w-[300px]">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+            <div className="flex flex-col gap-3">
+              <div className="relative w-full">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
                 <Input
                   placeholder="문구, 제목, 태그 검색"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10"
+                  className="w-full pl-10"
                 />
               </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Select value={filterPurpose} onValueChange={setFilterPurpose}>
+                  <SelectTrigger className="w-full sm:w-[160px]">
+                    <SelectValue placeholder="전체" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">전체</SelectItem>
+                    {purposeOptions.map((option) => {
+                      const count = scripts.filter((s) => s.purpose === option.id).length;
+                      return (
+                        <SelectItem key={option.id} value={option.id}>
+                          {option.label} ({count})
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
 
-              {/* 오른쪽 드롭다운들 */}
-              <Select value={filterDate} onValueChange={setFilterDate}>
-                <SelectTrigger className="w-[120px]">
-                  <SelectValue placeholder="전체" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">전체</SelectItem>
-                  <SelectItem value="today">오늘</SelectItem>
-                  <SelectItem value="week">이번 주</SelectItem>
-                  <SelectItem value="month">이번 달</SelectItem>
-                </SelectContent>
-              </Select>
+                <Select value={filterDate} onValueChange={setFilterDate}>
+                  <SelectTrigger className="w-full sm:w-[160px]">
+                    <SelectValue placeholder="전체" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">전체</SelectItem>
+                    <SelectItem value="today">오늘</SelectItem>
+                    <SelectItem value="week">이번 주</SelectItem>
+                    <SelectItem value="month">이번 달</SelectItem>
+                  </SelectContent>
+                </Select>
 
-              <Select value={sortOrder} onValueChange={(v) => setSortOrder(v as "newest" | "oldest")}>
-                <SelectTrigger className="w-[120px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="newest">최신순</SelectItem>
-                  <SelectItem value="oldest">오래된순</SelectItem>
-                </SelectContent>
-              </Select>
+                <Select value={sortOrder} onValueChange={(v) => setSortOrder(v as "newest" | "oldest")}>
+                  <SelectTrigger className="w-full sm:w-[160px]">
+                    <SelectValue placeholder="정렬" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="newest">최신순</SelectItem>
+                    <SelectItem value="oldest">오래된순</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </CardContent>
         </Card>
 
         {/* 문구 목록 */}
-        {filteredScripts.length === 0 ? (
+          {filteredScripts.length === 0 ? (
           <Card>
-            <CardContent className="flex flex-col items-center justify-center py-16">
-              <FileText className="w-16 h-16 text-muted-foreground mb-4" />
+              <CardContent className="flex flex-col items-center justify-center py-16">
+                <FileText className="w-16 h-16 text-muted-foreground mb-4" />
               <p className="text-muted-foreground mb-4">
                 {searchQuery || filterPurpose !== "all" || filterDate !== "all" 
                   ? "검색 결과가 없습니다." 
@@ -355,143 +354,173 @@ export default function ScriptsPage() {
                   첫 문구 작성하기
                 </Button>
               )}
-            </CardContent>
-          </Card>
-        ) : (
+              </CardContent>
+            </Card>
+          ) : (
           <div className="space-y-4">
             <Card>
               <CardContent className="p-0">
                 <div className="space-y-2 p-4">
-                  {paginatedScripts.map((script) => (
-                    <div
-                      key={script.id}
-                      className="rounded-lg border bg-card p-3 hover:bg-muted/50 transition-colors"
-                    >
-                      {editingId === script.id ? (
-                        // 편집 모드
-                        <div className="flex items-start gap-4">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex flex-wrap gap-1 mb-2">
-                              <Badge variant="outline" className="text-xs">
-                                {getPurposeLabel(script.purpose)}
-                              </Badge>
-                              {script.tags && script.tags.length > 0 && (
-                                <>
-                                  {script.tags.slice(0, 4).map((tag, idx) => (
-                                    <Badge key={idx} variant="secondary" className="text-xs">
-                                      {tag}
-                                    </Badge>
-                                  ))}
-                                  {script.tags.length > 4 && (
-                                    <Badge variant="secondary" className="text-xs">
-                                      +{script.tags.length - 4}
-                                    </Badge>
-                                  )}
-                                </>
-                              )}
+                  {paginatedScripts.map((script) => {
+                    const isFavorite = messageFavorites.has(String(script.id)) || script.isFavorite === true;
+                    return (
+                      <div
+                        key={script.id}
+                        className="rounded-lg border bg-card p-3 hover:bg-muted/50 transition-colors"
+                      >
+                        {editingId === script.id ? (
+                          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="flex-1 min-w-0 space-y-3">
+                              <div className="flex flex-wrap gap-1">
+                                <Badge variant="outline" className="text-xs">
+                                  {getPurposeLabel(script.purpose)}
+                                </Badge>
+                                {script.tags && script.tags.length > 0 && (
+                                  <>
+                                    {script.tags.slice(0, 4).map((tag, idx) => (
+                                      <Badge key={idx} variant="secondary" className="text-xs">
+                                        {tag}
+                                      </Badge>
+                                    ))}
+                                    {script.tags.length > 4 && (
+                                      <Badge variant="secondary" className="text-xs">
+                                        +{script.tags.length - 4}
+                                      </Badge>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                              <Textarea
+                                value={editingText}
+                                onChange={(e) => setEditingText(e.target.value)}
+                                className="min-h-[80px]"
+                                placeholder="문구 내용을 입력하세요..."
+                              />
                             </div>
-                            <Textarea
-                              value={editingText}
-                              onChange={(e) => setEditingText(e.target.value)}
-                              className="min-h-[60px]"
-                              placeholder="문구 내용을 입력하세요..."
-                            />
-                          </div>
-                          <div className="flex flex-col gap-2 flex-shrink-0">
-                            <Button
-                              size="sm"
-                              variant="default"
-                              onClick={handleSaveEdit}
-                            >
-                              <Save className="w-4 h-4 mr-2" />
-                              저장
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={handleCancelEdit}
-                            >
-                              <X className="w-4 h-4 mr-2" />
-                              취소
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
-                        // 읽기 모드 - 한 줄 레이아웃
-                        <div className="flex items-center gap-4">
-                          {/* 왼쪽: 태그와 텍스트 (2줄) */}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex flex-wrap gap-1 mb-1">
-                              <Badge variant="outline" className="text-xs">
-                                {getPurposeLabel(script.purpose)}
-                              </Badge>
-                              {script.tags && script.tags.length > 0 && (
-                                <>
-                                  {script.tags.slice(0, 4).map((tag, idx) => (
-                                    <Badge key={idx} variant="secondary" className="text-xs">
-                                      {tag}
-                                    </Badge>
-                                  ))}
-                                  {script.tags.length > 4 && (
-                                    <Badge variant="secondary" className="text-xs">
-                                      +{script.tags.length - 4}
-                                    </Badge>
-                                  )}
-                                </>
-                              )}
+                            <div className="flex w-full flex-col gap-2 sm:w-40">
+                              <Button
+                                size="sm"
+                                variant="default"
+                                onClick={handleSaveEdit}
+                                className="w-full"
+                              >
+                                <Save className="w-4 h-4 mr-2" />
+                                저장
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={handleCancelEdit}
+                                className="w-full"
+                              >
+                                <X className="w-4 h-4 mr-2" />
+                                취소
+                              </Button>
                             </div>
-                            <p className="text-sm text-foreground whitespace-pre-wrap line-clamp-2 leading-relaxed">
-                              {script.text}
-                            </p>
                           </div>
-                          {/* 오른쪽: 버튼들 (한 줄) */}
-                          <div className="flex items-center gap-2 flex-shrink-0">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (script.id) toggleFavorite(script.id);
-                              }}
-                              className={(messageFavorites.has(String(script.id)) || script.isFavorite === true) ? "text-yellow-500 hover:text-yellow-600" : "text-muted-foreground hover:text-yellow-500"}
-                              aria-label={(messageFavorites.has(String(script.id)) || script.isFavorite === true) ? "즐겨찾기 제거" : "즐겨찾기 추가"}
-                            >
-                              <Star className={`w-4 h-4 ${(messageFavorites.has(String(script.id)) || script.isFavorite === true) ? "fill-current" : ""}`} />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="default"
-                              className="bg-gradient-to-r from-primary to-accent text-white hover:opacity-90"
-                              onClick={() => navigate(`/audio/tts?loadMessage=${script.id}`)}
-                            >
-                              <Volume2 className="w-4 h-4 mr-2" />
-                              음원 생성
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleEdit(script)}
-                            >
-                              <Edit className="w-4 h-4 mr-2" />
-                              편집
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => script.id && handleDelete(script.id)}
-                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                            >
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              삭제
-                            </Button>
+                        ) : (
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                            <div className="flex-1 min-w-0 space-y-2">
+                              <div className="flex flex-wrap gap-1">
+                                <Badge variant="outline" className="text-xs">
+                                  {getPurposeLabel(script.purpose)}
+                                </Badge>
+                                {script.tags && script.tags.length > 0 && (
+                                  <>
+                                    {script.tags.slice(0, 4).map((tag, idx) => (
+                                      <Badge key={idx} variant="secondary" className="text-xs">
+                                        {tag}
+                                      </Badge>
+                                    ))}
+                                    {script.tags.length > 4 && (
+                                      <Badge variant="secondary" className="text-xs">
+                                        +{script.tags.length - 4}
+                                      </Badge>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                              <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
+                                {script.text}
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (script.id) toggleFavorite(script.id);
+                                    }}
+                                    className={cn(
+                                      "h-9 w-9 transition-colors",
+                                      isFavorite
+                                        ? "text-yellow-500 hover:text-yellow-600"
+                                        : "text-muted-foreground hover:text-yellow-500"
+                                    )}
+                                    aria-label={isFavorite ? "즐겨찾기 제거" : "즐겨찾기 추가"}
+                                  >
+                                    <Star className={cn("w-4 h-4", isFavorite && "fill-current")} />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>{isFavorite ? "즐겨찾기 제거" : "즐겨찾기 추가"}</TooltipContent>
+                              </Tooltip>
+
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    size="icon"
+                                    variant="default"
+                                    className="h-9 w-9"
+                                    onClick={() => navigate(`/audio/tts?loadMessage=${script.id}`)}
+                                    aria-label="음원 생성 페이지로 이동"
+                                  >
+                                    <Volume2 className="w-4 h-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>음원 생성</TooltipContent>
+                              </Tooltip>
+
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    size="icon"
+                                    variant="outline"
+                                    className="h-9 w-9"
+                                    onClick={() => handleEdit(script)}
+                                    aria-label="문구 편집"
+                                  >
+                                    <Edit className="w-4 h-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>편집</TooltipContent>
+                              </Tooltip>
+
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    size="icon"
+                                    variant="outline"
+                                    className="h-9 w-9 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                    onClick={() => script.id && handleDelete(script.id)}
+                                    aria-label="문구 삭제"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>삭제</TooltipContent>
+                              </Tooltip>
+                            </div>
                           </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+                        )}
+                      </div>
+                    );
+                  })}
+                  </div>
+                </CardContent>
+              </Card>
 
             {/* 페이지네이션 - 항상 표시 */}
             <div className="flex justify-center pt-2">
@@ -588,9 +617,9 @@ export default function ScriptsPage() {
                             <span className="text-sm font-medium text-muted-foreground min-w-[60px]">생성일:</span>
                             <span className="text-sm flex-1">{formatDate(script.createdAt)}</span>
                           </div>
-                        )}
-                      </div>
-                    </div>
+          )}
+        </div>
+      </div>
                   );
                 }
                 return (

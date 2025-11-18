@@ -460,7 +460,7 @@ export default function MessageManagementPage() {
       loadCustomChecklist();
     }
   }, [selectedPurpose, user?.id]);
-  
+
   const loadMessages = async () => {
     if (!user?.id) return;
     try {
@@ -717,7 +717,7 @@ export default function MessageManagementPage() {
 
       // 저장 후 초안 메시지 삭제
       localStorage.removeItem(DRAFT_MESSAGE_KEY);
-      
+
       setIsEditing(false);
       setEditingMessageId(null);
       setCustomText("");
@@ -780,7 +780,7 @@ export default function MessageManagementPage() {
   };
 
   const purposeMeta = getPurposeMeta(selectedPurpose);
-  
+
   // 커스텀 목적의 경우 직접 메타데이터 사용
   const getPurposeMetaForSelected = (purposeId: string) => {
     const customPurpose = customPurposes.find(p => p.id === purposeId);
@@ -942,19 +942,19 @@ export default function MessageManagementPage() {
                         }`}
                         onClick={async () => {
                           setSelectedPurpose(option.id);
-                          // DB에 저장
-                          if (user?.id) {
-                            try {
+                    // DB에 저장
+                    if (user?.id) {
+                      try {
                               await dbService.saveUserSettings(user.id, { selectedPurpose: option.id });
-                              toast({
-                                title: "목적 변경 완료",
+                        toast({
+                          title: "목적 변경 완료",
                                 description: `${option.label}이(가) 선택되었습니다.`,
-                              });
-                            } catch (error) {
-                              console.error("목적 저장 실패:", error);
-                            }
-                          }
-                        }}
+                        });
+                      } catch (error) {
+                        console.error("목적 저장 실패:", error);
+                      }
+                    }
+                  }}
                         onDoubleClick={() => {
                           // 더블클릭 시 기본문구를 직접작성에 표시
                           const purposeMeta = getPurposeMeta(option.id);
@@ -975,8 +975,8 @@ export default function MessageManagementPage() {
                                 variant={isSelected ? "default" : "outline"}
                                 className="text-xs"
                               >
-                                {option.label}
-                              </Badge>
+                        {option.label}
+                </Badge>
                               {isSelected && (
                                 <div className="w-2 h-2 bg-primary rounded-full"></div>
                               )}
@@ -1110,9 +1110,9 @@ export default function MessageManagementPage() {
                     {purposeMetaForSelected.checklist && purposeMetaForSelected.checklist.length > 0 && (
                       <AccordionItem value="checklist" className="border-none">
                         <div className="flex items-center justify-between">
-                          <AccordionTrigger className="text-sm font-semibold">
-                            검수 체크리스트
-                          </AccordionTrigger>
+                        <AccordionTrigger className="text-sm font-semibold">
+                          검수 체크리스트
+                        </AccordionTrigger>
                           <div className="flex gap-2 mr-2">
                             {customChecklist && (
                               <Button
@@ -1158,8 +1158,8 @@ export default function MessageManagementPage() {
                                     </Button>
                                   </div>
                                 </li>
-                              ))}
-                            </ul>
+                            ))}
+                          </ul>
 
                             {/* 편집 모드 */}
                             {editingChecklistItem !== null && (
@@ -1270,35 +1270,35 @@ export default function MessageManagementPage() {
                         </AccordionTrigger>
                         <AccordionContent>
                           <div className="space-y-3">
-                            <div className="space-y-2">
+                          <div className="space-y-2">
                               <div className="flex items-center justify-between">
                                 <p className="text-xs font-medium text-foreground">기본 프롬프트:</p>
-                                <Button
+                            <Button
                                   variant={hasBasicPromptInstruction ? "default" : "outline"}
-                                  size="sm"
-                                  className="text-xs h-7"
-                                  onClick={() => {
+                              size="sm"
+                              className="text-xs h-7"
+                              onClick={() => {
                                     const baseText = customText.trim() || purposeMetaForSelected.optimizedPrompt;
                                     const basicInstruction = purposeMetaForSelected.optimizedPrompt;
                                     const guidelinesText = `공공기관(지자체) 방송지침: ${publicBroadcastGuidelines.join(", ")}`;
-                                    
+                                
                                     if (!hasBasicPromptInstruction) {
                                       // 기본 프롬프트 지침 추가
                                       setOpenAIPrompt(baseText);
                                       if (hasPublicGuidelinesInstruction) {
                                         // 공공기관 지침이 이미 있으면 함께 유지
                                         setOpenAIInstruction(`${basicInstruction}\n\n${guidelinesText}`);
-                                      } else {
+                                  } else {
                                         // 공공기관 지침이 없으면 기본 프롬프트만 추가
                                         setOpenAIInstruction(basicInstruction);
-                                      }
+                                  }
                                       setHasBasicPromptInstruction(true);
                                       setActiveTab("ai-assist");
-                                      toast({
-                                        title: "지침 추가 완료",
+                                  toast({
+                                    title: "지침 추가 완료",
                                         description: "기본 프롬프트 지침이 추가되었습니다.",
-                                      });
-                                    } else {
+                                  });
+                                } else {
                                       // 기본 프롬프트 지침 제거
                                       if (hasPublicGuidelinesInstruction) {
                                         // 공공기관 지침이 있으면 공공기관 지침만 유지
@@ -1308,15 +1308,15 @@ export default function MessageManagementPage() {
                                         setOpenAIInstruction("");
                                       }
                                       setHasBasicPromptInstruction(false);
-                                      toast({
+                                  toast({
                                         title: "지침 제거 완료",
                                         description: "기본 프롬프트 지침이 제거되었습니다.",
-                                      });
-                                    }
-                                  }}
-                                >
+                                  });
+                                }
+                              }}
+                            >
                                   {hasBasicPromptInstruction ? "지침 제거" : "지침으로 추가"}
-                                </Button>
+                            </Button>
                               </div>
                               <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
                                 {purposeMetaForSelected.optimizedPrompt}
@@ -1498,11 +1498,11 @@ export default function MessageManagementPage() {
                       </div>
                     )}
                     
-                    <div className="space-y-2">
-                      <Label>메시지 내용 *</Label>
-                      <Textarea
+                  <div className="space-y-2">
+                    <Label>메시지 내용 *</Label>
+                    <Textarea
                         placeholder="메시지를 입력하세요... OpenAI 작성 탭에서 작성한 내용도 여기에 표시됩니다."
-                        value={customText}
+                      value={customText}
                         onChange={(e) => {
                           setCustomText(e.target.value);
                           // 텍스트 변경 시 자동 태그 생성 (useEffect에서도 처리되지만 즉시 반영)
@@ -1513,8 +1513,8 @@ export default function MessageManagementPage() {
                             }
                           }
                         }}
-                        className="min-h-[200px]"
-                      />
+                      className="min-h-[200px]"
+                    />
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
                       <span>
                         글자수: {customText.replace(/\s/g, '').length}자 / 총글자수(공백포함): {customText.length}자
@@ -1593,21 +1593,21 @@ export default function MessageManagementPage() {
                                 // 태그 사용 통계 업데이트
                                 updateTagUsage(updatedTags);
                               } else if (tags.includes(newTag)) {
-                                toast({
+                                  toast({
                                   title: "중복 태그",
                                   description: "이미 추가된 태그입니다.",
-                                  variant: "destructive",
-                                });
+                                    variant: "destructive",
+                                  });
                                 setTagInput("");
                               } else {
-                                toast({
+                                  toast({
                                   title: "태그 개수 초과",
                                   description: "태그는 최대 5개까지 추가할 수 있습니다.",
                                   variant: "destructive",
-                                });
+                                  });
+                                }
                               }
-                            }
-                          }}
+                            }}
                           className="w-auto min-w-[150px] flex-1 max-w-[200px]"
                         />
                       </div>
@@ -1634,7 +1634,7 @@ export default function MessageManagementPage() {
                         <div className="p-3 bg-muted/50 rounded-lg border border-border">
                           <div className="flex items-center justify-between mb-2">
                             <Label className="text-xs font-medium text-muted-foreground">추가된 지침:</Label>
-                            <Button
+                      <Button
                               variant="ghost"
                               size="sm"
                               className="h-6 w-6 p-0"
@@ -1657,11 +1657,11 @@ export default function MessageManagementPage() {
                         <Button
                           variant="default"
                           className="bg-gradient-to-r from-primary to-accent text-white hover:opacity-90"
-                          onClick={async () => {
-                            try {
-                              setIsLoadingAI(true);
-                              const org = user?.organization || "귀 기관";
-                              const dept = user?.department || "관계 부서";
+                        onClick={async () => {
+                          try {
+                            setIsLoadingAI(true);
+                            const org = user?.organization || "귀 기관";
+                            const dept = user?.department || "관계 부서";
                               const purposeLabel = purposeMetaForSelected?.label || "공지";
                               
                               // 기본 프롬프트 구성
@@ -1688,32 +1688,32 @@ export default function MessageManagementPage() {
                                 return;
                               }
                               
-                              // 마크다운 제거된 텍스트 적용
-                              setCustomText(out);
+                            // 마크다운 제거된 텍스트 적용
+                            setCustomText(out);
                               // 생성된 텍스트 기반으로 자동 태그 생성
                               const autoTags = generateAutoTags(out);
                               if (autoTags.length > 0) {
                                 setTags(autoTags);
                               }
-                              toast({
-                                title: "작성 완료",
-                                description: "OpenAI로 메시지가 생성되었습니다.",
-                              });
-                            } catch (e: any) {
-                              toast({
-                                title: "OpenAI 작성 실패",
-                                description: e?.message || "OpenAI 작성 중 오류가 발생했습니다.",
-                                variant: "destructive",
-                              });
-                            } finally {
-                              setIsLoadingAI(false);
-                            }
-                          }}
-                          disabled={isLoadingAI || !openAIPrompt.trim()}
-                        >
-                          {isLoadingAI ? "작성 중..." : "OpenAI로 작성"}
-                        </Button>
-                      </div>
+                            toast({
+                              title: "작성 완료",
+                              description: "OpenAI로 메시지가 생성되었습니다.",
+                            });
+                          } catch (e: any) {
+                            toast({
+                              title: "OpenAI 작성 실패",
+                              description: e?.message || "OpenAI 작성 중 오류가 발생했습니다.",
+                              variant: "destructive",
+                            });
+                          } finally {
+                            setIsLoadingAI(false);
+                          }
+                        }}
+                        disabled={isLoadingAI || !openAIPrompt.trim()}
+                      >
+                        {isLoadingAI ? "작성 중..." : "OpenAI로 작성"}
+                      </Button>
+                    </div>
                     </div>
                     
                     {/* 생성된/수정 가능한 메시지 영역 */}
@@ -1799,14 +1799,14 @@ export default function MessageManagementPage() {
                           <>
                             <Textarea
                               placeholder="예: 20초 분량으로 단문으로 작성하고, 숫자를 명확히 발음할 수 있도록 수정. 또는 '지침으로 추가' 버튼을 통해 프롬프트 지침을 추가할 수 있습니다."
-                              value={openAIInstruction}
+                        value={openAIInstruction}
                               onChange={(e) => {
                                 setOpenAIInstruction(e.target.value);
                                 // 수동 입력 시 선택된 샘플 지침 업데이트
                                 updateSelectedSamplesFromText(e.target.value);
                               }}
-                              className="min-h-[100px]"
-                            />
+                        className="min-h-[100px]"
+                      />
                             {/* 샘플 지침 빠른 선택 버튼 */}
                             <div className="space-y-2">
                               <p className="text-xs text-muted-foreground">자주 사용하는 지침:</p>
@@ -1814,9 +1814,9 @@ export default function MessageManagementPage() {
                                 {sampleInstructions.slice(0, 5).map((instruction, idx) => {
                                   const isSelected = selectedSampleInstructions.has(idx);
                                   return (
-                                    <Button
+                      <Button
                                       key={idx}
-                                      variant="outline"
+                        variant="outline"
                                       size="sm"
                                       className={`text-xs h-7 max-w-[200px] ${
                                         isSelected 
@@ -1839,17 +1839,17 @@ export default function MessageManagementPage() {
                               <Button
                                 variant="default"
                                 className="bg-gradient-to-r from-primary to-accent text-white hover:opacity-90"
-                              onClick={async () => {
-                                try {
-                                  if (!customText.trim()) {
-                                    toast({
-                                      title: "텍스트 없음",
-                                      description: "수정할 텍스트를 입력해주세요.",
-                                      variant: "destructive",
-                                    });
-                                    return;
-                                  }
-                                  setIsLoadingAI(true);
+                        onClick={async () => {
+                          try {
+                            if (!customText.trim()) {
+                              toast({
+                                title: "텍스트 없음",
+                                description: "수정할 텍스트를 입력해주세요.",
+                                variant: "destructive",
+                              });
+                              return;
+                            }
+                            setIsLoadingAI(true);
                                   // 프롬프트 최적화: 간결하게 수정 지침만 전달
                                   let out = await editWithOpenAI(customText, openAIInstruction);
                                   
@@ -1862,37 +1862,37 @@ export default function MessageManagementPage() {
                                     return;
                                   }
                                   
-                                  // 마크다운 제거된 텍스트 적용
-                                  setCustomText(out);
+                            // 마크다운 제거된 텍스트 적용
+                            setCustomText(out);
                                   // 수정된 텍스트 기반으로 자동 태그 생성
                                   const autoTags = generateAutoTags(out);
                                   if (autoTags.length > 0) {
                                     setTags(autoTags);
                                   }
-                                  toast({
-                                    title: "수정 완료",
-                                    description: "OpenAI로 메시지가 수정되었습니다.",
-                                  });
+                            toast({
+                              title: "수정 완료",
+                              description: "OpenAI로 메시지가 수정되었습니다.",
+                            });
                                   // 수정 지침 초기화
                                   setOpenAIInstruction("");
                                   setSelectedSampleInstructions(new Set());
-                                } catch (e: any) {
-                                  toast({
-                                    title: "OpenAI 수정 실패",
-                                    description: e?.message || "OpenAI 수정 중 오류가 발생했습니다.",
-                                    variant: "destructive",
-                                  });
-                                } finally {
-                                  setIsLoadingAI(false);
-                                }
-                              }}
-                                disabled={isLoadingAI || !openAIInstruction.trim()}
-                              >
-                                {isLoadingAI ? "수정 중..." : "OpenAI로 수정"}
-                              </Button>
-                            </div>
+                          } catch (e: any) {
+                            toast({
+                              title: "OpenAI 수정 실패",
+                              description: e?.message || "OpenAI 수정 중 오류가 발생했습니다.",
+                              variant: "destructive",
+                            });
+                          } finally {
+                            setIsLoadingAI(false);
+                          }
+                        }}
+                        disabled={isLoadingAI || !openAIInstruction.trim()}
+                      >
+                        {isLoadingAI ? "수정 중..." : "OpenAI로 수정"}
+                      </Button>
+                    </div>
                           </>
-                        )}
+                  )}
                       </div>
                     )}
                     
@@ -1955,27 +1955,27 @@ export default function MessageManagementPage() {
               {/* 저장 버튼 영역 - OpenAI 작성 탭일 때만 표시 */}
               {activeTab === "ai-assist" && (
                 <div className="flex items-center gap-2 justify-end pt-4 border-t">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setCustomText("");
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setCustomText("");
                       setOpenAIPrompt("");
                       setOpenAIInstruction("");
                       setTags([]);
                       setTagInput("");
-                      setIsEditing(false);
-                      setEditingMessageId(null);
+                    setIsEditing(false);
+                    setEditingMessageId(null);
                       // 초안 메시지도 삭제
                       localStorage.removeItem(DRAFT_MESSAGE_KEY);
-                    }}
-                  >
-                    초기화
-                  </Button>
-                  <Button onClick={handleSaveMessage} disabled={!customText.trim()}>
-                    <Save className="w-4 h-4 mr-2" />
-                    {isEditing ? "수정 저장" : "저장"}
-                  </Button>
-                </div>
+                  }}
+                >
+                  초기화
+                </Button>
+                <Button onClick={handleSaveMessage} disabled={!customText.trim()}>
+                  <Save className="w-4 h-4 mr-2" />
+                  {isEditing ? "수정 저장" : "저장"}
+                </Button>
+              </div>
               )}
               
               {/* 직접 작성 탭일 때 저장 버튼 */}

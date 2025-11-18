@@ -422,12 +422,12 @@ const Dashboard = () => {
               </div>
             )}
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Building2 className="w-4 h-4 flex-shrink-0" />
                 <span className="truncate">{user.organization}</span>
                 {user.department && <span className="flex-shrink-0">• {user.department}</span>}
                 {user.position && <span className="flex-shrink-0">• {user.position}</span>}
-              </div>
+          </div>
               <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
                 <Users className="w-3 h-3 flex-shrink-0" />
                 <span className="truncate">{user.name}님</span>
@@ -435,11 +435,11 @@ const Dashboard = () => {
                 <span className="truncate">{user.email}</span>
                 <span className="flex-shrink-0">•</span>
                 <Badge variant="outline" className="text-xs flex-shrink-0">
-                  {user.plan === 'basic' ? '기본' : 
-                   user.plan === 'standard' ? '표준' : 
-                   user.plan === 'premium' ? '프리미엄' : 
-                   user.plan === 'custom' ? '맞춤형' : user.plan}
-                </Badge>
+              {user.plan === 'basic' ? '기본' : 
+               user.plan === 'standard' ? '표준' : 
+               user.plan === 'premium' ? '프리미엄' : 
+               user.plan === 'custom' ? '맞춤형' : user.plan}
+            </Badge>
               </div>
             </div>
           </div>
@@ -645,68 +645,68 @@ const Dashboard = () => {
                   </div>
                 ) : (
                   <>
-                    <div className="space-y-4">
-                      {recentBroadcasts.map((broadcast) => (
-                        <div
-                          key={broadcast.id}
-                          className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors"
-                        >
-                          <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 bg-gradient-to-br from-primary to-accent rounded-lg flex items-center justify-center">
-                              <Volume2 className="w-6 h-6 text-white" />
-                            </div>
-                            <div>
-                              <h3 className="font-medium">{broadcast.title}</h3>
-                              <p className="text-sm text-muted-foreground">
-                                {broadcast.voice} • {broadcast.duration}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <Badge
-                              variant={
-                                broadcast.status === "active"
-                                  ? "default"
-                                  : broadcast.status === "scheduled"
-                                  ? "secondary"
-                                  : "outline"
-                              }
-                            >
-                              {broadcast.status === "active" && (
-                                <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
-                              )}
-                              {broadcast.status === "scheduled" && (
-                                <Clock className="w-3 h-3 mr-1" />
-                              )}
-                              {broadcast.status === "completed" && (
-                                <CheckCircle className="w-3 h-3 mr-1" />
-                              )}
-                              {broadcast.status === "active"
-                                ? "방송 중"
-                                : broadcast.status === "scheduled"
-                                ? "예약됨"
-                                : "완료"}
-                            </Badge>
-                            <div className="text-right">
-                              <p className="text-sm font-medium">{broadcast.nextRun}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {broadcast.status === "active" ? "다음 실행" : "실행 시간"}
-                              </p>
-                            </div>
-                          </div>
+                <div className="space-y-4">
+                  {recentBroadcasts.map((broadcast) => (
+                    <div
+                      key={broadcast.id}
+                      className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-gradient-to-br from-primary to-accent rounded-lg flex items-center justify-center">
+                          <Volume2 className="w-6 h-6 text-white" />
                         </div>
-                      ))}
+                        <div>
+                          <h3 className="font-medium">{broadcast.title}</h3>
+                          <p className="text-sm text-muted-foreground">
+                            {broadcast.voice} • {broadcast.duration}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Badge
+                          variant={
+                            broadcast.status === "active"
+                              ? "default"
+                              : broadcast.status === "scheduled"
+                              ? "secondary"
+                              : "outline"
+                          }
+                        >
+                          {broadcast.status === "active" && (
+                            <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                          )}
+                          {broadcast.status === "scheduled" && (
+                            <Clock className="w-3 h-3 mr-1" />
+                          )}
+                          {broadcast.status === "completed" && (
+                            <CheckCircle className="w-3 h-3 mr-1" />
+                          )}
+                          {broadcast.status === "active"
+                            ? "방송 중"
+                            : broadcast.status === "scheduled"
+                            ? "예약됨"
+                            : "완료"}
+                        </Badge>
+                        <div className="text-right">
+                          <p className="text-sm font-medium">{broadcast.nextRun}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {broadcast.status === "active" ? "다음 실행" : "실행 시간"}
+                          </p>
+                        </div>
+                      </div>
                     </div>
-                    
-                    <div className="mt-6">
+                  ))}
+                </div>
+                
+                <div className="mt-6">
                       <Button 
                         variant="outline" 
                         className="w-full"
                         onClick={() => navigate("/send/schedule")}
                       >
-                        모든 방송 보기
-                      </Button>
-                    </div>
+                    모든 방송 보기
+                  </Button>
+                </div>
                   </>
                 )}
               </CardContent>

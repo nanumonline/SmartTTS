@@ -22,13 +22,13 @@ const Login = () => {
     setIsSubmitting(true);
     
     try {
-      const success = await login(email, password);
-      
-      if (success) {
+    const success = await login(email, password);
+    
+    if (success) {
         // 로그인 성공 시 대시보드로 이동
-        navigate("/dashboard");
-      } else {
-        setError("이메일 또는 비밀번호가 올바르지 않습니다.");
+      navigate("/dashboard");
+    } else {
+      setError("이메일 또는 비밀번호가 올바르지 않습니다.");
       }
     } catch (err) {
       setError("로그인 중 오류가 발생했습니다.");

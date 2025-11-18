@@ -67,7 +67,7 @@ serve(async (req: Request) => {
 
     // 시스템 프롬프트 최적화 (토큰 절약)
     const systemPrompt = "공공기관 방송문 전문가. 격식 있고 간결한 문장. TTS 친화적 숫자/단위 표기.";
-    
+
     let userPrompt = "";
     
     if (type === "generate") {

@@ -163,24 +163,24 @@ const Register = () => {
     setIsSubmitting(true);
     
     try {
-      if (formData.password !== formData.confirmPassword) {
-        setError("비밀번호가 일치하지 않습니다.");
+    if (formData.password !== formData.confirmPassword) {
+      setError("비밀번호가 일치하지 않습니다.");
         setIsSubmitting(false);
-        return;
-      }
-      
-      if (!agreedTerms || !agreedPrivacy) {
-        setError("약관에 동의해주세요.");
+      return;
+    }
+    
+    if (!agreedTerms || !agreedPrivacy) {
+      setError("약관에 동의해주세요.");
         setIsSubmitting(false);
-        return;
-      }
-      
-      const success = await register(formData);
-      
-      if (success) {
-        navigate("/dashboard");
-      } else {
-        setError("회원가입 중 오류가 발생했습니다. 다시 시도해주세요.");
+      return;
+    }
+    
+    const success = await register(formData);
+    
+    if (success) {
+      navigate("/dashboard");
+    } else {
+      setError("회원가입 중 오류가 발생했습니다. 다시 시도해주세요.");
       }
     } catch (err) {
       setError("회원가입 중 오류가 발생했습니다.");

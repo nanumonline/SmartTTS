@@ -9,11 +9,17 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Bell, User, LogOut, Settings as SettingsIcon } from "lucide-react";
+import { Bell, User, LogOut, Settings as SettingsIcon, Menu, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
-export default function TopNav() {
+interface TopNavProps {
+  onToggleSidebar?: () => void;
+  isSidebarOpen?: boolean;
+}
+
+export default function TopNav({ onToggleSidebar, isSidebarOpen }: TopNavProps) {
   const { isAuthenticated, user, logout } = useAuth();
   const navigate = useNavigate();
 
@@ -34,8 +40,27 @@ export default function TopNav() {
     .slice(0, 2) || "U";
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-6 w-full">
-      <div className="flex flex-1 items-center gap-4">
+    <header className="sticky top-0 z-20 flex h-16 items-center gap-4 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4 sm:px-6 w-full">
+      <div className="flex flex-1 items-center gap-3">
+        {onToggleSidebar && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className={cn(
+              "text-muted-foreground transition-colors hover:text-foreground",
+              isSidebarOpen && "text-primary"
+            )}
+            onClick={onToggleSidebar}
+            aria-label={isSidebarOpen ? "사이드바 닫기" : "사이드바 열기"}
+            aria-expanded={isSidebarOpen}
+            aria-pressed={isSidebarOpen}
+          >
+            {isSidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            <span className="sr-only">
+              {isSidebarOpen ? "사이드바 닫기" : "사이드바 열기"}
+            </span>
+          </Button>
+        )}
         {/* Breadcrumb 등 추가 공간 */}
       </div>
       

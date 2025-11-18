@@ -13,7 +13,14 @@ function isTransientNetworkError(err: any): boolean {
     msg.includes("Failed to fetch") ||
     msg.includes("ERR_FAILED") ||
     msg.includes("ECONNREFUSED") ||
-    msg.includes("NetworkError")
+    msg.includes("ETIMEDOUT") ||
+    msg.includes("NetworkError") ||
+    msg.includes("502") ||
+    msg.includes("504") ||
+    msg.includes("522") ||
+    msg.includes("524") ||
+    err?.code === "ECONNREFUSED" ||
+    err?.code === "ETIMEDOUT"
   );
 }
 
@@ -32,7 +39,16 @@ async function withRetry<T>(fn: () => Promise<T>, retries: number = 1, delayMs: 
 // CORS/엣지(522) 오류 감지 및 완화
 function isCorsOrEdgeError(err: any): boolean {
   const msg = ((err?.message || "") + " " + (err?.details || "")).toLowerCase();
-  return msg.includes("cors") || msg.includes("access-control-allow-origin") || msg.includes("522");
+  // CORS 에러, 엣지 에러(522, 524), 게이트웨이 타임아웃(504), 네트워크 에러 감지
+  return msg.includes("cors") || 
+         msg.includes("access-control-allow-origin") || 
+         msg.includes("522") || 
+         msg.includes("524") || 
+         msg.includes("504") ||
+         msg.includes("failed to fetch") ||
+         msg.includes("network") ||
+         err?.code === "ECONNREFUSED" ||
+         err?.code === "ETIMEDOUT";
 }
 
 // ==================== 음원 생성 이력 ====================
@@ -61,6 +77,7 @@ export interface GenerationEntry {
   mimeType?: string; // 오디오 MIME 타입 (예: "audio/mpeg", "audio/wav")
   status?: string;
   hasAudio?: boolean;
+  isFavorite?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -113,6 +130,7 @@ export async function saveGeneration(userId: string, entry: GenerationEntry, aud
       mime_type: entry.mimeType || (audioBlob?.type || "audio/mpeg"), // MIME 타입 저장
       status: entry.status || "ready",
       has_audio: entry.hasAudio !== false,
+      is_favorite: entry.isFavorite === true,
     };
 
     // 1) 우선 기본 필드만 insert 하여 400을 방지
@@ -122,20 +140,41 @@ export async function saveGeneration(userId: string, entry: GenerationEntry, aud
       .select("id")
       .single();
 
-    if (error) {
-      // 테이블이 없으면 조용히 실패 (마이그레이션 미적용 상태)
-      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
+    let insertData = data;
+    let insertError = error;
+
+    if (insertError) {
+      const missingFavoriteColumn =
+        insertError.code === "42703" ||
+        insertError.message?.includes("is_favorite") ||
+        insertError.message?.includes("column is_favorite");
+
+      if (missingFavoriteColumn) {
+        console.warn("'is_favorite' 컬럼을 찾을 수 없습니다. Supabase 마이그레이션 전까지 즐겨찾기 값 없이 저장합니다.");
+        const fallbackData = { ...baseData } as any;
+        delete fallbackData.is_favorite;
+        const fallbackResult = await supabase
+          .from("tts_generations")
+          .insert(fallbackData)
+          .select("id")
+          .single();
+        insertData = fallbackResult.data;
+        insertError = fallbackResult.error;
+      }
+    }
+
+    if (insertError) {
+      if (insertError.code === "PGRST205" || insertError.message?.includes("schema cache")) {
         console.warn("DB 테이블이 아직 생성되지 않았습니다. 마이그레이션을 적용해주세요.");
         return null;
       }
-      // 400 에러도 조용히 처리 (마이그레이션 미적용 상태)
-      if (error.message?.includes("400")) {
-        console.warn("DB 저장 실패 (400): 마이그레이션을 적용해주세요:", error.message);
+      if (insertError.message?.includes("400")) {
+        console.warn("DB 저장 실패 (400): 마이그레이션을 적용해주세요:", insertError.message);
         return null;
       }
-      throw error;
+      throw insertError;
     }
-    const newId = data?.id || null;
+    const newId = insertData?.id || null;
 
     // 2) 확장 필드는 업데이트로 시도하되, 컬럼 부재/권한 에러는 조용히 무시
     if (newId) {
@@ -152,6 +191,7 @@ export async function saveGeneration(userId: string, entry: GenerationEntry, aud
             .eq("id", newId);
           if (extErr) {
             // 컬럼 없음(42703)/권한/PGRST 계열 에러는 무시
+            // 400 에러도 조용히 처리 (컬럼이 없거나 마이그레이션 미적용 상태)
             if (
               extErr.code === "42703" ||
               extErr.code === "PGRST205" ||
@@ -159,9 +199,11 @@ export async function saveGeneration(userId: string, entry: GenerationEntry, aud
               extErr.code === "42501" ||
               extErr.message?.includes("401") ||
               extErr.message?.includes("403") ||
-              extErr.message?.includes("406")
+              extErr.message?.includes("406") ||
+              extErr.message?.includes("400") ||
+              extErr.code === "PGRST116" // PostgREST 400 에러 코드
             ) {
-              // no-op
+              // no-op (조용히 무시)
             } else {
               console.warn("확장 필드 업데이트 실패:", extErr.message);
             }
@@ -199,7 +241,7 @@ export async function saveGeneration(userId: string, entry: GenerationEntry, aud
 export async function loadGenerations(userId: string, limit: number = 200): Promise<GenerationEntry[]> {
   try {
     const baseColumns = "id, purpose, purpose_label, voice_id, voice_name, saved_name, text_preview, text_length, duration, language, model, style, speed, pitch_shift, audio_url, cache_key, mime_type, status, has_audio, created_at, updated_at";
-    const extendedColumns = baseColumns + ", storage_path, format, param_hash";
+    const favoriteColumns = baseColumns + ", is_favorite";
 
     const buildQuery = (columns: string) =>
       supabase
@@ -209,45 +251,51 @@ export async function loadGenerations(userId: string, limit: number = 200): Prom
         .order("created_at", { ascending: false })
         .limit(Math.max(1, Math.min(500, limit)));
 
-    // 기본 컬럼만으로 조회 (안정성 우선)
-    // 마이그레이션이 적용되면 extendedColumns가 자동으로 사용됨
-    // 지금은 기본 컬럼만 사용하여 400 에러 방지
-    const { data, error } = await buildQuery(baseColumns);
-    
-    // extendedColumns 쿼리는 실행하지 않음 (마이그레이션 미적용 시 400 에러 방지)
-    // 마이그레이션 적용 후에는 별도로 extendedColumns를 조회할 필요 없음
-    // (기본 컬럼만으로도 충분하며, 나중에 마이그레이션 적용 시 자동으로 컬럼이 추가됨)
+    let favoriteAvailable = true;
 
-    // 에러가 있으면 조용히 처리
+    let { data, error } = await buildQuery(favoriteColumns);
+
     if (error) {
-      // 테이블이 없으면 빈 배열 반환
-      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
+      const missingFavoriteColumn =
+        error.code === "42703" ||
+        error.message?.includes("is_favorite") ||
+        error.message?.includes("column is_favorite");
+
+      if (missingFavoriteColumn) {
+        favoriteAvailable = false;
+        console.warn("'is_favorite' 컬럼을 찾을 수 없습니다. Supabase 마이그레이션이 필요합니다.");
+        ({ data, error } = await buildQuery(baseColumns));
+      }
+
+      if (error) {
+        if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
+          return [];
+        }
+        if (error.message?.includes("400") || error.code === "42703" || error.message?.includes("column")) {
+          console.warn("DB 조회 실패 (컬럼 누락): 마이그레이션을 적용해주세요:", error.message);
+          return [];
+        }
+        if (isCorsOrEdgeError(error)) {
+          console.warn("생성 이력 조회 실패 (CORS/엣지): 오프라인 모드로 계속합니다.");
+          return [];
+        }
+        console.error("생성 이력 조회 실패:", error);
         return [];
       }
-      // 400 에러는 컬럼이 없을 가능성이 높음 (이미 기본 컬럼으로 시도했으므로 조용히 처리)
-      if (error.message?.includes("400") || error.code === "42703" || error.message?.includes("column")) {
-        console.warn("DB 조회 실패 (컬럼 누락): 마이그레이션을 적용해주세요:", error.message);
-        return [];
-      }
-      // CORS/엣지(522) 오류는 오프라인 모드처럼 조용히 빈 배열 반환
-      if (isCorsOrEdgeError(error)) {
-        console.warn("생성 이력 조회 실패 (CORS/엣지): 오프라인 모드로 계속합니다.");
-        return [];
-      }
-      console.error("생성 이력 조회 실패:", error);
-      return [];
     }
 
     return (data || []).map((row: any) => {
       const derivedCacheKey = row.cache_key || (row.param_hash ? `hash_${row.param_hash}` : null);
-      
-      // blob: URL은 null로 설정 (필요할 때만 생성)
-      // 이렇게 하면 브라우저가 만료된 blob URL에 접근하지 않습니다
+
       let audioUrl = row.audio_url;
-      if (audioUrl && audioUrl.startsWith('blob:')) {
-        audioUrl = null; // blob URL은 null로 설정하여 브라우저가 접근하지 않도록 함
+      if (audioUrl && audioUrl.startsWith("blob:")) {
+        audioUrl = null;
       }
-      
+
+      const favoriteValue = favoriteAvailable
+        ? row.is_favorite === true || row.is_favorite === 1
+        : false;
+
       return {
         id: row.id,
         purpose: row.purpose,
@@ -264,20 +312,20 @@ export async function loadGenerations(userId: string, limit: number = 200): Prom
         speed: row.speed,
         pitchShift: row.pitch_shift,
         audioBlob: null,
-        audioUrl: audioUrl, // blob URL은 null로 설정됨
-        mimeType: row.mime_type || "audio/mpeg", // MIME 타입 로드
+        audioUrl,
+        mimeType: row.mime_type || "audio/mpeg",
         cacheKey: derivedCacheKey || undefined,
         storagePath: row.storage_path || null,
         format: row.format || null,
         paramHash: row.param_hash || null,
         status: row.status,
         hasAudio: row.has_audio,
+        isFavorite: favoriteValue,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       };
     });
   } catch (error: any) {
-    // 테이블이 없으면 조용히 빈 배열 반환
     if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
       return [];
     }
@@ -415,6 +463,23 @@ export async function loadGenerationBlob(userId: string, id: string): Promise<{ 
       return null;
     }
 
+    // 일부 레거시 데이터는 "[73,68,...]" 형태의 문자열로 저장되어 있음
+    // 첫 바이트가 '['(91)인 경우 JSON 배열로 파싱 후 Uint8Array로 변환
+    const firstByte = new Uint8Array(buf)[0];
+    if (firstByte === 91 /* '[' */) {
+      try {
+        const text = new TextDecoder().decode(buf);
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed)) {
+          const bytes = new Uint8Array(parsed as number[]);
+          buf = bytes.buffer;
+          console.log(`[loadGenerationBlob] JSON 배열 디코딩 완료: ${bytes.length} bytes`);
+        }
+      } catch (error) {
+        console.warn("[loadGenerationBlob] JSON 배열 파싱 실패:", error);
+      }
+    }
+
     return { audioBlob: buf, mimeType: data?.mime_type };
   } catch (error: any) {
     // 500 에러는 서버 문제로 조용히 처리
@@ -440,6 +505,12 @@ export async function updateGeneration(userId: string, id: string, updates: Part
     if (updates.savedName !== undefined) updateData.saved_name = truncateString(updates.savedName, 255);
     if (updates.textPreview !== undefined) updateData.text_preview = updates.textPreview; // TEXT 타입
     if (updates.audioUrl !== undefined) updateData.audio_url = updates.audioUrl; // TEXT 타입
+    if (updates.isFavorite !== undefined) updateData.is_favorite = updates.isFavorite === true;
+
+    // 업데이트할 데이터가 없으면 조기 반환
+    if (Object.keys(updateData).length === 0) {
+      return true;
+    }
 
     const { error } = await supabase
       .from("tts_generations")
@@ -448,13 +519,43 @@ export async function updateGeneration(userId: string, id: string, updates: Part
       .eq("id", id);
 
     if (error) {
-      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
+      // 400 에러도 조용히 처리 (컬럼이 없거나 마이그레이션 미적용 상태, RLS 정책 문제 등)
+      const errorMessage = error.message || "";
+      const errorCode = error.code || "";
+      const isIgnorableError = 
+        errorCode === "PGRST205" || 
+        errorCode === "PGRST116" || // PostgREST 400 에러 코드
+        errorCode === "42703" || // 컬럼 없음
+        errorCode === "23505" || // Unique constraint violation
+        errorMessage.includes("schema cache") ||
+        errorMessage.includes("400") ||
+        errorMessage.includes("Bad Request");
+      
+      if (isIgnorableError) {
+        // 조용히 실패 처리 (콘솔 에러 없음)
         return false;
       }
       throw error;
     }
     return true;
   } catch (error: any) {
+    // 400 에러는 조용히 처리
+    const errorMessage = error?.message || "";
+    const errorCode = error?.code || "";
+    const isIgnorableError = 
+      errorCode === "PGRST205" || 
+      errorCode === "PGRST116" ||
+      errorCode === "42703" ||
+      errorCode === "23505" ||
+      errorMessage.includes("schema cache") ||
+      errorMessage.includes("400") ||
+      errorMessage.includes("Bad Request");
+    
+    if (isIgnorableError) {
+      // 조용히 실패 처리 (콘솔 에러 없음)
+      return false;
+    }
+    // 심각한 에러만 로깅
     if (error.code !== "PGRST205") {
       console.error("생성 이력 업데이트 실패:", error);
     }
@@ -484,6 +585,10 @@ export async function deleteGeneration(userId: string, id: string): Promise<bool
     }
     return false;
   }
+}
+
+export async function setGenerationFavorite(userId: string, id: string, isFavorite: boolean): Promise<boolean> {
+  return updateGeneration(userId, id, { isFavorite });
 }
 
 // ==================== 즐겨찾기 ====================
@@ -563,10 +668,25 @@ export async function loadFavorites(userId: string): Promise<string[]> {
       return [];
     }
 
-    const { data, error } = await supabase
-      .from("tts_favorites")
-      .select("voice_id")
-      .eq("user_id", userId);
+    const { data, error } = await withRetry(async () => {
+      const result = await supabase
+        .from("tts_favorites")
+        .select("voice_id")
+        .eq("user_id", userId);
+      
+      // 네트워크 에러 감지
+      if (result.error) {
+        const errorMsg = (result.error?.message || "").toLowerCase();
+        if (errorMsg.includes("failed to fetch") || 
+            errorMsg.includes("522") || 
+            errorMsg.includes("524") || 
+            errorMsg.includes("504")) {
+          throw result.error;
+        }
+      }
+      
+      return result;
+    });
 
     if (error) {
       if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
@@ -577,12 +697,20 @@ export async function loadFavorites(userId: string): Promise<string[]> {
         console.warn("유효하지 않은 userId 형식:", userId);
         return [];
       }
+      // CORS/네트워크 에러인 경우 빈 배열 반환 (오프라인 모드)
+      if (isCorsOrEdgeError(error)) {
+        console.warn("즐겨찾기 조회 실패 (CORS/엣지): 오프라인 모드로 계속합니다.");
+        return [];
+      }
       throw error;
     }
     return (data || []).map((row: any) => row.voice_id);
   } catch (error: any) {
     if (error.code !== "PGRST205" && error.code !== "22P02") {
-      console.error("즐겨찾기 조회 실패:", error);
+      // CORS/네트워크 에러는 조용히 처리
+      if (!isCorsOrEdgeError(error)) {
+        console.error("즐겨찾기 조회 실패:", error);
+      }
     }
     return [];
   }
@@ -836,13 +964,33 @@ export async function saveMixingState(userId: string, state: MixingStateEntry, a
 // 믹싱 상태 조회
 export async function loadMixingStates(userId: string): Promise<Map<string, MixingStateEntry>> {
   try {
-    const { data, error } = await supabase
-      .from("tts_mixing_states")
-      .select("*")
-      .eq("user_id", userId);
+    const { data, error } = await withRetry(async () => {
+      const result = await supabase
+        .from("tts_mixing_states")
+        .select("*")
+        .eq("user_id", userId);
+      
+      // 네트워크 에러 감지
+      if (result.error) {
+        const errorMsg = (result.error?.message || "").toLowerCase();
+        if (errorMsg.includes("failed to fetch") || 
+            errorMsg.includes("522") || 
+            errorMsg.includes("524") || 
+            errorMsg.includes("504")) {
+          throw result.error;
+        }
+      }
+      
+      return result;
+    });
 
     if (error) {
       if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
+        return new Map();
+      }
+      // CORS/네트워크 에러인 경우 빈 Map 반환 (오프라인 모드)
+      if (isCorsOrEdgeError(error)) {
+        console.warn("믹싱 상태 조회 실패 (CORS/엣지): 오프라인 모드로 계속합니다.");
         return new Map();
       }
       throw error;
@@ -860,7 +1008,10 @@ export async function loadMixingStates(userId: string): Promise<Map<string, Mixi
     return map;
   } catch (error: any) {
     if (error.code !== "PGRST205") {
-      console.error("믹싱 상태 조회 실패:", error);
+      // CORS/네트워크 에러는 조용히 처리
+      if (!isCorsOrEdgeError(error)) {
+        console.error("믹싱 상태 조회 실패:", error);
+      }
     }
     return new Map();
   }
@@ -920,14 +1071,34 @@ export async function saveScheduleRequest(userId: string, request: ScheduleReque
 // 예약 요청 조회
 export async function loadScheduleRequests(userId: string): Promise<ScheduleRequestEntry[]> {
   try {
-    const { data, error } = await supabase
-      .from("tts_schedule_requests")
-      .select("*")
-      .eq("user_id", userId)
-      .order("scheduled_time", { ascending: false });
+    const { data, error } = await withRetry(async () => {
+      const result = await supabase
+        .from("tts_schedule_requests")
+        .select("*")
+        .eq("user_id", userId)
+        .order("scheduled_time", { ascending: false });
+      
+      // 네트워크 에러 감지
+      if (result.error) {
+        const errorMsg = (result.error?.message || "").toLowerCase();
+        if (errorMsg.includes("failed to fetch") || 
+            errorMsg.includes("522") || 
+            errorMsg.includes("524") || 
+            errorMsg.includes("504")) {
+          throw result.error;
+        }
+      }
+      
+      return result;
+    });
 
     if (error) {
       if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
+        return [];
+      }
+      // CORS/네트워크 에러인 경우 빈 배열 반환 (오프라인 모드)
+      if (isCorsOrEdgeError(error)) {
+        console.warn("예약 요청 조회 실패 (CORS/엣지): 오프라인 모드로 계속합니다.");
         return [];
       }
       throw error;
@@ -948,7 +1119,10 @@ export async function loadScheduleRequests(userId: string): Promise<ScheduleRequ
     }));
   } catch (error: any) {
     if (error.code !== "PGRST205") {
-      console.error("예약 요청 조회 실패:", error);
+      // CORS/네트워크 에러는 조용히 처리
+      if (!isCorsOrEdgeError(error)) {
+        console.error("예약 요청 조회 실패:", error);
+      }
     }
     return [];
   }
@@ -996,13 +1170,33 @@ export async function saveReviewState(userId: string, state: ReviewStateEntry): 
 // 검수 상태 조회
 export async function loadReviewStates(userId: string): Promise<Map<string, ReviewStateEntry>> {
   try {
-    const { data, error } = await supabase
-      .from("tts_review_states")
-      .select("*")
-      .eq("user_id", userId);
+    const { data, error } = await withRetry(async () => {
+      const result = await supabase
+        .from("tts_review_states")
+        .select("*")
+        .eq("user_id", userId);
+      
+      // 네트워크 에러 감지
+      if (result.error) {
+        const errorMsg = (result.error?.message || "").toLowerCase();
+        if (errorMsg.includes("failed to fetch") || 
+            errorMsg.includes("522") || 
+            errorMsg.includes("524") || 
+            errorMsg.includes("504")) {
+          throw result.error;
+        }
+      }
+      
+      return result;
+    });
 
     if (error) {
       if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
+        return new Map();
+      }
+      // CORS/네트워크 에러인 경우 빈 Map 반환 (오프라인 모드)
+      if (isCorsOrEdgeError(error)) {
+        console.warn("검수 상태 조회 실패 (CORS/엣지): 오프라인 모드로 계속합니다.");
         return new Map();
       }
       throw error;
@@ -1020,7 +1214,10 @@ export async function loadReviewStates(userId: string): Promise<Map<string, Revi
     return map;
   } catch (error: any) {
     if (error.code !== "PGRST205") {
-      console.error("검수 상태 조회 실패:", error);
+      // CORS/네트워크 에러는 조용히 처리
+      if (!isCorsOrEdgeError(error)) {
+        console.error("검수 상태 조회 실패:", error);
+      }
     }
     return new Map();
   }
@@ -1357,16 +1554,37 @@ export async function deleteMessage(userId: string, id: string): Promise<boolean
 // 메시지 목록 조회 (템플릿 제외)
 export async function loadMessages(userId: string): Promise<MessageHistoryEntry[]> {
   try {
-    // is_template 컬럼이 없을 수 있으므로, 먼저 모든 데이터를 가져온 후 필터링
-    const { data, error } = await supabase
-      .from("tts_message_history")
-      .select("*")
-      .eq("user_id", userId)
-      .order("updated_at", { ascending: false });
+    // is_template 컬럼이 없을 수 있으므로, 먼저 모든 데이터를 가져온 후 필터링 (재시도 포함)
+    const { data, error } = await withRetry(async () => {
+      const result = await supabase
+        .from("tts_message_history")
+        .select("*")
+        .eq("user_id", userId)
+        .order("updated_at", { ascending: false });
+      
+      // 네트워크 에러 감지 (response가 없거나 status가 522, 524, 504인 경우)
+      if (result.error) {
+        const errorMsg = (result.error?.message || "").toLowerCase();
+        if (errorMsg.includes("failed to fetch") || 
+            errorMsg.includes("522") || 
+            errorMsg.includes("524") || 
+            errorMsg.includes("504")) {
+          // 원본 에러를 그대로 throw하여 isCorsOrEdgeError가 감지할 수 있도록 함
+          throw result.error;
+        }
+      }
+      
+      return result;
+    });
 
     if (error) {
       // 컬럼이 존재하지 않는 경우 (42703) 또는 테이블이 없는 경우 (PGRST205)
       if (error.code === "PGRST205" || error.code === "42703" || error.message?.includes("schema cache") || error.message?.includes("does not exist")) {
+        return [];
+      }
+      // CORS/네트워크 에러인 경우 빈 배열 반환 (오프라인 모드)
+      if (isCorsOrEdgeError(error)) {
+        console.warn("메시지 조회 실패 (CORS/엣지): 오프라인 모드로 계속합니다.");
         return [];
       }
       throw error;
@@ -1404,7 +1622,10 @@ export async function loadMessages(userId: string): Promise<MessageHistoryEntry[
   } catch (error: any) {
     // 컬럼이 존재하지 않는 경우 (42703) 또는 테이블이 없는 경우 (PGRST205)
     if (error.code !== "PGRST205" && error.code !== "42703") {
-      console.error("메시지 조회 실패:", error);
+      // CORS/네트워크 에러는 조용히 처리
+      if (!isCorsOrEdgeError(error)) {
+        console.error("메시지 조회 실패:", error);
+      }
     }
     return [];
   }
@@ -1496,12 +1717,28 @@ export async function loadMessageFavorites(userId: string): Promise<string[]> {
       return [];
     }
 
-    // tts_message_history 테이블에서 is_favorite가 true인 메시지 조회
-    const { data, error } = await (supabase as any)
-      .from("tts_message_history")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("is_favorite", true);
+    // tts_message_history 테이블에서 is_favorite가 true인 메시지 조회 (재시도 포함)
+    const { data, error } = await withRetry(async () => {
+      const result = await (supabase as any)
+        .from("tts_message_history")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("is_favorite", true);
+      
+      // 네트워크 에러 감지 (response가 없거나 status가 522, 524, 504인 경우)
+      if (result.error) {
+        const errorMsg = (result.error?.message || "").toLowerCase();
+        if (errorMsg.includes("failed to fetch") || 
+            errorMsg.includes("522") || 
+            errorMsg.includes("524") || 
+            errorMsg.includes("504")) {
+          // 원본 에러를 그대로 throw하여 isCorsOrEdgeError가 감지할 수 있도록 함
+          throw result.error;
+        }
+      }
+      
+      return result;
+    });
 
     if (error) {
       // 컬럼이 없으면 빈 배열 반환
@@ -1526,7 +1763,10 @@ export async function loadMessageFavorites(userId: string): Promise<string[]> {
     return favoriteIds;
   } catch (error: any) {
     if (error.code !== "PGRST205" && error.code !== "42703" && error.code !== "22P02") {
-      console.error("메시지 즐겨찾기 조회 실패:", error);
+      // CORS/네트워크 에러는 조용히 처리
+      if (!isCorsOrEdgeError(error)) {
+        console.error("메시지 즐겨찾기 조회 실패:", error);
+      }
     }
     return [];
   }
@@ -1639,12 +1879,32 @@ export async function loadVoiceCatalog(): Promise<any[]> {
 // 음성 카탈로그 개수 조회
 export async function getVoiceCatalogCount(): Promise<number> {
   try {
-    const { count, error } = await supabase
-      .from("tts_voice_catalog")
-      .select("*", { count: "exact", head: true });
+    const { count, error } = await withRetry(async () => {
+      const result = await supabase
+        .from("tts_voice_catalog")
+        .select("*", { count: "exact", head: true });
+      
+      // 네트워크 에러 감지
+      if (result.error) {
+        const errorMsg = (result.error?.message || "").toLowerCase();
+        if (errorMsg.includes("failed to fetch") || 
+            errorMsg.includes("522") || 
+            errorMsg.includes("524") || 
+            errorMsg.includes("504")) {
+          throw result.error;
+        }
+      }
+      
+      return result;
+    });
 
     if (error) {
       if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
+        return 0;
+      }
+      // CORS/네트워크 에러인 경우 0 반환 (오프라인 모드)
+      if (isCorsOrEdgeError(error)) {
+        console.warn("음성 카탈로그 개수 조회 실패 (CORS/엣지): 오프라인 모드로 계속합니다.");
         return 0;
       }
       throw error;
@@ -1652,7 +1912,10 @@ export async function getVoiceCatalogCount(): Promise<number> {
     return count || 0;
   } catch (error: any) {
     if (error.code !== "PGRST205") {
-      console.error("음성 카탈로그 개수 조회 실패:", error);
+      // CORS/네트워크 에러는 조용히 처리
+      if (!isCorsOrEdgeError(error)) {
+        console.error("음성 카탈로그 개수 조회 실패:", error);
+      }
     }
     return 0;
   }

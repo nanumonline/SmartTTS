@@ -38,8 +38,17 @@ const AudioPlayer = ({
   const blobLoadTimeoutRef = useRef<number | null>(null); // blob URL 로드 타임아웃
   const guessedType = (() => {
     if (mimeType && typeof mimeType === 'string') return mimeType;
-    const lower = (audioUrl || '').toLowerCase();
+    const url = audioUrl || '';
+    if (url.startsWith('data:')) {
+      const match = /^data:([^;]+)/i.exec(url);
+      if (match?.[1]) {
+        return match[1];
+      }
+    }
+    const lower = url.toLowerCase();
     if (lower.endsWith('.wav')) return 'audio/wav';
+    if (lower.endsWith('.ogg')) return 'audio/ogg';
+    if (lower.endsWith('.flac')) return 'audio/flac';
     if (lower.endsWith('.mp3') || lower.startsWith('blob:')) return 'audio/mpeg';
     return 'audio/mpeg';
   })();
@@ -51,8 +60,19 @@ const AudioPlayer = ({
     // audioUrl이 변경되면 복원 상태 리셋
     if (audioUrl !== lastAudioUrlRef.current) {
       console.log(`[AudioPlayer] audioUrl 변경: ${lastAudioUrlRef.current?.substring(0, 50)} → ${audioUrl?.substring(0, 50)}`);
-      isRecoveringRef.current = false;
-      setIsRecovering(false);
+      // audioUrl이 유효한 값으로 변경되면 복원 상태 강제 해제
+      if (audioUrl && audioUrl.trim() !== '' && audioUrl.startsWith('blob:')) {
+        // 새로운 blob URL이 설정되면 복원 상태를 즉시 해제
+        isRecoveringRef.current = false;
+        setIsRecovering(false);
+      } else if (!audioUrl || audioUrl.trim() === '') {
+        // audioUrl이 비어있으면 복원 상태 유지 (복원 대기 중)
+        // 복원 상태는 유지하되, 기존 타임아웃은 클리어
+      } else {
+        // 일반 URL이면 복원 상태 해제
+        isRecoveringRef.current = false;
+        setIsRecovering(false);
+      }
       lastAudioUrlRef.current = audioUrl;
       // 기존 복원 타임아웃 클리어
       if (recoveryTimeoutRef.current) {
@@ -71,6 +91,7 @@ const AudioPlayer = ({
       if (audio.src) {
         audio.src = '';
         audio.load();
+        audio.removeAttribute('type');
       }
       // audioUrl이 없고 cacheKey가 있으면 onError 콜백 호출하여 복원 시도
       if (!audioUrl && cacheKey && onError && !isRecoveringRef.current) {
@@ -86,26 +107,32 @@ const AudioPlayer = ({
     // audioUrl이 유효한 경우에만 src 설정
     // blob URL인 경우, AudioPlayer 컴포넌트가 마운트될 때 에러가 발생할 수 있으므로
     // 에러 발생 시 onError 콜백에서 복원하도록 함
-    if (audio.src !== audioUrl && !isRecovering) {
-      // blob URL인 경우, 충분한 지연 후 설정하여 브라우저가 blob을 완전히 준비하도록 함
-      if (audioUrl.startsWith('blob:')) {
-        // 기존 타임아웃이 있으면 클리어
-        if (blobLoadTimeoutRef.current) {
-          clearTimeout(blobLoadTimeoutRef.current);
-        }
-        // PublicVoiceGenerator에서 이미 200ms 지연 후 전달하고 blob을 재구성하므로,
-        // 추가로 150ms 지연하여 브라우저가 blob URL을 완전히 준비하도록 함
-        blobLoadTimeoutRef.current = window.setTimeout(() => {
-          if (audio.src !== audioUrl && !isRecoveringRef.current && audioRef.current) {
-            audioRef.current.src = audioUrl;
-            audioRef.current.load(); // 새 소스 로드
+    if (audio.src !== audioUrl) {
+      // audioUrl이 변경되었고 복원 중이 아니면 src 설정
+      if (!isRecoveringRef.current) {
+        // blob URL인 경우, 충분한 지연 후 설정하여 브라우저가 blob을 완전히 준비하도록 함
+        if (audioUrl.startsWith('blob:')) {
+          // 기존 타임아웃이 있으면 클리어
+          if (blobLoadTimeoutRef.current) {
+            clearTimeout(blobLoadTimeoutRef.current);
           }
-          blobLoadTimeoutRef.current = null;
-        }, 150);
-      } else {
-        // 일반 URL인 경우 즉시 설정
-        audio.src = audioUrl;
-        audio.load(); // 새 소스 로드
+          // PublicVoiceGenerator에서 이미 200ms 지연 후 전달하고 blob을 재구성하므로,
+          // 추가로 500ms 지연하여 브라우저가 blob URL을 완전히 준비하도록 함
+          // 복원 후에는 더 긴 지연 시간이 필요할 수 있음
+          blobLoadTimeoutRef.current = window.setTimeout(() => {
+            if (audio.src !== audioUrl && !isRecoveringRef.current && audioRef.current) {
+              audioRef.current.src = audioUrl;
+              audioRef.current.setAttribute('type', guessedType);
+              audioRef.current.load(); // 새 소스 로드
+            }
+            blobLoadTimeoutRef.current = null;
+          }, 500);
+        } else {
+          // 일반 URL인 경우 즉시 설정
+          audio.src = audioUrl;
+          audio.setAttribute('type', guessedType);
+          audio.load(); // 새 소스 로드
+        }
       }
     }
 
@@ -169,8 +196,8 @@ const AudioPlayer = ({
       
       // 이미 복원 중이면 중복 호출 방지 (같은 audioUrl에 대한 에러)
       const now = Date.now();
-      if (isRecoveringRef.current && (now - lastErrorTimeRef.current) < 2000) {
-        // 2초 이내에 같은 에러가 반복 발생하면 무시
+      if (isRecoveringRef.current && (now - lastErrorTimeRef.current) < 3000) {
+        // 3초 이내에 같은 에러가 반복 발생하면 무시
         console.log('[AudioPlayer] ⚠️ 복원 중 에러 무시 (중복 방지)');
         return;
       }
@@ -179,6 +206,7 @@ const AudioPlayer = ({
       
       setIsLoading(false);
       setIsPlaying(false);
+      audio.removeAttribute('type');
       
       // blob URL 관련 오류 감지
       const isBlobUrl = audioUrl.startsWith('blob:');
@@ -221,14 +249,19 @@ const AudioPlayer = ({
               onError();
             }, 100);
             
-            // 5초 후에도 복원되지 않으면 타임아웃
+            // 3초 후에도 복원되지 않으면 타임아웃 (더 짧게 설정)
             recoveryTimeoutRef.current = window.setTimeout(() => {
               if (isRecoveringRef.current) {
-                console.warn('[AudioPlayer] ⏱️ 음원 복원 타임아웃');
+                console.warn('[AudioPlayer] ⏱️ 음원 복원 타임아웃 (3초)');
                 isRecoveringRef.current = false;
                 setIsRecovering(false);
+                // 타임아웃 시 src를 비워서 추가 에러 방지
+                if (audioRef.current) {
+                  audioRef.current.src = '';
+                  audioRef.current.load();
+                }
               }
-            }, 5000);
+            }, 3000); // 5초에서 3초로 단축
           } else {
             console.log('[AudioPlayer] ⚠️ onError 콜백 없음 - 복원 불가');
             // onError가 없으면 즉시 복원 상태 해제
@@ -250,14 +283,19 @@ const AudioPlayer = ({
           onError();
         }, 100);
         
-        // 5초 후에도 복원되지 않으면 타임아웃
+        // 3초 후에도 복원되지 않으면 타임아웃
         recoveryTimeoutRef.current = window.setTimeout(() => {
           if (isRecoveringRef.current) {
-            console.warn('[AudioPlayer] ⏱️ 음원 복원 타임아웃 (일반)');
+            console.warn('[AudioPlayer] ⏱️ 음원 복원 타임아웃 (일반, 3초)');
             isRecoveringRef.current = false;
             setIsRecovering(false);
+            // 타임아웃 시 src를 비워서 추가 에러 방지
+            if (audioRef.current) {
+              audioRef.current.src = '';
+              audioRef.current.load();
+            }
           }
-        }, 5000);
+        }, 3000); // 5초에서 3초로 단축
       } else {
         // 일반 오류는 로그만 출력 (복원 시도하지 않음)
         console.warn('[AudioPlayer] ⚠️ 일반 오디오 에러 (복원 안함):', e);
@@ -314,7 +352,7 @@ const AudioPlayer = ({
         console.warn('Audio play error:', error);
         setIsPlaying(false);
         // blob URL이 만료되었을 수 있음 - onError 콜백 호출
-        if (audioUrl && audioUrl.startsWith('blob:') && onError && !isRecoveringRef.current) {
+    if (audioUrl && (audioUrl.startsWith('blob:') || audioUrl.startsWith('data:')) && onError && !isRecoveringRef.current) {
           isRecoveringRef.current = true;
           onError();
           setTimeout(() => {
@@ -362,21 +400,6 @@ const AudioPlayer = ({
   const progressPercentage = displayDuration > 0 
     ? Math.max(0, Math.min(100, (clampedCurrentTime / displayDuration) * 100))
     : 0;
-
-  // audioUrl이 유효하지 않으면 AudioPlayer를 렌더링하지 않음
-  if (!audioUrl || audioUrl.trim() === '') {
-    return (
-      <Card className={`border-primary/20 bg-primary/5 ${className}`}>
-        <CardContent className="p-4">
-          <div className="flex items-center justify-center py-8 text-muted-foreground">
-            <div className="text-center">
-              <p className="text-sm">음원을 불러올 수 없습니다.</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
 
   // 복원 중이면 로딩 상태 표시
   if (isRecovering) {

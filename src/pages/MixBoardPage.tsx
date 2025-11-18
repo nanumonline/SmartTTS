@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Separator } from "@/components/ui/separator";
-import { Play, Square, Download, Music2, Volume2 } from "lucide-react";
+import { Play, Square, Download, Music2, Volume2, Star, Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import * as dbService from "@/services/dbService";
@@ -15,6 +15,7 @@ import { exportMixToWav, MixingSettings, decodeFileToBuffer } from "@/lib/audioM
 import { useToast } from "@/components/ui/use-toast";
 import PageHeader from "@/components/layout/PageHeader";
 import PageContainer from "@/components/layout/PageContainer";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 export default function MixBoardPage() {
   const { user } = useAuth();
@@ -29,9 +30,13 @@ export default function MixBoardPage() {
   const [isLoadingGenerations, setIsLoadingGenerations] = useState(false);
   const [previewAudioUrl, setPreviewAudioUrl] = useState<string | null>(null);
   const [isGeneratingPreview, setIsGeneratingPreview] = useState(false);
+  // 즐겨찾기 관련
+  const [favoriteOnly, setFavoriteOnly] = useState(false);
+  const [favoriteLoadingIds, setFavoriteLoadingIds] = useState<Set<string>>(new Set());
   // BGM 파일 선택
   const [selectedBgmFile, setSelectedBgmFile] = useState<File | null>(null);
   const [bgmPreviewUrl, setBgmPreviewUrl] = useState<string | null>(null);
+  const bgmPreviewUrlRef = useRef<string | null>(null);
 
   // 믹싱 설정
   const [mixingSettings, setMixingSettings] = useState<MixingSettings>({
@@ -61,6 +66,93 @@ export default function MixBoardPage() {
       loadGenerations();
     }
   }, [user?.id]);
+
+  // 페이지 포커스 시 데이터 새로고침 (다른 페이지에서 즐겨찾기 변경 시 반영)
+  useEffect(() => {
+    const handleFocus = () => {
+      if (user?.id) {
+        loadGenerations();
+      }
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [user?.id]);
+
+  const setFavoriteLoading = useCallback((id: string, isLoading: boolean) => {
+    setFavoriteLoadingIds((prev) => {
+      const next = new Set(prev);
+      if (isLoading) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const filteredGenerations = useMemo(() => {
+    if (!favoriteOnly) {
+      return generations;
+    }
+    return generations.filter((gen) => gen.isFavorite);
+  }, [favoriteOnly, generations]);
+
+  const toggleFavorite = useCallback(
+    async (gen: dbService.GenerationEntry) => {
+      if (!user?.id || !gen?.id) {
+        return;
+      }
+      const idStr = String(gen.id);
+      if (favoriteLoadingIds.has(idStr)) {
+        return;
+      }
+
+      const previousValue = gen.isFavorite === true;
+      const nextValue = !previousValue;
+
+      setFavoriteLoading(idStr, true);
+      setGenerations((prev) =>
+        prev.map((g) =>
+          g.id === gen.id
+            ? {
+                ...g,
+                isFavorite: nextValue,
+              }
+            : g
+        )
+      );
+
+      try {
+        const success = await dbService.setGenerationFavorite(user.id, idStr, nextValue);
+        if (!success) {
+          throw new Error("즐겨찾기 정보를 업데이트할 수 없습니다.");
+        }
+      } catch (error) {
+        console.error("믹스보드 즐겨찾기 업데이트 실패:", error);
+        const message = error instanceof Error ? error.message : "즐겨찾기 정보를 업데이트할 수 없습니다.";
+        setGenerations((prev) =>
+          prev.map((g) =>
+            g.id === gen.id
+              ? {
+                  ...g,
+                  isFavorite: previousValue,
+                }
+              : g
+          )
+        );
+        toast({
+          title: "즐겨찾기 업데이트 실패",
+          description: message,
+          variant: "destructive",
+        });
+      } finally {
+        setFavoriteLoading(idStr, false);
+      }
+    },
+    [favoriteLoadingIds, setFavoriteLoading, toast, user?.id]
+  );
 
   // URL 파라미터에서 generation ID 읽기 및 자동 선택
   useEffect(() => {
@@ -112,37 +204,79 @@ export default function MixBoardPage() {
     }
   }, [user?.id, selectedGeneration]);
 
+  // AudioContext 생성 헬퍼 함수
+  type ExtendedWindow = typeof window & {
+    webkitAudioContext?: typeof AudioContext;
+  };
+
+  function createAudioContext(sampleRate = 44100): AudioContext {
+    const globalWindow = window as ExtendedWindow;
+    const AudioContextClass = globalWindow.AudioContext || globalWindow.webkitAudioContext;
+
+    if (!AudioContextClass) {
+      throw new Error("이 브라우저는 Web Audio API를 지원하지 않습니다.");
+    }
+
+    try {
+      return new AudioContextClass({ sampleRate });
+    } catch {
+      return new AudioContextClass();
+    }
+  }
+
+  // 미리듣기 URL 정리 헬퍼 함수
+  const revokePreviewUrl = useCallback(() => {
+    if (previewAudioUrl) {
+      try {
+        URL.revokeObjectURL(previewAudioUrl);
+      } catch {
+        // ignore revoke errors
+      }
+      setPreviewAudioUrl(null);
+    }
+  }, [previewAudioUrl]);
+
   // 컴포넌트 언마운트 시 미리듣기 URL 정리
   useEffect(() => {
     return () => {
-      if (previewAudioUrl) {
-        URL.revokeObjectURL(previewAudioUrl);
-      }
+      revokePreviewUrl();
     };
-  }, [previewAudioUrl]);
+  }, [revokePreviewUrl]);
 
   // 선택된 음원이 변경되면 기존 미리듣기 무효화
   useEffect(() => {
-    if (previewAudioUrl) {
-      URL.revokeObjectURL(previewAudioUrl);
-      setPreviewAudioUrl(null);
-    }
-  }, [selectedGeneration]);
+    revokePreviewUrl();
+  }, [revokePreviewUrl, selectedGeneration]);
 
-  // BGM 파일 선택 시 미리듣기 URL 생성
+  // BGM 파일 선택 시 미리듣기 URL 생성 (useRef로 관리하여 blob 에러 방지)
   useEffect(() => {
-    if (selectedBgmFile) {
-      const url = URL.createObjectURL(selectedBgmFile);
-      setBgmPreviewUrl(url);
-      return () => {
-        URL.revokeObjectURL(url);
-      };
-    } else {
-      if (bgmPreviewUrl) {
-        URL.revokeObjectURL(bgmPreviewUrl);
-        setBgmPreviewUrl(null);
+    if (!selectedBgmFile) {
+      if (bgmPreviewUrlRef.current) {
+        try {
+          URL.revokeObjectURL(bgmPreviewUrlRef.current);
+        } catch {
+          // ignore revoke errors
+        }
+        bgmPreviewUrlRef.current = null;
       }
+      setBgmPreviewUrl(null);
+      return;
     }
+
+    const url = URL.createObjectURL(selectedBgmFile);
+    bgmPreviewUrlRef.current = url;
+    setBgmPreviewUrl(url);
+
+    return () => {
+      if (bgmPreviewUrlRef.current) {
+        try {
+          URL.revokeObjectURL(bgmPreviewUrlRef.current);
+        } catch {
+          // ignore revoke errors
+        }
+        bgmPreviewUrlRef.current = null;
+      }
+    };
   }, [selectedBgmFile]);
 
   const loadGenerations = async () => {
@@ -344,7 +478,7 @@ export default function MixBoardPage() {
     }
   };
 
-  const selectedGen = generations.find((g) => g.id === selectedGeneration);
+  const selectedGen = useMemo(() => generations.find((g) => g.id === selectedGeneration), [generations, selectedGeneration]);
 
   return (
     <PageContainer maxWidth="wide">
@@ -369,38 +503,137 @@ export default function MixBoardPage() {
                   음원 목록을 불러오는 중...
                 </div>
               ) : (
-                <Select
-                  value={selectedGeneration || ""}
-                  onValueChange={(value) => {
-                    setSelectedGeneration(value || null);
-                  }}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder={generations.length === 0 ? "저장된 음원이 없습니다" : "음원을 선택하세요"} />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-[300px]">
-                    {generations.length === 0 ? (
-                      <div className="p-4 text-center text-sm text-muted-foreground">
-                        저장된 음원이 없습니다.
-                        <br />
-                        <span className="text-xs">TTS 생성 페이지에서 음원을 생성하고 저장해주세요.</span>
-                      </div>
-                    ) : (
-                      generations.map((gen) => (
-                        <SelectItem key={gen.id} value={String(gen.id || "")}>
-                          <div className="flex flex-col">
-                            <span className="font-medium">{gen.savedName || `음원 ${String(gen.id || "").slice(0, 8)}...`}</span>
-                            {gen.duration && (
-                              <span className="text-xs text-muted-foreground">
-                                {gen.duration.toFixed(1)}초 · {gen.purposeLabel || gen.purpose}
-                              </span>
-                            )}
-                          </div>
-                        </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
+                <>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">TTS 음원 선택</Label>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant={favoriteOnly ? "default" : "outline"}
+                          size="icon"
+                          aria-label={favoriteOnly ? "즐겨찾기만 보기 해제" : "즐겨찾기만 보기"}
+                          aria-pressed={favoriteOnly}
+                          onClick={() => setFavoriteOnly((prev) => !prev)}
+                          className={favoriteOnly ? "border-amber-500 text-amber-500" : ""}
+                        >
+                          <Star className={`w-4 h-4 ${favoriteOnly ? "fill-current" : ""}`} />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>즐겨찾기만 보기</TooltipContent>
+                    </Tooltip>
+                  </div>
+                  <Select
+                    value={selectedGeneration || ""}
+                    onValueChange={(value) => {
+                      setSelectedGeneration(value || null);
+                    }}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder={filteredGenerations.length === 0 ? (favoriteOnly ? "즐겨찾기한 음원이 없습니다" : "저장된 음원이 없습니다") : "음원을 선택하세요"} />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-[300px]">
+                      {filteredGenerations.length === 0 ? (
+                        <div className="p-4 text-center text-sm text-muted-foreground">
+                          {favoriteOnly
+                            ? "즐겨찾기한 음원이 없습니다. 필터를 해제하거나 즐겨찾기를 추가해 주세요."
+                            : "저장된 음원이 없습니다. TTS 생성 페이지에서 음원을 저장해 주세요."}
+                        </div>
+                      ) : (
+                        filteredGenerations.map((gen) => (
+                          <SelectItem key={gen.id} value={String(gen.id || "")}>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex flex-col text-left">
+                                <span className="font-medium">{gen.savedName || `음원 ${String(gen.id || "").slice(0, 8)}...`}</span>
+                                {gen.duration && (
+                                  <span className="text-xs text-muted-foreground">
+                                    {gen.duration.toFixed(1)}초 · {gen.purposeLabel || gen.purpose}
+                                  </span>
+                                )}
+                              </div>
+                              {gen.isFavorite && <Star className="w-4 h-4 text-amber-400 fill-current" />}
+                            </div>
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                  {selectedGen && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => selectedGen && toggleFavorite(selectedGen)}
+                      disabled={!selectedGen || favoriteLoadingIds.has(String(selectedGen.id || ""))}
+                      className="w-full flex items-center justify-center gap-2"
+                    >
+                      {favoriteLoadingIds.has(String(selectedGen.id || "")) ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Star className={`w-4 h-4 ${selectedGen?.isFavorite ? "text-amber-500 fill-current" : ""}`} />
+                      )}
+                      {selectedGen?.isFavorite ? "즐겨찾기 해제" : "즐겨찾기 추가"}
+                    </Button>
+                  )}
+                </>
+              )}
+
+              {selectedGen && selectedGen.audioUrl && (
+                <div className="space-y-2">
+                  <Label>TTS 음원 미리듣기</Label>
+                  <AudioPlayer
+                    audioUrl={selectedGen.audioUrl}
+                    title={selectedGen.savedName || "TTS 음원"}
+                    duration={selectedGen.duration || 0}
+                    mimeType={(selectedGen as any).mimeType || "audio/mpeg"}
+                    onError={async () => {
+                      // blob URL 만료 복원: DB에서 audioBlob을 다시 로드하여 blob URL 재생성
+                      try {
+                        if (!user?.id || !selectedGen?.id) return;
+                        
+                        // 500 에러 방지를 위해 재시도 로직 추가
+                        let res = null;
+                        let retries = 0;
+                        const maxRetries = 2;
+                        
+                        while (retries < maxRetries && !res) {
+                          try {
+                            res = await dbService.loadGenerationBlob(user.id, String(selectedGen.id));
+                            if (res?.audioBlob) break;
+                          } catch (e: any) {
+                            // 500 에러는 재시도
+                            if (e.status === 500 || e.message?.includes("500")) {
+                              retries++;
+                              if (retries < maxRetries) {
+                                await new Promise(resolve => setTimeout(resolve, 1000 * retries)); // 지수 백오프
+                                continue;
+                              }
+                            }
+                            // 다른 에러는 즉시 중단
+                            throw e;
+                          }
+                        }
+                        
+                        if (res?.audioBlob) {
+                          const mimeType = res.mimeType || (selectedGen as any).mimeType || "audio/mpeg";
+                          const blob = dbService.arrayBufferToBlob(res.audioBlob, mimeType);
+                          const newUrl = URL.createObjectURL(blob);
+                          // generations 상태 업데이트
+                          setGenerations((prev) => prev.map((g) => (g.id === selectedGen.id ? { ...g, audioUrl: newUrl } : g)));
+                        } else {
+                          // blob이 없으면 null로 설정하여 더 이상 접근하지 않도록 함
+                          setGenerations((prev) => prev.map((g) => (g.id === selectedGen.id ? { ...g, audioUrl: null } : g)));
+                        }
+                      } catch (e) {
+                        console.warn("TTS 미리듣기 복원 실패:", e);
+                        // 복원 실패 시 null로 설정하여 더 이상 접근하지 않도록 함
+                        if (selectedGen?.id) {
+                          setGenerations((prev) => prev.map((g) => (g.id === selectedGen.id ? { ...g, audioUrl: null } : g)));
+                        }
+                      }
+                    }}
+                  />
+                </div>
               )}
 
               {/* BGM 파일 선택 */}
@@ -425,10 +658,7 @@ export default function MixBoardPage() {
                         }
                         setSelectedBgmFile(file);
                         // 미리듣기 무효화
-                        if (previewAudioUrl) {
-                          URL.revokeObjectURL(previewAudioUrl);
-                          setPreviewAudioUrl(null);
-                        }
+                        revokePreviewUrl();
                       } else {
                         setSelectedBgmFile(null);
                       }
@@ -473,10 +703,7 @@ export default function MixBoardPage() {
                         setSelectedBgmFile(null);
                         const input = document.getElementById("bgm-file-input") as HTMLInputElement;
                         if (input) input.value = "";
-                        if (previewAudioUrl) {
-                          URL.revokeObjectURL(previewAudioUrl);
-                          setPreviewAudioUrl(null);
-                        }
+                        revokePreviewUrl();
                       }}
                       className="text-red-400 hover:text-red-300"
                     >
@@ -491,73 +718,16 @@ export default function MixBoardPage() {
                       audioUrl={bgmPreviewUrl}
                       title={selectedBgmFile?.name || "BGM"}
                       duration={0}
+                      mimeType={selectedBgmFile?.type}
                     />
                   </div>
                 )}
               </div>
 
-              {selectedGen && selectedGen.audioUrl && (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label>TTS 음원 미리듣기</Label>
-                    <AudioPlayer
-                      audioUrl={selectedGen.audioUrl}
-                      title={selectedGen.savedName || "TTS 음원"}
-                      duration={selectedGen.duration || 0}
-                      mimeType={(selectedGen as any).mimeType || "audio/mpeg"}
-                      onError={async () => {
-                        // blob URL 만료 복원: DB에서 audioBlob을 다시 로드하여 blob URL 재생성
-                        try {
-                          if (!user?.id || !selectedGen?.id) return;
-                          
-                          // 500 에러 방지를 위해 재시도 로직 추가
-                          let res = null;
-                          let retries = 0;
-                          const maxRetries = 2;
-                          
-                          while (retries < maxRetries && !res) {
-                            try {
-                              res = await dbService.loadGenerationBlob(user.id, String(selectedGen.id));
-                              if (res?.audioBlob) break;
-                            } catch (e: any) {
-                              // 500 에러는 재시도
-                              if (e.status === 500 || e.message?.includes("500")) {
-                                retries++;
-                                if (retries < maxRetries) {
-                                  await new Promise(resolve => setTimeout(resolve, 1000 * retries)); // 지수 백오프
-                                  continue;
-                                }
-                              }
-                              // 다른 에러는 즉시 중단
-                              throw e;
-                            }
-                          }
-                          
-                          if (res?.audioBlob) {
-                            const mimeType = res.mimeType || (selectedGen as any).mimeType || "audio/mpeg";
-                            const blob = dbService.arrayBufferToBlob(res.audioBlob, mimeType);
-                            const newUrl = URL.createObjectURL(blob);
-                            // generations 상태 업데이트
-                            setGenerations((prev) => prev.map((g) => (g.id === selectedGen.id ? { ...g, audioUrl: newUrl } : g)));
-                          } else {
-                            // blob이 없으면 null로 설정하여 더 이상 접근하지 않도록 함
-                            setGenerations((prev) => prev.map((g) => (g.id === selectedGen.id ? { ...g, audioUrl: null } : g)));
-                          }
-                        } catch (e) {
-                          console.warn("TTS 미리듣기 복원 실패:", e);
-                          // 복원 실패 시 null로 설정하여 더 이상 접근하지 않도록 함
-                          if (selectedGen?.id) {
-                            setGenerations((prev) => prev.map((g) => (g.id === selectedGen.id ? { ...g, audioUrl: null } : g)));
-                          }
-                        }
-                      }}
-                    />
-                  </div>
-                  
-                  {/* 예상 믹싱 음원 미리듣기 */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label>예상 믹싱 음원 미리듣기</Label>
+              {/* 예상 믹싱 음원 미리듣기 */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>예상 믹싱 음원 미리듣기</Label>
                       <Button
                         variant="outline"
                         size="sm"
@@ -566,7 +736,8 @@ export default function MixBoardPage() {
                           setIsGeneratingPreview(true);
                           try {
                             // AudioContext 생성 및 TTS 음원 디코딩
-                          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 44100 });
+                            const ctx = createAudioContext();
+                            revokePreviewUrl();
                             let ttsBuffer: AudioBuffer | null = null;
                             try {
                               const audioBlob = await fetch(selectedGen.audioUrl).then((r) => r.blob());
@@ -618,10 +789,7 @@ export default function MixBoardPage() {
                               44100
                             );
                             const url = URL.createObjectURL(wavBlob);
-                            // 이전 미리듣기 URL 정리
-                            if (previewAudioUrl) {
-                              URL.revokeObjectURL(previewAudioUrl);
-                            }
+                            revokePreviewUrl();
                             setPreviewAudioUrl(url);
                             toast({
                               title: "미리듣기 생성 완료",
@@ -655,7 +823,8 @@ export default function MixBoardPage() {
                       <AudioPlayer
                         audioUrl={previewAudioUrl}
                         title="예상 믹싱 음원"
-                        duration={selectedGen.duration || 0}
+                        duration={selectedGen?.duration || 0}
+                        mimeType="audio/wav"
                       />
                     ) : (
                       <div className="text-xs text-muted-foreground p-2 bg-gray-800/30 rounded border border-gray-700">
@@ -663,8 +832,6 @@ export default function MixBoardPage() {
                       </div>
                     )}
                   </div>
-                </div>
-              )}
             </CardContent>
           </Card>
         </div>
@@ -689,46 +856,27 @@ export default function MixBoardPage() {
                   fadeOutRatio={mixingSettings.fadeOutRatio || 50}
                   onBgmOffsetChange={(offset) => {
                     setMixingSettings({ ...mixingSettings, bgmOffset: Math.abs(offset) });
-                    // 설정 변경 시 기존 미리듣기 무효화
-                    if (previewAudioUrl) {
-                      URL.revokeObjectURL(previewAudioUrl);
-                      setPreviewAudioUrl(null);
-                    }
+                    revokePreviewUrl();
                   }}
                   onFadeInChange={(fade) => {
                     setMixingSettings({ ...mixingSettings, fadeIn: fade });
-                    if (previewAudioUrl) {
-                      URL.revokeObjectURL(previewAudioUrl);
-                      setPreviewAudioUrl(null);
-                    }
+                    revokePreviewUrl();
                   }}
                   onFadeOutChange={(fade) => {
                     setMixingSettings({ ...mixingSettings, fadeOut: fade });
-                    if (previewAudioUrl) {
-                      URL.revokeObjectURL(previewAudioUrl);
-                      setPreviewAudioUrl(null);
-                    }
+                    revokePreviewUrl();
                   }}
                   onBgmOffsetAfterTtsChange={(offset) => {
                     setMixingSettings({ ...mixingSettings, bgmOffsetAfterTts: offset });
-                    if (previewAudioUrl) {
-                      URL.revokeObjectURL(previewAudioUrl);
-                      setPreviewAudioUrl(null);
-                    }
+                    revokePreviewUrl();
                   }}
                   onFadeInRatioChange={(ratio) => {
                     setMixingSettings({ ...mixingSettings, fadeInRatio: ratio });
-                    if (previewAudioUrl) {
-                      URL.revokeObjectURL(previewAudioUrl);
-                      setPreviewAudioUrl(null);
-                    }
+                    revokePreviewUrl();
                   }}
                   onFadeOutRatioChange={(ratio) => {
                     setMixingSettings({ ...mixingSettings, fadeOutRatio: ratio });
-                    if (previewAudioUrl) {
-                      URL.revokeObjectURL(previewAudioUrl);
-                      setPreviewAudioUrl(null);
-                    }
+                    revokePreviewUrl();
                   }}
                 />
               ) : (
@@ -752,10 +900,7 @@ export default function MixBoardPage() {
                     value={[mixingSettings.ttsGain * 100]}
                     onValueChange={([value]) => {
                       setMixingSettings({ ...mixingSettings, ttsGain: value / 100 });
-                      if (previewAudioUrl) {
-                        URL.revokeObjectURL(previewAudioUrl);
-                        setPreviewAudioUrl(null);
-                      }
+                      revokePreviewUrl();
                     }}
                     min={0}
                     max={200}
@@ -774,10 +919,7 @@ export default function MixBoardPage() {
                     value={[mixingSettings.bgmGain * 100]}
                     onValueChange={([value]) => {
                       setMixingSettings({ ...mixingSettings, bgmGain: value / 100 });
-                      if (previewAudioUrl) {
-                        URL.revokeObjectURL(previewAudioUrl);
-                        setPreviewAudioUrl(null);
-                      }
+                      revokePreviewUrl();
                     }}
                     min={0}
                     max={200}
@@ -796,10 +938,7 @@ export default function MixBoardPage() {
                     value={[mixingSettings.masterGain * 100]}
                     onValueChange={([value]) => {
                       setMixingSettings({ ...mixingSettings, masterGain: value / 100 });
-                      if (previewAudioUrl) {
-                        URL.revokeObjectURL(previewAudioUrl);
-                        setPreviewAudioUrl(null);
-                      }
+                      revokePreviewUrl();
                     }}
                     min={0}
                     max={200}

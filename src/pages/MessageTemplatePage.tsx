@@ -64,7 +64,7 @@ export default function MessageTemplatePage() {
 
   const createInitialTemplates = async () => {
     if (!user?.id) return;
-
+    
     const initialTemplates = [
       // 인사말 카테고리
       {
@@ -687,17 +687,17 @@ export default function MessageTemplatePage() {
         <div className="space-y-2">
           <span className="text-sm font-medium">카테고리:</span>
           <div className="grid grid-cols-9 gap-2">
-            {categories.map((cat) => (
-              <Button
-                key={cat.value}
-                variant={selectedCategory === cat.value ? "default" : "outline"}
-                size="sm"
-                onClick={() => setSelectedCategory(cat.value)}
+          {categories.map((cat) => (
+            <Button
+              key={cat.value}
+              variant={selectedCategory === cat.value ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedCategory(cat.value)}
                 className="w-full"
-              >
-                {cat.label}
-              </Button>
-            ))}
+            >
+              {cat.label}
+            </Button>
+          ))}
           </div>
         </div>
 
@@ -729,36 +729,36 @@ export default function MessageTemplatePage() {
             ) : (
               <>
                 {paginatedTemplates.map((template) => (
-                  <div
-                    key={template.id}
-                    className={`p-4 border rounded-lg cursor-pointer transition-colors ${
-                      selectedTemplate?.id === template.id
-                        ? "border-primary bg-primary/10"
-                        : "hover:bg-muted"
-                    }`}
-                    onClick={() => handleApplyTemplate(template)}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <h3 className="font-medium">{template.templateName}</h3>
+                <div
+                  key={template.id}
+                  className={`p-4 border rounded-lg cursor-pointer transition-colors ${
+                    selectedTemplate?.id === template.id
+                      ? "border-primary bg-primary/10"
+                      : "hover:bg-muted"
+                  }`}
+                  onClick={() => handleApplyTemplate(template)}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <h3 className="font-medium">{template.templateName}</h3>
                           <Badge variant="outline">{getCategoryLabel(template.templateCategory || "")}</Badge>
                           <Badge variant="secondary" className="text-xs">{getPurposeLabel(template.purpose || "")}</Badge>
-                        </div>
-                        <p className="text-sm text-muted-foreground line-clamp-2">
-                          {template.text}
-                        </p>
-                        {(template.variables || []).length > 0 && (
-                          <div className="mt-2 flex flex-wrap gap-1">
-                            {(template.variables || []).map((varName) => (
-                              <Badge key={varName} variant="secondary" className="text-xs">
-                                {`{${varName}}`}
-                              </Badge>
-                            ))}
-                          </div>
-                        )}
                       </div>
-                      <div className="flex items-center gap-1">
+                      <p className="text-sm text-muted-foreground line-clamp-2">
+                        {template.text}
+                      </p>
+                      {(template.variables || []).length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {(template.variables || []).map((varName) => (
+                            <Badge key={varName} variant="secondary" className="text-xs">
+                              {`{${varName}}`}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1">
                         <Button
                           variant="ghost"
                           size="sm"
@@ -769,19 +769,19 @@ export default function MessageTemplatePage() {
                         >
                           <Edit className="w-4 h-4" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (template.id) handleDeleteTemplate(template.id);
-                          }}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (template.id) handleDeleteTemplate(template.id);
+                        }}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
                     </div>
                   </div>
+                </div>
                 ))}
                 {/* 페이지네이션 */}
                 {totalPages > 1 && (
@@ -912,10 +912,10 @@ export default function MessageTemplatePage() {
                     <div className="flex items-center justify-between">
                       <Label>적용된 메시지</Label>
                       <div className="flex items-center gap-2">
-                        <Button variant="ghost" size="sm" onClick={handleCopyResolved}>
-                          <Copy className="w-4 h-4 mr-2" />
-                          복사
-                        </Button>
+                      <Button variant="ghost" size="sm" onClick={handleCopyResolved}>
+                        <Copy className="w-4 h-4 mr-2" />
+                        복사
+                      </Button>
                         <Button variant="default" size="sm" onClick={handleSaveResolvedMessage}>
                           <Save className="w-4 h-4 mr-2" />
                           저장
@@ -927,9 +927,15 @@ export default function MessageTemplatePage() {
                       readOnly
                       className="min-h-[150px] bg-muted"
                     />
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <div className="flex flex-col gap-0.5">
+                        <span>공백 포함 : {resolvedText.length}자 {new Blob([resolvedText]).size}byte</span>
+                        <span>공백 제외 : {resolvedText.replace(/\s/g, '').length}자 {new Blob([resolvedText.replace(/\s/g, '')]).size}byte</span>
+                      </div>
                     <p className="text-xs text-muted-foreground">
-                      💡 변수를 모두 입력하면 자동으로 조사가 교정됩니다. 저장 버튼을 클릭하면 문구 관리에서 확인할 수 있습니다.
+                        💡 변수를 모두 입력하면 자동으로 조사가 교정됩니다. 저장 버튼을 클릭하면 문구 관리에서 확인할 수 있습니다.
                     </p>
+                    </div>
                   </div>
                 )}
               </>
@@ -979,11 +985,11 @@ export default function MessageTemplatePage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {categories.filter(c => c.value !== "all").map((c) => (
+                {categories.filter(c => c.value !== "all").map((c) => (
                     <SelectItem key={c.value} value={c.value}>
-                      {c.label}
+                    {c.label}
                     </SelectItem>
-                  ))}
+                ))}
                 </SelectContent>
               </Select>
             </div>
@@ -999,11 +1005,11 @@ export default function MessageTemplatePage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {purposes.map((p) => (
+                {purposes.map((p) => (
                     <SelectItem key={p.value} value={p.value}>
-                      {p.label}
+                    {p.label}
                     </SelectItem>
-                  ))}
+                ))}
                 </SelectContent>
               </Select>
             </div>
