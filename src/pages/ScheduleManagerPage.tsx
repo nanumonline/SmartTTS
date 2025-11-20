@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 import { 
@@ -399,20 +400,95 @@ export default function ScheduleManagerPage() {
     if (!user?.id || !deleteDialog.id) return;
     
     try {
-      const success = await dbService.deleteScheduleRequest(user.id, deleteDialog.id);
-      if (success) {
-    toast({
-      title: "삭제 완료",
-      description: "스케줄이 삭제되었습니다.",
-    });
-    await loadSchedules();
-      } else {
+      // 삭제할 스케줄 찾기
+      const scheduleToDelete = schedules.find((s) => s.id === deleteDialog.id);
+      if (!scheduleToDelete) {
         toast({
           title: "삭제 실패",
-          description: "스케줄 삭제 중 오류가 발생했습니다.",
+          description: "스케줄을 찾을 수 없습니다.",
           variant: "destructive",
         });
+        setDeleteDialog({ open: false, id: null });
+        return;
       }
+
+      const scheduleType = getScheduleType(scheduleToDelete);
+      const scheduleName = (scheduleToDelete as any).scheduleName || "";
+      
+      // 기간 방송(event)이고 같은 이름을 가진 스케줄이 여러 개인 경우
+      if (scheduleType === "event" && scheduleName) {
+        // 같은 이름을 가진 모든 스케줄 찾기
+        const relatedSchedules = schedules.filter((s) => {
+          const sType = getScheduleType(s);
+          const sName = (s as any).scheduleName || "";
+          return sType === "event" && sName === scheduleName;
+        });
+
+        if (relatedSchedules.length > 1) {
+          // 기간의 모든 스케줄 삭제
+          let deletedCount = 0;
+          let failedCount = 0;
+          
+          for (const schedule of relatedSchedules) {
+            try {
+              const success = await dbService.deleteScheduleRequest(user.id, schedule.id || "");
+              if (success) {
+                deletedCount++;
+              } else {
+                failedCount++;
+              }
+            } catch (error) {
+              console.error(`스케줄 ${schedule.id} 삭제 실패:`, error);
+              failedCount++;
+            }
+          }
+
+          if (failedCount === 0) {
+            toast({
+              title: "삭제 완료",
+              description: `기간 방송 "${scheduleName}"의 모든 스케줄(${deletedCount}개)이 삭제되었습니다.`,
+            });
+          } else {
+            toast({
+              title: "부분 삭제",
+              description: `${deletedCount}개 삭제 완료, ${failedCount}개 삭제 실패`,
+              variant: "destructive",
+            });
+          }
+        } else {
+          // 개별 스케줄 삭제
+          const success = await dbService.deleteScheduleRequest(user.id, deleteDialog.id);
+          if (success) {
+            toast({
+              title: "삭제 완료",
+              description: "스케줄이 삭제되었습니다.",
+            });
+          } else {
+            toast({
+              title: "삭제 실패",
+              description: "스케줄 삭제 중 오류가 발생했습니다.",
+              variant: "destructive",
+            });
+          }
+        }
+      } else {
+        // 일상 방송이거나 개별 스케줄인 경우 해당 스케줄만 삭제
+        const success = await dbService.deleteScheduleRequest(user.id, deleteDialog.id);
+        if (success) {
+          toast({
+            title: "삭제 완료",
+            description: "스케줄이 삭제되었습니다.",
+          });
+        } else {
+          toast({
+            title: "삭제 실패",
+            description: "스케줄 삭제 중 오류가 발생했습니다.",
+            variant: "destructive",
+          });
+        }
+      }
+      
+      await loadSchedules();
     } catch (error) {
       console.error("스케줄 삭제 실패:", error);
       toast({
@@ -601,14 +677,16 @@ export default function ScheduleManagerPage() {
         </div>
 
         {viewMode === "calendar" ? (
-          /* 달력 보기 - 크게 표시 */
-          <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-2xl">방송 일정 달력</CardTitle>
-                <CardDescription>날짜를 클릭하여 스케줄을 확인하세요</CardDescription>
-              </CardHeader>
-              <CardContent>
+          /* 달력 보기 - 그리드 2개 (왼쪽: 달력, 오른쪽: 상세 리스트) */
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+            {/* 왼쪽: 달력 (3/5 폭) */}
+            <div className="lg:col-span-3">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-xl">방송 일정 달력</CardTitle>
+                  <CardDescription>날짜를 클릭하여 스케줄을 확인하세요</CardDescription>
+                </CardHeader>
+                <CardContent>
                 <Calendar
                   mode="single"
                   selected={selectedDate}
@@ -627,9 +705,9 @@ export default function ScheduleManagerPage() {
                     nav_button_next: "absolute right-1",
                     table: "w-full border-collapse space-y-1",
                     head_row: "flex",
-                    head_cell: "text-muted-foreground rounded-md w-14 font-normal text-sm",
+                    head_cell: "text-muted-foreground rounded-md w-16 font-normal text-sm",
                     row: "flex w-full mt-2",
-                    cell: "h-24 w-14 text-center text-sm p-0 relative border border-border/50 rounded-md hover:bg-muted/50 transition-colors",
+                    cell: "h-28 w-16 text-center text-sm p-0 relative border border-border/50 rounded-md hover:bg-muted/50 transition-colors",
                     day: cn(
                       "h-full w-full p-0 font-normal flex flex-col items-center justify-start pt-1 gap-1 overflow-hidden"
                     ),
@@ -682,7 +760,7 @@ export default function ScheduleManagerPage() {
                           )}>
                             {date.getDate()}
                           </span>
-                          <div className="flex flex-col gap-0.5 w-full px-0.5 overflow-y-auto max-h-[60px]">
+                          <div className="flex flex-col gap-0.5 w-full px-0.5 overflow-y-auto max-h-[70px]">
                             {daySchedules.slice(0, 3).map((schedule) => {
                               const scheduleType = getScheduleType(schedule);
                               const scheduleName = (schedule as any).scheduleName || "스케줄";
@@ -693,62 +771,102 @@ export default function ScheduleManagerPage() {
                                 hour12: false
                               });
                               const status = schedule.status || "scheduled";
+                              const gen = generations.find((g) => g.id === schedule.generationId);
+                              const channelInfo = getChannelInfo(schedule.targetChannel);
                               
-                              // 색상 결정: 타입별 + 상태별
+                              // 색상 결정: 타입별 + 상태별 (리스트와 동일한 색상)
                               let bgColor = "";
                               let textColor = "";
                               let borderColor = "";
                               
                               if (scheduleType === "routine") {
                                 if (status === "sent") {
-                                  bgColor = "bg-green-500/20";
+                                  bgColor = "bg-green-500/10";
                                   textColor = "text-green-700 dark:text-green-300";
-                                  borderColor = "border-green-500/50";
+                                  borderColor = "border-green-500/20";
                                 } else if (status === "failed") {
-                                  bgColor = "bg-red-500/20";
+                                  bgColor = "bg-red-500/10";
                                   textColor = "text-red-700 dark:text-red-300";
-                                  borderColor = "border-red-500/50";
+                                  borderColor = "border-red-500/20";
                                 } else {
-                                  bgColor = "bg-blue-500/20";
+                                  bgColor = "bg-blue-500/5 dark:bg-blue-500/10";
                                   textColor = "text-blue-700 dark:text-blue-300";
-                                  borderColor = "border-blue-500/50";
+                                  borderColor = "border-blue-500/20";
                                 }
                               } else {
                                 if (status === "sent") {
-                                  bgColor = "bg-green-500/20";
+                                  bgColor = "bg-green-500/10";
                                   textColor = "text-green-700 dark:text-green-300";
-                                  borderColor = "border-green-500/50";
+                                  borderColor = "border-green-500/20";
                                 } else if (status === "failed") {
-                                  bgColor = "bg-red-500/20";
+                                  bgColor = "bg-red-500/10";
                                   textColor = "text-red-700 dark:text-red-300";
-                                  borderColor = "border-red-500/50";
+                                  borderColor = "border-red-500/20";
                                 } else {
-                                  bgColor = "bg-purple-500/20";
+                                  bgColor = "bg-purple-500/5 dark:bg-purple-500/10";
                                   textColor = "text-purple-700 dark:text-purple-300";
-                                  borderColor = "border-purple-500/50";
+                                  borderColor = "border-purple-500/20";
                                 }
                               }
 
-                              return (
-                                <button
-                                  key={schedule.id}
-                                  className={cn(
-                                    "w-full text-[9px] px-1 py-0.5 rounded border text-left truncate hover:opacity-80 transition-opacity",
-                                    bgColor,
-                                    textColor,
-                                    borderColor,
-                                    isSelected && "opacity-90"
+                              // 호버 툴팁 내용
+                              const tooltipContent = (
+                                <div className="space-y-1 text-xs">
+                                  <div className="font-semibold">{scheduleName}</div>
+                                  <div className="flex items-center gap-1">
+                                    <Clock className="w-3 h-3" />
+                                    <span>{timeStr}</span>
+                                  </div>
+                                  {channelInfo && (
+                                    <div className="flex items-center gap-1">
+                                      <Radio className="w-3 h-3" />
+                                      <span>{channelInfo.name} ({channelInfo.type})</span>
+                                    </div>
                                   )}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingSchedule(schedule);
-                                    setIsEditDialogOpen(true);
-                                  }}
-                                  title={`${scheduleName} - ${timeStr}`}
-                                >
-                                  <div className="truncate font-medium">{scheduleName}</div>
-                                  <div className="truncate opacity-80">{timeStr}</div>
-                                </button>
+                                  <div className="flex items-center gap-1">
+                                    <Badge 
+                                      variant="outline" 
+                                      className={cn(
+                                        "text-[10px]",
+                                        scheduleType === "event"
+                                          ? "bg-purple-500/10 text-purple-600 border-purple-500/20"
+                                          : "bg-blue-500/10 text-blue-600 border-blue-500/20"
+                                      )}
+                                    >
+                                      {scheduleType === "event" ? "기간" : "일상"}
+                                    </Badge>
+                                    {getStatusBadge(status)}
+                                  </div>
+                                </div>
+                              );
+
+                              return (
+                                <TooltipProvider key={schedule.id}>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <button
+                                        className={cn(
+                                          "w-full text-[9px] px-1 py-0.5 rounded border text-left truncate hover:opacity-80 transition-opacity",
+                                          bgColor,
+                                          textColor,
+                                          borderColor,
+                                          isSelected && "opacity-90"
+                                        )}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setEditingSchedule(schedule);
+                                          setIsEditDialogOpen(true);
+                                        }}
+                                      >
+                                        <div className="truncate font-medium">{scheduleName}</div>
+                                        <div className="truncate opacity-80">{timeStr}</div>
+                                      </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="right" className="max-w-xs">
+                                      {tooltipContent}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
                               );
                             })}
                             {daySchedules.length > 3 && (
@@ -787,8 +905,8 @@ export default function ScheduleManagerPage() {
               </CardContent>
             </Card>
 
-            {/* 선택된 날짜의 상세 스케줄 목록 */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* 오른쪽: 상세 스케줄 리스트 (2/5 폭) */}
+            <div className="lg:col-span-2">
               <Card>
                 <CardHeader>
                   <CardTitle>
@@ -949,14 +1067,14 @@ export default function ScheduleManagerPage() {
               </p>
             </div>
 
-        {schedules.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <CalendarIcon className="w-12 h-12 text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">등록된 스케줄이 없습니다.</p>
-            </CardContent>
-          </Card>
-        ) : (
+            {schedules.length === 0 ? (
+              <Card>
+                <CardContent className="flex flex-col items-center justify-center py-12">
+                  <CalendarIcon className="w-12 h-12 text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground">등록된 스케줄이 없습니다.</p>
+                </CardContent>
+              </Card>
+            ) : (
               <>
                 <div className="border rounded-lg overflow-hidden">
                   <ScrollArea className="h-[600px]">
@@ -1165,7 +1283,7 @@ export default function ScheduleManagerPage() {
                       </tbody>
                     </table>
                   </ScrollArea>
-                    </div>
+                </div>
 
                 {/* 페이지네이션 */}
                 {Math.ceil(sortedSchedules.length / itemsPerPage) > 1 && (
@@ -1199,7 +1317,7 @@ export default function ScheduleManagerPage() {
                 )}
               </>
             )}
-                  </div>
+          </div>
         )}
 
       {/* 스케줄 생성 다이얼로그 */}
