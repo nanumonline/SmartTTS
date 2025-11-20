@@ -332,7 +332,7 @@ serve(async (req) => {
           }
         }
 
-        if (!audioData || audioData.byteLength === 0) {
+        if (!audioData) {
           console.error(
             `[execute-schedules] No audio data available for generation ${generation.id}`
           );
