@@ -54,59 +54,75 @@ if ($fileSize < 100) {
 }
 
 // 파일 유효성 검사 및 JSON 배열 문자열 변환
-$handle = fopen($audioFile, 'rb');
-if ($handle === false) {
+// 먼저 파일 전체를 읽어서 JSON 배열인지 확인
+$fileContent = file_get_contents($audioFile);
+if ($fileContent === false) {
     http_response_code(500);
-    echo json_encode(['error' => 'Failed to open audio file']);
+    echo json_encode(['error' => 'Failed to read audio file']);
     exit();
 }
 
-$firstBytes = fread($handle, 3);
-fclose($handle);
-
 // JSON 배열 문자열인지 확인 (처음이 '['인 경우)
-$isJsonArray = (substr($firstBytes, 0, 1) === '[');
+$isJsonArray = (strlen($fileContent) > 0 && $fileContent[0] === '[');
 
 if ($isJsonArray) {
     // JSON 배열 문자열을 바이너리 데이터로 변환
-    error_log("[audio.php] Converting JSON array string to binary: {$filename}");
+    error_log("[audio.php] Detected JSON array string: {$filename} (original size: " . strlen($fileContent) . " bytes)");
     
-    $fileContent = file_get_contents($audioFile);
-    if ($fileContent === false) {
-        http_response_code(500);
-        echo json_encode(['error' => 'Failed to read audio file']);
-        exit();
+    // JSON 파싱 시도
+    $jsonError = null;
+    $parsedArray = json_decode($fileContent, true);
+    
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        $jsonError = json_last_error_msg();
+        error_log("[audio.php] JSON decode error: {$jsonError}");
     }
     
-    try {
-        $parsedArray = json_decode($fileContent, true);
-        if (is_array($parsedArray)) {
-            // JSON 배열을 바이너리 데이터로 변환
-            $binaryData = '';
-            foreach ($parsedArray as $byte) {
-                $binaryData .= chr($byte);
+    if (is_array($parsedArray) && count($parsedArray) > 0) {
+        // JSON 배열을 바이너리 데이터로 변환
+        $binaryData = '';
+        $byteCount = 0;
+        foreach ($parsedArray as $byte) {
+            if (is_numeric($byte)) {
+                $binaryData .= chr((int)$byte);
+                $byteCount++;
+            } else {
+                error_log("[audio.php] WARNING: Non-numeric byte value in array: " . var_export($byte, true));
             }
-            
-            // 변환된 바이너리 데이터를 임시 파일에 저장 (다음 요청을 위해)
-            // 또는 메모리에서 직접 전송
+        }
+        
+        if (strlen($binaryData) > 0) {
             $fileSize = strlen($binaryData);
             $audioData = $binaryData;
             
-            error_log("[audio.php] Converted JSON array to binary: {$filename} ({$fileSize} bytes)");
+            // 변환된 데이터의 첫 바이트 확인
+            $firstByteHex = bin2hex(substr($binaryData, 0, 3));
+            error_log("[audio.php] Converted JSON array to binary: {$filename} ({$fileSize} bytes, first bytes: {$firstByteHex})");
+            
+            // 변환된 파일을 실제 파일로 저장 (다음 요청을 위해)
+            $convertedFile = $audioFile . '.converted';
+            if (file_put_contents($convertedFile, $binaryData) !== false) {
+                // 원본 파일을 백업하고 변환된 파일로 교체
+                $backupFile = $audioFile . '.json_backup';
+                if (rename($audioFile, $backupFile)) {
+                    rename($convertedFile, $audioFile);
+                    error_log("[audio.php] Replaced original file with converted binary: {$filename}");
+                }
+            }
         } else {
             http_response_code(400);
             echo json_encode([
-                'error' => 'Invalid audio file: JSON array string detected but failed to parse',
+                'error' => 'Invalid audio file: JSON array string detected but conversion produced empty data',
                 'file' => $filename
             ]);
             exit();
         }
-    } catch (Exception $e) {
+    } else {
         http_response_code(400);
         echo json_encode([
-            'error' => 'Invalid audio file: Failed to parse JSON array string',
+            'error' => 'Invalid audio file: JSON array string detected but failed to parse',
             'file' => $filename,
-            'message' => $e->getMessage()
+            'json_error' => $jsonError
         ]);
         exit();
     }
@@ -114,6 +130,10 @@ if ($isJsonArray) {
     // 정상적인 바이너리 파일인 경우
     $audioData = null; // 파일을 직접 읽을 예정
     $fileSize = filesize($audioFile);
+    
+    // 첫 바이트 확인 (디버깅용)
+    $firstByteHex = bin2hex(substr($fileContent, 0, 3));
+    error_log("[audio.php] Binary file detected: {$filename} (first bytes: {$firstByteHex})");
 }
 
 // MP3 파일 시그니처 확인
