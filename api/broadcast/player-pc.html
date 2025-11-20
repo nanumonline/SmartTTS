@@ -299,11 +299,35 @@
                 }
                 
                 if (data.audio_list && data.audio_list.length > 0) {
-                    const latestAudio = data.audio_list[0];
+                    // 유효한 오디오만 필터링 (크기 100 bytes 이상)
+                    const validAudios = data.audio_list.filter(audio => {
+                        const size = audio.size || 0;
+                        if (size < 100) {
+                            console.warn(`Skipping invalid audio (too small): ${audio.filename} (${size} bytes)`);
+                            return false;
+                        }
+                        return true;
+                    });
+                    
+                    if (validAudios.length === 0) {
+                        updateStatus('대기 중... (유효한 오디오 없음 - 파일이 너무 작습니다)', 'waiting');
+                        updateAudioList(data.audio_list);
+                        return;
+                    }
+                    
+                    const latestAudio = validAudios[0];
                     
                     if (!latestAudio.url || !latestAudio.filename) {
                         console.warn('Invalid audio data:', latestAudio);
                         updateStatus('오디오 정보 오류', 'disconnected');
+                        updateAudioList(data.audio_list);
+                        return;
+                    }
+                    
+                    // 오디오 파일 크기 확인
+                    if (latestAudio.size && latestAudio.size < 100) {
+                        console.warn(`Audio file too small: ${latestAudio.filename} (${latestAudio.size} bytes)`);
+                        updateStatus(`오디오 파일이 너무 작습니다: ${latestAudio.filename} (${latestAudio.size} bytes)`, 'disconnected');
                         updateAudioList(data.audio_list);
                         return;
                     }
@@ -334,7 +358,7 @@
         }
 
         // 오디오 재생
-        function playAudio(audio) {
+        async function playAudio(audio) {
             const audioPlayer = document.getElementById('audioPlayer');
             
             if (!audio || !audio.url || !audio.filename) {
@@ -343,9 +367,40 @@
                 return;
             }
             
+            // 오디오 파일 크기 확인
+            if (audio.size && audio.size < 100) {
+                console.error(`Audio file too small: ${audio.filename} (${audio.size} bytes)`);
+                updateStatus(`오디오 파일이 너무 작습니다: ${audio.filename} (${audio.size} bytes)`, 'disconnected');
+                return;
+            }
+            
+            // 오디오 파일 유효성 사전 확인 (HEAD 요청)
+            try {
+                const headResponse = await fetch(audio.url, { method: 'HEAD' });
+                if (!headResponse.ok) {
+                    throw new Error(`HTTP ${headResponse.status}: ${headResponse.statusText}`);
+                }
+                
+                const contentLength = headResponse.headers.get('Content-Length');
+                if (contentLength && parseInt(contentLength) < 100) {
+                    console.error(`Audio file too small (from HEAD): ${audio.filename} (${contentLength} bytes)`);
+                    updateStatus(`오디오 파일이 너무 작습니다: ${audio.filename} (${contentLength} bytes)`, 'disconnected');
+                    return;
+                }
+                
+                console.log(`Audio file validated: ${audio.filename} (${contentLength || audio.size || 'unknown'} bytes)`);
+            } catch (headError) {
+                console.warn('HEAD request failed, proceeding anyway:', headError);
+            }
+            
             if (audioPlayer.src === audio.url && !audioPlayer.ended && !audioPlayer.paused) {
                 return;
             }
+            
+            // 기존 이벤트 리스너 제거
+            audioPlayer.onended = null;
+            audioPlayer.onerror = null;
+            audioPlayer.oncanplay = null;
             
             audioPlayer.src = audio.url;
             currentAudioId = audio.filename;
@@ -362,10 +417,13 @@
                 setTimeout(checkAudio, 1000);
             };
 
-            audioPlayer.onerror = (error) => {
+            audioPlayer.onerror = async (error) => {
                 console.error('Audio playback error:', error);
                 console.error('Audio URL:', audio.url);
                 console.error('Audio element error:', audioPlayer.error);
+                console.error('Audio size:', audio.size);
+                console.error('Network state:', audioPlayer.networkState);
+                console.error('Ready state:', audioPlayer.readyState);
                 
                 let errorMessage = '재생 오류: 오디오 파일을 확인할 수 없습니다';
                 
@@ -378,14 +436,37 @@
                             errorMessage = '네트워크 오류: 오디오 파일을 다운로드할 수 없습니다';
                             break;
                         case MediaError.MEDIA_ERR_DECODE:
-                            errorMessage = '디코드 오류: 오디오 파일 형식을 인식할 수 없습니다';
+                            errorMessage = '디코드 오류: 오디오 파일 형식을 인식할 수 없습니다 (파일이 손상되었거나 너무 작을 수 있습니다)';
                             break;
                         case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
-                            errorMessage = '지원되지 않는 형식: 오디오 파일 형식을 지원하지 않습니다';
+                            errorMessage = '지원되지 않는 형식: 오디오 파일 형식을 지원하지 않습니다 (파일이 유효한 MP3가 아닐 수 있습니다)';
                             break;
                         default:
-                            errorMessage = '재생 오류: 알 수 없는 오류';
+                            errorMessage = `재생 오류: 알 수 없는 오류 (코드: ${audioPlayer.error.code})`;
                     }
+                }
+                
+                // 추가 디버깅: 오디오 파일 직접 확인
+                try {
+                    const response = await fetch(audio.url, { method: 'HEAD' });
+                    console.log('Audio file HEAD response:', {
+                        status: response.status,
+                        statusText: response.statusText,
+                        contentType: response.headers.get('Content-Type'),
+                        contentLength: response.headers.get('Content-Length')
+                    });
+                    
+                    if (response.status !== 200) {
+                        errorMessage += ` (HTTP ${response.status})`;
+                    }
+                    
+                    const contentLength = response.headers.get('Content-Length');
+                    if (contentLength && parseInt(contentLength) < 100) {
+                        errorMessage = `오디오 파일이 너무 작습니다: ${contentLength} bytes (유효한 MP3 파일이 아닙니다)`;
+                    }
+                } catch (fetchError) {
+                    console.error('Failed to check audio file:', fetchError);
+                    errorMessage += ' (파일 확인 실패)';
                 }
                 
                 updateStatus(errorMessage, 'disconnected');
