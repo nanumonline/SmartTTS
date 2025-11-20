@@ -45,6 +45,44 @@ if (!file_exists($audioFile)) {
     exit();
 }
 
+// 파일 크기 확인
+$fileSize = filesize($audioFile);
+if ($fileSize < 100) {
+    http_response_code(400);
+    echo json_encode(['error' => 'Audio file too small', 'file' => $filename, 'size' => $fileSize]);
+    exit();
+}
+
+// 파일 유효성 검사 (처음 몇 바이트 확인)
+$handle = fopen($audioFile, 'rb');
+if ($handle === false) {
+    http_response_code(500);
+    echo json_encode(['error' => 'Failed to open audio file']);
+    exit();
+}
+
+$firstBytes = fread($handle, 3);
+fclose($handle);
+
+// JSON 배열 문자열인지 확인 (처음이 '['인 경우)
+if (substr($firstBytes, 0, 1) === '[') {
+    http_response_code(400);
+    echo json_encode([
+        'error' => 'Invalid audio file: JSON array string detected',
+        'file' => $filename,
+        'message' => 'File appears to be a JSON array string, not binary audio data'
+    ]);
+    exit();
+}
+
+// MP3 파일 시그니처 확인
+$isValidMP3 = false;
+if (substr($firstBytes, 0, 3) === 'ID3') {
+    $isValidMP3 = true;
+} elseif (ord($firstBytes[0]) === 0xFF && (ord($firstBytes[1]) & 0xE0) === 0xE0) {
+    $isValidMP3 = true;
+}
+
 // MIME 타입 결정
 $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
 $mimeType = 'audio/mpeg'; // 기본값
@@ -86,12 +124,24 @@ if ($handle === false) {
 }
 
 // 청크 단위로 출력 (메모리 효율)
+$bytesSent = 0;
 while (!feof($handle)) {
-    echo fread($handle, 8192); // 8KB 청크
+    $chunk = fread($handle, 8192); // 8KB 청크
+    if ($chunk === false) {
+        break;
+    }
+    echo $chunk;
     flush();
+    $bytesSent += strlen($chunk);
 }
 
 fclose($handle);
+
+// 실제 전송된 바이트 수 확인
+if ($bytesSent !== $fileSize) {
+    error_log("[audio.php] WARNING: File size mismatch. Expected: {$fileSize}, Sent: {$bytesSent}");
+}
+
 exit();
 ?>
 

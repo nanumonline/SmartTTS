@@ -448,21 +448,51 @@
                 
                 // 추가 디버깅: 오디오 파일 직접 확인
                 try {
-                    const response = await fetch(audio.url, { method: 'HEAD' });
+                    // HEAD 요청으로 파일 정보 확인
+                    const headResponse = await fetch(audio.url, { method: 'HEAD' });
                     console.log('Audio file HEAD response:', {
-                        status: response.status,
-                        statusText: response.statusText,
-                        contentType: response.headers.get('Content-Type'),
-                        contentLength: response.headers.get('Content-Length')
+                        status: headResponse.status,
+                        statusText: headResponse.statusText,
+                        contentType: headResponse.headers.get('Content-Type'),
+                        contentLength: headResponse.headers.get('Content-Length')
                     });
                     
-                    if (response.status !== 200) {
-                        errorMessage += ` (HTTP ${response.status})`;
+                    if (headResponse.status !== 200) {
+                        errorMessage += ` (HTTP ${headResponse.status})`;
                     }
                     
-                    const contentLength = response.headers.get('Content-Length');
+                    const contentLength = headResponse.headers.get('Content-Length');
                     if (contentLength && parseInt(contentLength) < 100) {
                         errorMessage = `오디오 파일이 너무 작습니다: ${contentLength} bytes (유효한 MP3 파일이 아닙니다)`;
+                    }
+                    
+                    // 실제 파일 내용 확인 (처음 몇 바이트)
+                    const rangeResponse = await fetch(audio.url, {
+                        method: 'GET',
+                        headers: {
+                            'Range': 'bytes=0-15'
+                        }
+                    });
+                    
+                    if (rangeResponse.ok) {
+                        const firstBytes = await rangeResponse.arrayBuffer();
+                        const bytes = new Uint8Array(firstBytes);
+                        const hexString = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(' ');
+                        console.log('Audio file first bytes (hex):', hexString);
+                        
+                        // JSON 배열 문자열인지 확인
+                        if (bytes[0] === 0x5B) { // '[' 문자
+                            errorMessage = '오디오 파일이 JSON 배열 문자열입니다 (유효한 MP3 파일이 아닙니다)';
+                        }
+                        // MP3 시그니처 확인
+                        else if (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) {
+                            console.log('Valid MP3 file detected (ID3 tag)');
+                        } else if (bytes[0] === 0xFF && (bytes[1] & 0xE0) === 0xE0) {
+                            console.log('Valid MP3 file detected (MPEG frame)');
+                        } else {
+                            console.warn('Unknown audio file format:', hexString);
+                            errorMessage += ' (파일 형식을 인식할 수 없습니다)';
+                        }
                     }
                 } catch (fetchError) {
                     console.error('Failed to check audio file:', fetchError);
