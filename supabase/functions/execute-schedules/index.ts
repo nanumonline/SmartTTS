@@ -315,9 +315,22 @@ serve(async (req) => {
                     }
                     audioData = bytes.buffer;
                   } catch (e) {
-                    // base64가 아닌 경우 그대로 사용
-                    const encoder = new TextEncoder();
-                    audioData = encoder.encode(blobValue).buffer;
+                    // base64가 아닌 경우, JSON 배열 문자열인지 확인
+                    try {
+                      // JSON 배열 문자열인 경우 파싱 (예: "[82,73,70,70]")
+                      const parsedArray = JSON.parse(blobValue);
+                      if (Array.isArray(parsedArray)) {
+                        audioData = new Uint8Array(parsedArray).buffer;
+                        console.log(`[execute-schedules] Converted JSON array string to ArrayBuffer: ${audioData.byteLength} bytes`);
+                      } else {
+                        throw new Error("Not an array");
+                      }
+                    } catch (parseError) {
+                      // JSON 배열도 아닌 경우 그대로 사용 (텍스트로 인코딩)
+                      console.warn(`[execute-schedules] Failed to parse blob as base64 or JSON array, using as text:`, parseError);
+                      const encoder = new TextEncoder();
+                      audioData = encoder.encode(blobValue).buffer;
+                    }
                   }
                 }
               } else if (blobValue instanceof ArrayBuffer) {
@@ -509,10 +522,12 @@ serve(async (req) => {
             `[execute-schedules] Sending audio to ${channel.endpoint} (${audioData.byteLength} bytes, ${mimeType})`
           );
 
+          // ArrayBuffer를 직접 전송 (바이너리 데이터)
+          // fetch API는 ArrayBuffer를 자동으로 바이너리로 전송합니다
           const response = await fetch(channel.endpoint, {
             method: "POST",
             headers,
-            body: audioData,
+            body: audioData, // ArrayBuffer를 직접 전송 (바이너리)
           });
 
           if (!response.ok) {

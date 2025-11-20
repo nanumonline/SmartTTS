@@ -60,10 +60,37 @@ if (!empty($validApiKey) && $apiKey !== $validApiKey) {
 }
 */
 
-// 오디오 데이터 받기
+// 오디오 데이터 받기 (바이너리 데이터)
 $audioData = file_get_contents('php://input');
 $contentType = $_SERVER['CONTENT_TYPE'] ?? 'audio/mpeg';
 $contentLength = $_SERVER['CONTENT_LENGTH'] ?? strlen($audioData);
+
+// 디버깅: 처음 몇 바이트 확인 (JSON 배열 문자열인지 확인)
+if (strlen($audioData) > 0) {
+    $firstBytes = substr($audioData, 0, min(20, strlen($audioData)));
+    $isJsonArray = (substr($firstBytes, 0, 1) === '[');
+    
+    if ($isJsonArray) {
+        // JSON 배열 문자열인 경우, 실제 바이너리 데이터로 변환
+        error_log("[index.php] WARNING: Received JSON array string instead of binary data. Attempting to parse...");
+        
+        try {
+            $parsedArray = json_decode($audioData, true);
+            if (is_array($parsedArray)) {
+                // JSON 배열을 바이너리 데이터로 변환
+                $binaryData = '';
+                foreach ($parsedArray as $byte) {
+                    $binaryData .= chr($byte);
+                }
+                $audioData = $binaryData;
+                $contentLength = strlen($audioData);
+                error_log("[index.php] Converted JSON array to binary data: " . strlen($audioData) . " bytes");
+            }
+        } catch (Exception $e) {
+            error_log("[index.php] Failed to parse JSON array: " . $e->getMessage());
+        }
+    }
+}
 
 // 디렉토리 설정 (먼저 설정하여 로그에 사용)
 $baseDir = __DIR__;
