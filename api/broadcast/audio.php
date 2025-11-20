@@ -53,7 +53,7 @@ if ($fileSize < 100) {
     exit();
 }
 
-// 파일 유효성 검사 (처음 몇 바이트 확인)
+// 파일 유효성 검사 및 JSON 배열 문자열 변환
 $handle = fopen($audioFile, 'rb');
 if ($handle === false) {
     http_response_code(500);
@@ -65,14 +65,55 @@ $firstBytes = fread($handle, 3);
 fclose($handle);
 
 // JSON 배열 문자열인지 확인 (처음이 '['인 경우)
-if (substr($firstBytes, 0, 1) === '[') {
-    http_response_code(400);
-    echo json_encode([
-        'error' => 'Invalid audio file: JSON array string detected',
-        'file' => $filename,
-        'message' => 'File appears to be a JSON array string, not binary audio data'
-    ]);
-    exit();
+$isJsonArray = (substr($firstBytes, 0, 1) === '[');
+
+if ($isJsonArray) {
+    // JSON 배열 문자열을 바이너리 데이터로 변환
+    error_log("[audio.php] Converting JSON array string to binary: {$filename}");
+    
+    $fileContent = file_get_contents($audioFile);
+    if ($fileContent === false) {
+        http_response_code(500);
+        echo json_encode(['error' => 'Failed to read audio file']);
+        exit();
+    }
+    
+    try {
+        $parsedArray = json_decode($fileContent, true);
+        if (is_array($parsedArray)) {
+            // JSON 배열을 바이너리 데이터로 변환
+            $binaryData = '';
+            foreach ($parsedArray as $byte) {
+                $binaryData .= chr($byte);
+            }
+            
+            // 변환된 바이너리 데이터를 임시 파일에 저장 (다음 요청을 위해)
+            // 또는 메모리에서 직접 전송
+            $fileSize = strlen($binaryData);
+            $audioData = $binaryData;
+            
+            error_log("[audio.php] Converted JSON array to binary: {$filename} ({$fileSize} bytes)");
+        } else {
+            http_response_code(400);
+            echo json_encode([
+                'error' => 'Invalid audio file: JSON array string detected but failed to parse',
+                'file' => $filename
+            ]);
+            exit();
+        }
+    } catch (Exception $e) {
+        http_response_code(400);
+        echo json_encode([
+            'error' => 'Invalid audio file: Failed to parse JSON array string',
+            'file' => $filename,
+            'message' => $e->getMessage()
+        ]);
+        exit();
+    }
+} else {
+    // 정상적인 바이너리 파일인 경우
+    $audioData = null; // 파일을 직접 읽을 예정
+    $fileSize = filesize($audioFile);
 }
 
 // MP3 파일 시그니처 확인
@@ -104,7 +145,7 @@ switch ($extension) {
 
 // 오디오 파일 전송
 header('Content-Type: ' . $mimeType);
-header('Content-Length: ' . filesize($audioFile));
+header('Content-Length: ' . $fileSize);
 header('Content-Disposition: inline; filename="' . basename($filename) . '"');
 header('Accept-Ranges: bytes');
 header('Cache-Control: public, max-age=3600');
@@ -115,31 +156,39 @@ if (ob_get_level()) {
     ob_end_clean();
 }
 
-// 파일 출력
-$handle = fopen($audioFile, 'rb');
-if ($handle === false) {
-    http_response_code(500);
-    echo json_encode(['error' => 'Failed to open audio file']);
-    exit();
-}
-
-// 청크 단위로 출력 (메모리 효율)
-$bytesSent = 0;
-while (!feof($handle)) {
-    $chunk = fread($handle, 8192); // 8KB 청크
-    if ($chunk === false) {
-        break;
-    }
-    echo $chunk;
+// JSON 배열에서 변환된 데이터인 경우
+if ($audioData !== null) {
+    // 변환된 바이너리 데이터를 직접 출력
+    echo $audioData;
     flush();
-    $bytesSent += strlen($chunk);
-}
+    error_log("[audio.php] Sent converted binary data: {$filename} ({$fileSize} bytes)");
+} else {
+    // 정상적인 바이너리 파일인 경우
+    $handle = fopen($audioFile, 'rb');
+    if ($handle === false) {
+        http_response_code(500);
+        echo json_encode(['error' => 'Failed to open audio file']);
+        exit();
+    }
 
-fclose($handle);
+    // 청크 단위로 출력 (메모리 효율)
+    $bytesSent = 0;
+    while (!feof($handle)) {
+        $chunk = fread($handle, 8192); // 8KB 청크
+        if ($chunk === false) {
+            break;
+        }
+        echo $chunk;
+        flush();
+        $bytesSent += strlen($chunk);
+    }
 
-// 실제 전송된 바이트 수 확인
-if ($bytesSent !== $fileSize) {
-    error_log("[audio.php] WARNING: File size mismatch. Expected: {$fileSize}, Sent: {$bytesSent}");
+    fclose($handle);
+
+    // 실제 전송된 바이트 수 확인
+    if ($bytesSent !== $fileSize) {
+        error_log("[audio.php] WARNING: File size mismatch. Expected: {$fileSize}, Sent: {$bytesSent}");
+    }
 }
 
 exit();
