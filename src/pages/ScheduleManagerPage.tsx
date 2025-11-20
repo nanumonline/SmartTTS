@@ -1319,6 +1319,7 @@ export default function ScheduleManagerPage() {
             )}
           </div>
         )}
+      </div>
 
       {/* 스케줄 생성 다이얼로그 */}
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
