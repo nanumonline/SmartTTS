@@ -615,28 +615,35 @@
             listEl.innerHTML = audioList.map(audio => {
                 const isCurrent = audio.filename === currentAudioId;
                 // 스케줄 이름이 있으면 표시, 없으면 파일명 표시
-                const displayName = audio.schedule_name || audio.display_name || audio.filename;
-                // 파일명은 작은 글씨로 표시
-                const filenameDisplay = audio.schedule_name ? `<div style="font-size: 12px; opacity: 0.7; margin-top: 4px;">${audio.filename}</div>` : '';
+                const scheduleName = audio.schedule_name || null;
+                const displayName = scheduleName || audio.display_name || audio.filename;
+                // 파일명은 작은 글씨로 표시 (스케줄 이름이 있을 때만)
+                const filenameDisplay = scheduleName ? `<div style="font-size: 11px; opacity: 0.6; margin-top: 2px; font-family: monospace;">${audio.filename}</div>` : '';
+                
+                // HTML 이스케이프 처리
+                const safeDisplayName = displayName.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                const safeFilename = audio.filename.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                const safeUrl = audio.url.replace(/'/g, "\\'");
                 
                 return `
                     <div class="audio-item ${isCurrent ? 'playing' : ''}" 
-                         data-filename="${audio.filename}" 
-                         data-url="${audio.url}"
+                         data-filename="${safeFilename}" 
+                         data-url="${safeUrl}"
                          data-size="${audio.size || 0}"
+                         data-schedule-name="${scheduleName || ''}"
                          style="cursor: pointer;"
-                         onclick="selectAndPlayAudio('${audio.filename}', '${audio.url}', ${audio.size || 0})">
-                        <div class="audio-filename">${displayName}</div>
+                         onclick="selectAndPlayAudio('${safeFilename}', '${safeUrl}', ${audio.size || 0}, '${scheduleName || ''}')">
+                        <div class="audio-filename" style="font-weight: 600; margin-bottom: 4px;">${safeDisplayName}</div>
                         ${filenameDisplay}
-                        <div class="audio-time">${audio.modified} (${formatSize(audio.size)})</div>
+                        <div class="audio-time" style="font-size: 12px; opacity: 0.8; margin-top: 4px;">${audio.modified} (${formatSize(audio.size)})</div>
                     </div>
                 `;
             }).join('');
         }
         
         // 오디오 선택 및 재생
-        function selectAndPlayAudio(filename, url, size) {
-            console.log('Selecting audio:', filename, url, size);
+        function selectAndPlayAudio(filename, url, size, scheduleName = null) {
+            console.log('Selecting audio:', filename, url, size, scheduleName);
             
             // 크기 확인
             if (size && size < 100) {
@@ -644,10 +651,16 @@
                 return;
             }
             
+            // 오디오 목록에서 상세 정보 찾기
+            const audioItem = document.querySelector(`[data-filename="${filename.replace(/'/g, "\\'")}"]`);
+            const fullScheduleName = scheduleName || (audioItem ? audioItem.getAttribute('data-schedule-name') : null);
+            
             const audio = {
                 filename: filename,
                 url: url,
                 size: size,
+                schedule_name: fullScheduleName || null,
+                display_name: fullScheduleName || filename,
                 modified: new Date().toISOString()
             };
             

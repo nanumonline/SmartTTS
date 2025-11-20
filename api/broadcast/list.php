@@ -50,15 +50,20 @@ $files = array_filter($files, function($file) {
 foreach ($files as $file) {
     $filePath = $audioDir . '/' . $file;
     
-    // 파일명에서 스케줄 이름 추출 (형식: "스케줄이름_2025-11-20_10-11-11.mp3" 또는 "broadcast_2025-11-20_10-11-11.mp3")
+    // 파일명에서 스케줄 이름 추출
+    // 형식 1: "스케줄이름_2025-11-20_10-11-11.mp3" (새 형식)
+    // 형식 2: "broadcast_2025-11-20_10-11-11.mp3" (기존 형식)
     $scheduleName = null;
     $displayName = $file;
     
-    // 파일명에서 스케줄 이름 추출 시도
+    // 파일명에서 스케줄 이름 추출 시도 (정규식 개선)
+    // 패턴: "문자열_YYYY-MM-DD_HH-MM-SS.확장자"
     if (preg_match('/^(.+?)_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})\.(mp3|wav|ogg)$/i', $file, $matches)) {
         $potentialScheduleName = $matches[1];
         // "broadcast"가 아닌 경우에만 스케줄 이름으로 사용
-        if (strtolower($potentialScheduleName) !== 'broadcast') {
+        // 한글, 영문, 숫자, 언더스코어, 하이픈 포함 가능
+        if (strtolower($potentialScheduleName) !== 'broadcast' && 
+            preg_match('/^[a-zA-Z0-9가-힣_\-]+$/u', $potentialScheduleName)) {
             $scheduleName = $potentialScheduleName;
             $displayName = $scheduleName;
         }
@@ -67,7 +72,7 @@ foreach ($files as $file) {
     $fileInfo = [
         'filename' => $file,
         'schedule_name' => $scheduleName, // 스케줄 이름 (있으면)
-        'display_name' => $displayName, // 표시 이름
+        'display_name' => $displayName, // 표시 이름 (스케줄 이름 또는 파일명)
         'url' => 'https://nanum.online/tts/api/broadcast/audio.php?file=' . urlencode($file),
         'size' => filesize($filePath),
         'modified' => date('Y-m-d H:i:s', filemtime($filePath)),
