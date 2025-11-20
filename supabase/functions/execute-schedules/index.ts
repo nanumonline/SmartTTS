@@ -54,11 +54,12 @@ serve(async (req) => {
     const now = new Date();
     const nowISO = now.toISOString();
     
-    // 시간 범위 확대: 과거 10분 ~ 현재 5분
+    // 시간 범위 확대: 과거 30분 ~ 현재 30분
     // 과거 스케줄도 처리하여 놓친 스케줄이 있으면 실행
     // 넓은 범위를 사용하여 시간 정확도 문제나 네트워크 지연을 고려
-    const timeWindowStart = new Date(now.getTime() - 10 * 60 * 1000).toISOString(); // 과거 10분
-    const timeWindowEnd = new Date(now.getTime() + 5 * 60 * 1000).toISOString(); // 미래 5분
+    // 놓친 스케줄 처리를 위해 과거 범위 확대
+    const timeWindowStart = new Date(now.getTime() - 30 * 60 * 1000).toISOString(); // 과거 30분
+    const timeWindowEnd = new Date(now.getTime() + 30 * 60 * 1000).toISOString(); // 미래 30분
 
     // KST(Asia/Seoul, UTC+9) 시간 계산
     const kstNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
