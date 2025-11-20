@@ -1,0 +1,60 @@
+# TTS 방송 송출 API 엔드포인트 설정
+
+# API 경로는 React 앱으로 리다이렉트하지 않도록 설정
+RewriteEngine On
+
+# /api/broadcast 경로는 PHP 파일로 직접 처리
+RewriteCond %{REQUEST_URI} ^/api/broadcast
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^api/broadcast/?$ index.php [L]
+
+# /api/broadcast/*.php 파일은 직접 처리
+RewriteCond %{REQUEST_URI} ^/api/broadcast/.*\.php$
+RewriteRule ^ - [L]
+
+# /api/broadcast/audio/ 경로는 audio.php로 처리
+RewriteCond %{REQUEST_URI} ^/api/broadcast/audio/
+RewriteRule ^api/broadcast/audio/(.*)$ audio.php?file=$1 [L,QSA]
+
+# CORS 설정
+<IfModule mod_headers.c>
+    Header set Access-Control-Allow-Origin "*"
+    Header set Access-Control-Allow-Methods "POST, OPTIONS, GET"
+    Header set Access-Control-Allow-Headers "Content-Type, Content-Length, Authorization, X-API-Key"
+    Header set Access-Control-Max-Age "3600"
+</IfModule>
+
+# POST 요청 허용
+<Limit POST OPTIONS GET>
+    Require all granted
+</Limit>
+
+# 파일 업로드 크기 제한 (50MB)
+<IfModule mod_php.c>
+    php_value upload_max_filesize 50M
+    php_value post_max_size 50M
+    php_value max_execution_time 300
+    php_value max_input_time 300
+</IfModule>
+
+# 디렉토리 인덱싱 비활성화
+Options -Indexes
+
+# 에러 로깅 활성화
+php_flag log_errors On
+php_value error_log logs/php_errors.log
+
+# 보안: 특정 파일 접근 차단
+<FilesMatch "\.(log|ini|conf|bak)$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# 기본 인덱스 파일
+DirectoryIndex index.php index.html
+
+# POST 요청 리다이렉트 방지
+RewriteCond %{REQUEST_METHOD} POST
+RewriteCond %{REQUEST_URI} ^/tts/api/broadcast/?$
+RewriteRule ^(.*)$ index.php [L]

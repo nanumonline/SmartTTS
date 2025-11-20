@@ -8,7 +8,7 @@ interface PageHeaderProps {
   title: string;
   description?: string;
   icon?: LucideIcon;
-  action?: {
+  action?: React.ReactNode | {
     label: string;
     onClick: () => void;
     icon?: LucideIcon;
@@ -41,10 +41,14 @@ export default function PageHeader({
           )}
         </div>
         {action && (
-          <Button onClick={action.onClick} className="flex items-center gap-2">
-            {action.icon && <action.icon className="w-4 h-4" />}
-            {action.label}
-          </Button>
+          typeof action === 'object' && 'onClick' in action ? (
+            <Button onClick={action.onClick} className="flex items-center gap-2">
+              {action.icon && <action.icon className="w-4 h-4" />}
+              {action.label}
+            </Button>
+          ) : (
+            action
+          )
         )}
       </div>
     </div>

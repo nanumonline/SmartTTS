@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.openai-text-generation]
 verify_jwt = true
+
+[functions.execute-schedules]
+verify_jwt = false

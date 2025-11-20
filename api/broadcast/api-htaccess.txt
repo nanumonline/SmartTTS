@@ -1,0 +1,24 @@
+# API 폴더용 .htaccess 파일
+# 이 파일을 public_html/tts/api/.htaccess 로 업로드하세요
+
+# API 경로는 React 앱으로 리다이렉트하지 않음
+<IfModule mod_rewrite.c>
+RewriteEngine On
+
+# 실제 파일이 존재하면 직접 처리
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule ^ - [L]
+
+# 디렉토리가 존재하면 직접 처리
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+</IfModule>
+
+# CORS 설정
+<IfModule mod_headers.c>
+    Header set Access-Control-Allow-Origin "*"
+    Header set Access-Control-Allow-Methods "POST, OPTIONS, GET"
+    Header set Access-Control-Allow-Headers "Content-Type, Content-Length, Authorization, X-API-Key"
+    Header set Access-Control-Max-Age "3600"
+</IfModule>
+

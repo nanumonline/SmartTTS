@@ -1,0 +1,18 @@
+# 로그 파일
+logs/
+*.log
+
+# 저장된 오디오 파일
+audio/
+*.mp3
+*.wav
+*.ogg
+
+# PHP 에러 로그
+php_errors.log
+
+# 임시 파일
+*.tmp
+*.bak
+*~
+

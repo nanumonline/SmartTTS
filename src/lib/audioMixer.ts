@@ -275,19 +275,28 @@ export async function exportMixToWav(
     bgmGain.gain.value = clamp(settings.bgmGain, 0, 10, 0.5);
   }
 
-  // BGM 종료 시 페이드아웃 적용
+  // BGM 종료 시 페이드아웃 적용 (선형 페이드아웃)
   // bgmTotalLen이 이미 계산되어 있음 (위에서 계산)
-  // 음원증감 비율 적용: 50%가 기본값(원래 볼륨), 0-50%는 감소, 50-100%는 증가
+  // 음원증감 비율 적용: 100%가 기본값(원래 볼륨), 0-100%는 시작 볼륨 비율
   if (bgmBuffer && bgmGain && settings.fadeOut > 0) {
     const bgmEndTime = bgmTotalLen || renderDur;
     const bgmFadeOutGain = ctx.createGain();
-    const fadeOutRatio = clamp(settings.fadeOutRatio ?? 50, 0, 100, 50) / 100; // 0-100을 0-1로 변환 (50%가 중앙 = 기본 볼륨)
-    // 50% = 기본 볼륨 (bgmGain * 1.0), 0% = 0 볼륨, 100% = bgmGain * 2.0
+    const fadeOutRatio = clamp(settings.fadeOutRatio ?? 100, 0, 100, 100) / 100; // 0-100을 0-1로 변환 (100%가 기본 볼륨)
+    // 100% = 기본 볼륨 (bgmGain * 1.0), 0% = 0 볼륨
     const bgmGainValue = clamp(settings.bgmGain, 0, 10, 0.5);
-    const fadeOutStartGain = clamp(bgmGainValue * (fadeOutRatio * 2), 0.0001, 10, bgmGainValue); // 중앙 기준 증감
+    const fadeOutStartGain = clamp(bgmGainValue * fadeOutRatio, 0.0001, 10, bgmGainValue); // 시작 볼륨
     const fadeOutDuration = clamp(settings.fadeOut, 0, 60, 0.5);
-    bgmFadeOutGain.gain.setValueAtTime(fadeOutStartGain, bgmEndTime - Math.max(0.01, fadeOutDuration));
-    bgmFadeOutGain.gain.exponentialRampToValueAtTime(0.0001, bgmEndTime);
+    const fadeOutStartTime = bgmEndTime - Math.max(0.01, fadeOutDuration);
+    
+    // 페이드아웃 시작 시점에 bgmGain을 원래 볼륨으로 복원 (덕킹 영향 제거)
+    // 이렇게 하면 페이드아웃이 항상 원래 볼륨에서 시작하여 선형으로 감소
+    bgmGain.gain.setValueAtTime(bgmGainValue, fadeOutStartTime);
+    bgmGain.gain.linearRampToValueAtTime(bgmGainValue, fadeOutStartTime + 0.01);
+    
+    // 페이드아웃 게인 노드: 100%에서 시작하여 0%로 선형 감소
+    bgmFadeOutGain.gain.setValueAtTime(1.0, fadeOutStartTime); // 100% 볼륨
+    bgmFadeOutGain.gain.linearRampToValueAtTime(0.0, bgmEndTime); // 0%로 선형 감소
+    
     bgmGain.connect(bgmFadeOutGain);
     bgmFadeOutGain.connect(master);
   } else if (bgmBuffer && bgmGain) {
@@ -376,6 +385,10 @@ export async function exportMixToWav(
         bgmControlGain.gain.setValueAtTime(target, t);
         bgmControlGain.gain.linearRampToValueAtTime(target, Math.min(fadeOutStart, t + settings.duckRelease));
       }
+      // 페이드아웃 시작 시점에 원래 볼륨으로 복원 (덕킹 영향 제거)
+      // 페이드아웃이 선형으로 점진적으로 감소하도록 보장
+      bgmControlGain.gain.setValueAtTime(settings.bgmGain, fadeOutStart - 0.01);
+      bgmControlGain.gain.linearRampToValueAtTime(settings.bgmGain, fadeOutStart);
     } else {
       // 페이드아웃 없으면 전체 구간에 대해 적용
       for (let t = 0; t < renderDur; t += step) {

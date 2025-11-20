@@ -1,0 +1,26 @@
+{
+  "name": "tts-broadcast-api",
+  "version": "1.0.0",
+  "description": "TTS Broadcasting API Endpoint for Hostinger",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "keywords": [
+    "tts",
+    "broadcast",
+    "api",
+    "audio"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "engines": {
+    "node": ">=14.0.0",
+    "npm": ">=6.0.0"
+  }
+}
+

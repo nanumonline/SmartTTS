@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Download, Trash2, Play, Filter, Music2, Calendar, FileSearch, AlertCircle, Loader2, Star } from "lucide-react";
+import { Search, Download, Trash2, Play, Filter, Music2, Calendar, FileSearch, AlertCircle, Loader2, Star, Waves } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/components/ui/use-toast";
 import { useNavigate } from "react-router-dom";
@@ -18,6 +18,16 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Pagination, PaginationContent, PaginationItem } from "@/components/ui/pagination";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+
+// 믹싱 음원인지 확인
+const isMixedAudio = (gen: dbService.GenerationEntry): boolean => {
+  return (
+    gen.purpose === "mixed" ||
+    gen.purposeLabel === "믹싱음원" ||
+    gen.model === "mixed" ||
+    (gen.savedName && gen.savedName.includes("믹싱"))
+  );
+};
 
 // 카테고리별 색상 매핑
 const getPurposeColor = (purposeId: string): string => {
@@ -39,6 +49,7 @@ const getPurposeColor = (purposeId: string): string => {
     celebration: "bg-amber-500/10 text-amber-600 border-amber-500/20 hover:bg-amber-500/20 dark:bg-amber-500/20 dark:text-amber-400 dark:border-amber-500/30",
     health: "bg-lime-500/10 text-lime-600 border-lime-500/20 hover:bg-lime-500/20 dark:bg-lime-500/20 dark:text-lime-400 dark:border-lime-500/30",
     education: "bg-violet-500/10 text-violet-600 border-violet-500/20 hover:bg-violet-500/20 dark:bg-violet-500/20 dark:text-violet-400 dark:border-violet-500/30",
+    mixed: "bg-fuchsia-500/10 text-fuchsia-600 border-fuchsia-500/20 hover:bg-fuchsia-500/20 dark:bg-fuchsia-500/20 dark:text-fuchsia-400 dark:border-fuchsia-500/30",
   };
   return colorMap[purposeId] || "bg-gray-500/10 text-gray-600 border-gray-500/20 hover:bg-gray-500/20 dark:bg-gray-500/20 dark:text-gray-400 dark:border-gray-500/30";
 };
@@ -638,15 +649,22 @@ export default function AudioHistoryPage() {
             <Select value={filterPurpose} onValueChange={setFilterPurpose}>
               <SelectTrigger className="w-[150px] sm:w-[180px]">
                 <Filter className="w-4 h-4 mr-2 hidden sm:inline" />
-                <SelectValue placeholder="용도" />
+                <SelectValue placeholder="용도">
+                  {filterPurpose === "all" 
+                    ? "전체 용도" 
+                    : purposeOptions.find((p) => p.id === filterPurpose)?.label || filterPurpose}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">전체 용도</SelectItem>
-                {purposes.map((purpose) => (
-                  <SelectItem key={purpose} value={purpose}>
-                    {purpose}
-                  </SelectItem>
-                ))}
+                {purposes.map((purpose) => {
+                  const purposeOption = purposeOptions.find((p) => p.id === purpose);
+                  return (
+                    <SelectItem key={purpose} value={purpose}>
+                      {purposeOption?.label || purpose}
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
             <Select value={filterStatus} onValueChange={setFilterStatus}>
@@ -719,10 +737,18 @@ export default function AudioHistoryPage() {
                     {/* 왼쪽 정보 */}
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-2 mb-1 text-sm text-muted-foreground">
+                        {/* 카테고리 배지 */}
                         <Badge variant="outline" className={cn("font-medium", getPurposeColor(gen.purpose))}>
                           {purposeOptions.find((p) => p.id === gen.purpose)?.label || gen.purpose}
                         </Badge>
-                        <span>{gen.voiceName}</span>
+                        {/* 믹싱음원 배지 (믹싱 음원인 경우에만 표시) */}
+                        {isMixedAudio(gen) && (
+                          <Badge variant="outline" className={cn("font-medium flex items-center gap-1", getPurposeColor("mixed"))}>
+                            <Waves className="w-3 h-3" />
+                            믹싱음원
+                          </Badge>
+                        )}
+                        {!isMixedAudio(gen) && <span>{gen.voiceName}</span>}
                         {gen.duration && (
                           <span className="text-xs">
                             {Math.floor(gen.duration / 60)}:
@@ -796,25 +822,27 @@ export default function AudioHistoryPage() {
                         </TooltipContent>
                       </Tooltip>
 
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label="믹싱으로 이동"
-                            onClick={() => {
-                              navigate(`/mix/board?generation=${gen.id}`);
-                              toast({
-                                title: "믹싱 페이지로 이동",
-                                description: "선택한 음원을 믹싱할 수 있습니다.",
-                              });
-                            }}
-                          >
-                            <Music2 className="w-4 h-4" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>믹싱</TooltipContent>
-                      </Tooltip>
+                      {!isMixedAudio(gen) && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label="믹싱으로 이동"
+                              onClick={() => {
+                                navigate(`/mix/board?generation=${gen.id}`);
+                                toast({
+                                  title: "믹싱 페이지로 이동",
+                                  description: "선택한 음원을 믹싱할 수 있습니다.",
+                                });
+                              }}
+                            >
+                              <Music2 className="w-4 h-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>믹싱</TooltipContent>
+                        </Tooltip>
+                      )}
 
                       <Tooltip>
                         <TooltipTrigger asChild>
@@ -973,9 +1001,16 @@ export default function AudioHistoryPage() {
                         {entry.purpose && (
                           <div className="flex items-start gap-2">
                             <span className="text-sm font-medium text-muted-foreground min-w-[60px]">목적:</span>
-                            <Badge variant="outline" className="text-xs">
-                              {purposeOptions.find(p => p.id === entry.purpose)?.label || entry.purpose}
-                            </Badge>
+                            {isMixedAudio(entry) ? (
+                              <Badge variant="outline" className={cn("text-xs flex items-center gap-1", getPurposeColor("mixed"))}>
+                                <Waves className="w-3 h-3" />
+                                믹싱음원
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-xs">
+                                {purposeOptions.find(p => p.id === entry.purpose)?.label || entry.purpose}
+                              </Badge>
+                            )}
                           </div>
                         )}
                         {entry.textPreview && (
@@ -1084,11 +1119,23 @@ export default function AudioHistoryPage() {
                     </span>
                   </div>
                 )}
-                {localSaveDialog.entry?.voiceName && (
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">음성</span>
-                    <span className="font-medium">{localSaveDialog.entry.voiceName}</span>
-                  </div>
+                {localSaveDialog.entry && (
+                  <>
+                    {isMixedAudio(localSaveDialog.entry) ? (
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">유형</span>
+                        <Badge variant="outline" className={cn("text-xs flex items-center gap-1", getPurposeColor("mixed"))}>
+                          <Waves className="w-3 h-3" />
+                          믹싱음원
+                        </Badge>
+                      </div>
+                    ) : localSaveDialog.entry.voiceName ? (
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">음성</span>
+                        <span className="font-medium">{localSaveDialog.entry.voiceName}</span>
+                      </div>
+                    ) : null}
+                  </>
                 )}
               </div>
             )}

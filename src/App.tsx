@@ -26,7 +26,6 @@ import ScheduleManagerPage from "./pages/ScheduleManagerPage";
 import ManageAssetsPage from "./pages/ManageAssetsPage";
 import ReportsSendsPage from "./pages/ReportsSendsPage";
 import MixPresetsPage from "./pages/MixPresetsPage";
-import SendAudiencePage from "./pages/SendAudiencePage";
 import ManageJobsPage from "./pages/ManageJobsPage";
 import ManageCompliancePage from "./pages/ManageCompliancePage";
 import ManageAuditPage from "./pages/ManageAuditPage";
@@ -202,16 +201,6 @@ const App = () => (
                 <ProtectedRoute>
                   <AppShell>
                     <ScheduleManagerPage />
-                  </AppShell>
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/send/audience" 
-              element={
-                <ProtectedRoute>
-                  <AppShell>
-                    <SendAudiencePage />
                   </AppShell>
                 </ProtectedRoute>
               } 

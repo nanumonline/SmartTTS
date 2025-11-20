@@ -1036,32 +1036,81 @@ export interface ScheduleRequestEntry {
 // 예약 요청 저장
 export async function saveScheduleRequest(userId: string, request: ScheduleRequestEntry): Promise<string | null> {
   try {
+    // 기본 데이터 구성
+    const baseData: any = {
+      user_id: userId,
+      generation_id: request.generationId,
+      target_channel: request.targetChannel,
+      scheduled_time: request.scheduledTime,
+      repeat_option: request.repeatOption || "once",
+      status: request.status || "scheduled",
+    };
+
+    // 선택적 필드 추가 (컬럼이 있을 수 있으므로)
+    if (request.targetName) {
+      baseData.target_name = request.targetName;
+    }
+    if (request.sentAt) {
+      baseData.sent_at = request.sentAt;
+    }
+    if (request.failReason) {
+      baseData.fail_reason = request.failReason;
+    }
+    if (request.mixingState) {
+      baseData.mixing_state = request.mixingState;
+    }
+    if ((request as any).scheduleName) {
+      baseData.schedule_name = (request as any).scheduleName;
+    }
+    if ((request as any).scheduleType) {
+      baseData.schedule_type = (request as any).scheduleType;
+    }
+
     const { data, error } = await supabase
       .from("tts_schedule_requests")
-      .insert({
-        user_id: userId,
-        generation_id: request.generationId,
-        target_channel: request.targetChannel,
-        target_name: request.targetName,
-        scheduled_time: request.scheduledTime,
-        repeat_option: request.repeatOption || "once",
-        status: request.status || "scheduled",
-        sent_at: request.sentAt,
-        fail_reason: request.failReason,
-        mixing_state: request.mixingState,
-      })
+      .insert(baseData)
       .select("id")
       .single();
 
     if (error) {
-      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
+      // 컬럼이 없는 경우 (42703) 또는 테이블이 없는 경우 (PGRST205)는 조용히 처리
+      if (error.code === "PGRST205" || error.code === "42703" || error.message?.includes("schema cache") || error.message?.includes("does not exist")) {
+        // schedule_name이나 schedule_type 컬럼이 없으면 기본 필드만으로 재시도
+        if (error.message?.includes("schedule_name") || error.message?.includes("schedule_type")) {
+          const fallbackData: any = {
+            user_id: userId,
+            generation_id: request.generationId,
+            target_channel: request.targetChannel,
+            scheduled_time: request.scheduledTime,
+            repeat_option: request.repeatOption || "once",
+            status: request.status || "scheduled",
+          };
+          if (request.targetName) fallbackData.target_name = request.targetName;
+          if (request.sentAt) fallbackData.sent_at = request.sentAt;
+          if (request.failReason) fallbackData.fail_reason = request.failReason;
+          if (request.mixingState) fallbackData.mixing_state = request.mixingState;
+
+          const { data: fallbackResult, error: fallbackError } = await supabase
+            .from("tts_schedule_requests")
+            .insert(fallbackData)
+            .select("id")
+            .single();
+
+          if (fallbackError) {
+            if (fallbackError.code === "PGRST205" || fallbackError.code === "42703") {
+              return null;
+            }
+            throw fallbackError;
+          }
+          return fallbackResult?.id || null;
+        }
         return null;
       }
       throw error;
     }
     return data?.id || null;
   } catch (error: any) {
-    if (error.code !== "PGRST205") {
+    if (error.code !== "PGRST205" && error.code !== "42703") {
       console.error("예약 요청 저장 실패:", error);
     }
     return null;
@@ -1116,6 +1165,8 @@ export async function loadScheduleRequests(userId: string): Promise<ScheduleRequ
       failReason: row.fail_reason,
       mixingState: row.mixing_state,
       createdAt: row.created_at,
+      scheduleName: row.schedule_name,
+      scheduleType: row.schedule_type || "routine",
     }));
   } catch (error: any) {
     if (error.code !== "PGRST205") {
@@ -1125,6 +1176,94 @@ export async function loadScheduleRequests(userId: string): Promise<ScheduleRequ
       }
     }
     return [];
+  }
+}
+
+// 예약 요청 수정
+export async function updateScheduleRequest(
+  userId: string,
+  id: string,
+  updates: Partial<ScheduleRequestEntry>
+): Promise<boolean> {
+  try {
+    const updateData: any = {};
+
+    if (updates.generationId !== undefined) {
+      updateData.generation_id = updates.generationId;
+    }
+    if (updates.targetChannel !== undefined) {
+      updateData.target_channel = updates.targetChannel;
+    }
+    if (updates.targetName !== undefined) {
+      updateData.target_name = updates.targetName;
+    }
+    if (updates.scheduledTime !== undefined) {
+      updateData.scheduled_time = updates.scheduledTime;
+    }
+    if (updates.repeatOption !== undefined) {
+      updateData.repeat_option = updates.repeatOption;
+    }
+    if (updates.status !== undefined) {
+      updateData.status = updates.status;
+    }
+    if (updates.sentAt !== undefined) {
+      updateData.sent_at = updates.sentAt;
+    }
+    if (updates.failReason !== undefined) {
+      updateData.fail_reason = updates.failReason;
+    }
+    if (updates.mixingState !== undefined) {
+      updateData.mixing_state = updates.mixingState;
+    }
+    if ((updates as any).scheduleName !== undefined) {
+      updateData.schedule_name = (updates as any).scheduleName;
+    }
+    if ((updates as any).scheduleType !== undefined) {
+      updateData.schedule_type = (updates as any).scheduleType;
+    }
+
+    const { error } = await supabase
+      .from("tts_schedule_requests")
+      .update(updateData)
+      .eq("user_id", userId)
+      .eq("id", id);
+
+    if (error) {
+      if (error.code === "PGRST205" || error.code === "42703" || error.message?.includes("schema cache")) {
+        return false;
+      }
+      throw error;
+    }
+    return true;
+  } catch (error: any) {
+    if (error.code !== "PGRST205" && error.code !== "42703") {
+      console.error("예약 요청 수정 실패:", error);
+    }
+    return false;
+  }
+}
+
+// 예약 요청 삭제
+export async function deleteScheduleRequest(userId: string, id: string): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from("tts_schedule_requests")
+      .delete()
+      .eq("user_id", userId)
+      .eq("id", id);
+
+    if (error) {
+      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
+        return false;
+      }
+      throw error;
+    }
+    return true;
+  } catch (error: any) {
+    if (error.code !== "PGRST205") {
+      console.error("예약 요청 삭제 실패:", error);
+    }
+    return false;
   }
 }
 
@@ -1954,6 +2093,155 @@ export async function shouldUpdateCatalog(): Promise<boolean> {
       console.error("동기화 시간 확인 실패:", error);
     }
     return true; // 에러 발생 시 업데이트 필요로 간주
+  }
+}
+
+// ==================== 채널 관리 ====================
+
+export interface ChannelEntry {
+  id?: string;
+  name: string;
+  type: string; // radio, tablet, pc 등
+  endpoint?: string;
+  enabled: boolean;
+  config?: Record<string, any>; // 인증 헤더, API 키 등
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+// 채널 저장
+export async function saveChannel(userId: string, channel: ChannelEntry): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from("tts_channels")
+      .upsert({
+        id: channel.id,
+        user_id: userId,
+        name: channel.name,
+        type: channel.type,
+        endpoint: channel.endpoint || null,
+        enabled: channel.enabled !== false,
+        config: channel.config || {},
+        updated_at: new Date().toISOString(),
+      } as any, {
+        onConflict: channel.id ? "id" : "user_id,name"
+      })
+      .select("id")
+      .single();
+
+    if (error) {
+      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
+        return null;
+      }
+      throw error;
+    }
+    return data?.id || null;
+  } catch (error: any) {
+    if (error.code !== "PGRST205") {
+      console.error("채널 저장 실패:", error);
+    }
+    return null;
+  }
+}
+
+// 채널 목록 조회
+export async function loadChannels(userId: string): Promise<ChannelEntry[]> {
+  try {
+    const { data, error } = await supabase
+      .from("tts_channels")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
+        return [];
+      }
+      throw error;
+    }
+
+    if (!data) return [];
+
+    return data.map((row: any) => ({
+      id: row.id,
+      name: row.name,
+      type: row.type,
+      endpoint: row.endpoint || undefined,
+      enabled: row.enabled !== false,
+      config: row.config || {},
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }));
+  } catch (error: any) {
+    if (error.code !== "PGRST205") {
+      console.error("채널 목록 조회 실패:", error);
+    }
+    return [];
+  }
+}
+
+// 채널 조회 (ID로)
+export async function loadChannel(userId: string, channelId: string): Promise<ChannelEntry | null> {
+  try {
+    const { data, error } = await supabase
+      .from("tts_channels")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("id", channelId)
+      .single();
+
+    if (error) {
+      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
+        return null;
+      }
+      if (error.code === "PGRST116") {
+        // 데이터 없음
+        return null;
+      }
+      throw error;
+    }
+
+    if (!data) return null;
+
+    return {
+      id: data.id,
+      name: data.name,
+      type: data.type,
+      endpoint: data.endpoint || undefined,
+      enabled: data.enabled !== false,
+      config: data.config || {},
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+    };
+  } catch (error: any) {
+    if (error.code !== "PGRST205" && error.code !== "PGRST116") {
+      console.error("채널 조회 실패:", error);
+    }
+    return null;
+  }
+}
+
+// 채널 삭제
+export async function deleteChannel(userId: string, channelId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from("tts_channels")
+      .delete()
+      .eq("user_id", userId)
+      .eq("id", channelId);
+
+    if (error) {
+      if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
+        return false;
+      }
+      throw error;
+    }
+    return true;
+  } catch (error: any) {
+    if (error.code !== "PGRST205") {
+      console.error("채널 삭제 실패:", error);
+    }
+    return false;
   }
 }
 

@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>방송 플레이어 - 태블릿 PC</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            max-width: 600px;
+            width: 100%;
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 28px;
+            font-weight: 600;
+        }
+        
+        .status {
+            text-align: center;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-size: 16px;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+        
+        .status.connected {
+            background: rgba(16, 185, 129, 0.2);
+            border: 2px solid rgba(16, 185, 129, 0.5);
+            color: #10b981;
+        }
+        
+        .status.disconnected {
+            background: rgba(239, 68, 68, 0.2);
+            border: 2px solid rgba(239, 68, 68, 0.5);
+            color: #ef4444;
+        }
+        
+        .status.waiting {
+            background: rgba(251, 191, 36, 0.2);
+            border: 2px solid rgba(251, 191, 36, 0.5);
+            color: #fbbf24;
+        }
+        
+        .info {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        
+        .info-item {
+            margin-bottom: 8px;
+        }
+        
+        .info-item:last-child {
+            margin-bottom: 0;
+        }
+        
+        .info-label {
+            font-weight: 600;
+            margin-right: 8px;
+        }
+        
+        audio {
+            width: 100%;
+            margin: 20px 0;
+            border-radius: 10px;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+        }
+        
+        button:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        .audio-list {
+            margin-top: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .audio-item {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        
+        .audio-item.playing {
+            background: rgba(16, 185, 129, 0.2);
+            border: 2px solid rgba(16, 185, 129, 0.5);
+        }
+        
+        .audio-filename {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        
+        .audio-time {
+            font-size: 12px;
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📻 방송 플레이어</h1>
+        <div class="status" id="status">초기화 중...</div>
+        
+        <div class="info" id="info" style="display: none;">
+            <div class="info-item">
+                <span class="info-label">현재 재생:</span>
+                <span id="currentFile">없음</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">다음 확인:</span>
+                <span id="nextCheck">-</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">디바이스 ID:</span>
+                <span id="deviceId">-</span>
+            </div>
+        </div>
+        
+        <audio id="audioPlayer" controls></audio>
+        
+        <div class="controls">
+            <button onclick="checkAudio()">수동 확인</button>
+            <button onclick="togglePolling()" id="pollingBtn">폴링 중지</button>
+        </div>
+        
+        <div class="audio-list" id="audioList"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'https://nanum.online/tts/api/broadcast';
+        const CHANNEL_ID = new URLSearchParams(window.location.search).get('channel_id') || 'default';
+        const POLL_INTERVAL = 10000; // 10초마다 확인
+        
+        let currentAudioId = null;
+        let isPlaying = false;
+        let pollingInterval = null;
+        let isPolling = true;
+        let lastCheckedFile = null;
+
+        // 상태 업데이트
+        function updateStatus(message, className) {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = message;
+            statusEl.className = 'status ' + (className || 'waiting');
+        }
+
+        // 정보 업데이트
+        function updateInfo(currentFile, nextCheck) {
+            const infoEl = document.getElementById('info');
+            document.getElementById('currentFile').textContent = currentFile || '없음';
+            document.getElementById('nextCheck').textContent = nextCheck || '-';
+            document.getElementById('deviceId').textContent = getDeviceId();
+            infoEl.style.display = 'block';
+        }
+
+        // 디바이스 ID 생성/조회
+        function getDeviceId() {
+            let deviceId = localStorage.getItem('device_id');
+            if (!deviceId) {
+                deviceId = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                localStorage.setItem('device_id', deviceId);
+            }
+            return deviceId;
+        }
+
+        // 오디오 목록 확인
+        async function checkAudio() {
+            try {
+                updateStatus('오디오 확인 중...', 'waiting');
+                
+                const response = await fetch(`${API_BASE}/list.php?limit=5`);
+                const data = await response.json();
+                
+                if (data.success && data.audio_list && data.audio_list.length > 0) {
+                    const latestAudio = data.audio_list[0]; // 최신 파일
+                    
+                    // 새로운 오디오인지 확인
+                    if (latestAudio.filename !== lastCheckedFile && !isPlaying) {
+                        lastCheckedFile = latestAudio.filename;
+                        playAudio(latestAudio);
+                    } else if (isPlaying) {
+                        updateStatus('재생 중... (새 오디오 대기)', 'connected');
+                    } else {
+                        updateStatus('대기 중... (재생할 새 오디오 없음)', 'waiting');
+                    }
+                    
+                    updateAudioList(data.audio_list);
+                } else {
+                    updateStatus('대기 중... (재생할 오디오 없음)', 'waiting');
+                    updateAudioList([]);
+                }
+                
+                // 다음 확인 시간 업데이트
+                const nextCheck = new Date(Date.now() + POLL_INTERVAL);
+                updateInfo(lastCheckedFile || null, nextCheck.toLocaleTimeString('ko-KR'));
+                
+            } catch (error) {
+                console.error('Error checking audio:', error);
+                updateStatus('연결 오류: ' + error.message, 'disconnected');
+            }
+        }
+
+        // 오디오 재생
+        function playAudio(audio) {
+            const audioPlayer = document.getElementById('audioPlayer');
+            
+            // 유효한 오디오 URL 확인
+            if (!audio || !audio.url || !audio.filename) {
+                console.error('Invalid audio data:', audio);
+                updateStatus('오디오 정보 오류', 'disconnected');
+                return;
+            }
+            
+            if (audioPlayer.src === audio.url && !audioPlayer.ended && !audioPlayer.paused) {
+                // 이미 같은 오디오가 재생 중
+                return;
+            }
+            
+            // 오디오 소스 설정
+            audioPlayer.src = audio.url;
+            currentAudioId = audio.filename;
+            
+            updateStatus(`재생 준비: ${audio.filename}`, 'waiting');
+            updateInfo(audio.filename, '-');
+            updateAudioListHighlight(audio.filename);
+            
+            // 이벤트 핸들러 설정 (한 번만)
+            audioPlayer.onended = () => {
+                console.log('Audio playback ended:', audio.filename);
+                isPlaying = false;
+                currentAudioId = null;
+                updateStatus('재생 완료', 'connected');
+                
+                // 다음 오디오 확인
+                setTimeout(checkAudio, 1000);
+            };
+
+            audioPlayer.onerror = (error) => {
+                console.error('Audio playback error:', error);
+                console.error('Audio URL:', audio.url);
+                console.error('Audio element error:', audioPlayer.error);
+                
+                let errorMessage = '재생 오류: 오디오 파일을 확인할 수 없습니다';
+                
+                // 오디오 엘리먼트 오류 코드 확인
+                if (audioPlayer.error) {
+                    switch (audioPlayer.error.code) {
+                        case MediaError.MEDIA_ERR_ABORTED:
+                            errorMessage = '재생 중단됨';
+                            break;
+                        case MediaError.MEDIA_ERR_NETWORK:
+                            errorMessage = '네트워크 오류: 오디오 파일을 다운로드할 수 없습니다';
+                            break;
+                        case MediaError.MEDIA_ERR_DECODE:
+                            errorMessage = '디코드 오류: 오디오 파일 형식을 인식할 수 없습니다';
+                            break;
+                        case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
+                            errorMessage = '지원되지 않는 형식: 오디오 파일 형식을 지원하지 않습니다';
+                            break;
+                        default:
+                            errorMessage = '재생 오류: 알 수 없는 오류';
+                    }
+                }
+                
+                updateStatus(errorMessage, 'disconnected');
+                isPlaying = false;
+                currentAudioId = null;
+                
+                // 오디오 URL 직접 확인 (디버깅용)
+                fetch(audio.url, { method: 'HEAD' })
+                    .then(response => {
+                        if (!response.ok) {
+                            console.error('Audio file not found:', response.status, response.statusText);
+                        }
+                    })
+                    .catch(err => {
+                        console.error('Failed to check audio URL:', err);
+                    });
+            };
+
+            audioPlayer.oncanplay = () => {
+                // 오디오 로드 완료 시 자동 재생 시도
+                if (!isPlaying && !audioPlayer.paused) {
+                    return; // 이미 재생 중
+                }
+                
+                // 사용자 상호작용 확인
+                const hasUserInteraction = localStorage.getItem('user_interacted') === 'true';
+                
+                if (hasUserInteraction) {
+                    // 사용자가 이미 상호작용했으면 자동 재생 시도
+                    audioPlayer.play().then(() => {
+                        isPlaying = true;
+                        updateStatus(`재생 중: ${audio.filename}`, 'connected');
+                    }).catch(error => {
+                        console.error('Auto-play error:', error);
+                        updateStatus('재생 버튼을 클릭하세요', 'waiting');
+                    });
+                } else {
+                    // 사용자 상호작용 없으면 수동 재생 안내
+                    updateStatus('재생 버튼을 클릭하세요', 'waiting');
+                }
+            };
+
+            audioPlayer.onplay = () => {
+                isPlaying = true;
+                updateStatus(`재생 중: ${audio.filename}`, 'connected');
+            };
+
+            audioPlayer.onpause = () => {
+                updateStatus('일시정지', 'waiting');
+            };
+            
+            // 오디오 로드
+            audioPlayer.load();
+        }
+
+        // 오디오 목록 업데이트
+        function updateAudioList(audioList) {
+            const listEl = document.getElementById('audioList');
+            
+            if (audioList.length === 0) {
+                listEl.innerHTML = '<div style="text-align: center; opacity: 0.7;">재생 대기 오디오가 없습니다</div>';
+                return;
+            }
+            
+            listEl.innerHTML = audioList.map(audio => {
+                const isCurrent = audio.filename === currentAudioId;
+                return `
+                    <div class="audio-item ${isCurrent ? 'playing' : ''}">
+                        <div class="audio-filename">${audio.filename}</div>
+                        <div class="audio-time">${audio.modified} (${formatSize(audio.size)})</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 오디오 목록 하이라이트
+        function updateAudioListHighlight(filename) {
+            const items = document.querySelectorAll('.audio-item');
+            items.forEach(item => {
+                if (item.querySelector('.audio-filename').textContent === filename) {
+                    item.classList.add('playing');
+                } else {
+                    item.classList.remove('playing');
+                }
+            });
+        }
+
+        // 파일 크기 포맷
+        function formatSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        // 폴링 토글
+        function togglePolling() {
+            isPolling = !isPolling;
+            const btn = document.getElementById('pollingBtn');
+            
+            if (isPolling) {
+                btn.textContent = '폴링 중지';
+                startPolling();
+            } else {
+                btn.textContent = '폴링 시작';
+                stopPolling();
+            }
+        }
+
+        // 폴링 시작
+        function startPolling() {
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+            }
+            pollingInterval = setInterval(checkAudio, POLL_INTERVAL);
+            checkAudio(); // 즉시 확인
+        }
+
+        // 폴링 중지
+        function stopPolling() {
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+            }
+        }
+
+        // 초기화
+        function init() {
+            updateInfo(null, '-');
+            
+            // 사용자 상호작용 감지 (클릭, 터치 등)
+            const markUserInteraction = () => {
+                localStorage.setItem('user_interacted', 'true');
+                // 이미 오디오가 로드되어 있으면 재생 시도
+                const audioPlayer = document.getElementById('audioPlayer');
+                if (audioPlayer.src && audioPlayer.paused && !audioPlayer.ended) {
+                    audioPlayer.play().then(() => {
+                        isPlaying = true;
+                        updateStatus(`재생 중: ${currentAudioId || '오디오'}`, 'connected');
+                    }).catch(err => {
+                        console.error('Play error:', err);
+                    });
+                }
+            };
+            
+            // 사용자 상호작용 이벤트 등록
+            document.addEventListener('click', markUserInteraction, { once: true });
+            document.addEventListener('touchstart', markUserInteraction, { once: true });
+            document.addEventListener('keydown', markUserInteraction, { once: true });
+            
+            // 이미 사용자가 상호작용했는지 확인
+            if (localStorage.getItem('user_interacted') === 'true') {
+                updateStatus('초기화 완료 - 자동 재생 활성화', 'connected');
+            } else {
+                updateStatus('초기화 완료 - 화면을 한 번 터치하거나 클릭하세요', 'waiting');
+            }
+            
+            // 폴링 시작
+            startPolling();
+        }
+
+        // 페이지 로드 시 초기화
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
+

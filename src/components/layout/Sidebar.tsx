@@ -15,7 +15,6 @@ import {
   FileSearch,
   Play,
   Calendar,
-  Users,
   Database,
   CheckCircle2,
   BookOpen,
@@ -77,7 +76,6 @@ export const navItems: NavItem[] = [
     children: [
       { title: "전송 설정", href: "/send/setup", icon: Settings },
       { title: "스케줄 관리", href: "/send/schedule", icon: Calendar },
-      { title: "대상자 관리", href: "/send/audience", icon: Users },
     ],
   },
   {

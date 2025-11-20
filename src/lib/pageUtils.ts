@@ -37,6 +37,58 @@ export const formatDate = (iso?: string): string => {
 };
 
 /**
+ * 로컬 시간(KST, Asia/Seoul)을 UTC ISO 문자열로 변환
+ * 명시적으로 KST 시간대를 사용하여 UTC로 변환합니다.
+ * localhost:8000과 tts.nanum.online 모두에서 동일하게 작동합니다.
+ */
+export const localTimeToISOString = (year: number, month: number, day: number, hours: number, minutes: number): string => {
+  // KST(Asia/Seoul, UTC+9) 시간대로 Date 객체 생성
+  // ISO 형식 문자열을 사용하여 명시적으로 시간대 지정
+  const kstDateString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00+09:00`;
+  const kstDate = new Date(kstDateString);
+  // UTC ISO 문자열로 변환 (DB 저장용)
+  return kstDate.toISOString();
+};
+
+/**
+ * UTC ISO 문자열을 KST(Asia/Seoul) 시간의 datetime-local input 형식으로 변환
+ * 명시적으로 KST 시간대로 변환하여 localhost:8000과 tts.nanum.online에서 동일하게 작동합니다.
+ */
+export const isoToLocalDateTimeString = (iso?: string): string => {
+  if (!iso) return "";
+  try {
+    // UTC 시간을 KST(Asia/Seoul, UTC+9) 시간대로 변환
+    const utcDate = new Date(iso);
+    const kstDate = new Date(utcDate.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+    
+    const year = kstDate.getFullYear();
+    const month = String(kstDate.getMonth() + 1).padStart(2, '0');
+    const day = String(kstDate.getDate()).padStart(2, '0');
+    const hours = String(kstDate.getHours()).padStart(2, '0');
+    const minutes = String(kstDate.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  } catch {
+    return "";
+  }
+};
+
+/**
+ * datetime-local input 값을 UTC ISO 문자열로 변환
+ * datetime-local input은 로컬 시간대를 의미하므로 이를 UTC로 변환합니다.
+ */
+export const localDateTimeStringToISO = (localDateTime: string): string => {
+  if (!localDateTime) return "";
+  try {
+    // datetime-local input 값은 로컬 시간대를 의미
+    const localDate = new Date(localDateTime);
+    // UTC ISO 문자열로 변환
+    return localDate.toISOString();
+  } catch {
+    return "";
+  }
+};
+
+/**
  * 용도 옵션 (공통) - PublicVoiceGenerator와 MessageManagementPage 통합 버전
  */
 export interface PurposeOption {
