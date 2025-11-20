@@ -138,6 +138,13 @@
             padding: 15px;
             margin-bottom: 10px;
             font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .audio-item:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
         }
         
         .audio-item.playing {
@@ -201,7 +208,7 @@
             </div>
         </div>
         
-        <audio id="audioPlayer" controls></audio>
+        <audio id="audioPlayer" controls preload="auto"></audio>
         
         <div class="controls">
             <button onclick="checkAudio()">수동 확인</button>
@@ -580,12 +587,49 @@
             listEl.innerHTML = audioList.map(audio => {
                 const isCurrent = audio.filename === currentAudioId;
                 return `
-                    <div class="audio-item ${isCurrent ? 'playing' : ''}">
+                    <div class="audio-item ${isCurrent ? 'playing' : ''}" 
+                         data-filename="${audio.filename}" 
+                         data-url="${audio.url}"
+                         data-size="${audio.size || 0}"
+                         style="cursor: pointer;"
+                         onclick="selectAndPlayAudio('${audio.filename}', '${audio.url}', ${audio.size || 0})">
                         <div class="audio-filename">${audio.filename}</div>
                         <div class="audio-time">${audio.modified} (${formatSize(audio.size)})</div>
                     </div>
                 `;
             }).join('');
+        }
+        
+        // 오디오 선택 및 재생
+        function selectAndPlayAudio(filename, url, size) {
+            console.log('Selecting audio:', filename, url, size);
+            
+            // 크기 확인
+            if (size && size < 100) {
+                updateStatus(`오디오 파일이 너무 작습니다: ${filename} (${size} bytes)`, 'disconnected');
+                return;
+            }
+            
+            const audio = {
+                filename: filename,
+                url: url,
+                size: size,
+                modified: new Date().toISOString()
+            };
+            
+            // 재생 중인 오디오 중지
+            const audioPlayer = document.getElementById('audioPlayer');
+            if (audioPlayer && !audioPlayer.paused) {
+                audioPlayer.pause();
+                audioPlayer.currentTime = 0;
+            }
+            
+            isPlaying = false;
+            currentAudioId = null;
+            lastCheckedFile = filename;
+            
+            // 선택한 오디오 재생
+            playAudio(audio);
         }
 
         // 오디오 목록 하이라이트
