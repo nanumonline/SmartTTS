@@ -513,6 +513,12 @@ serve(async (req) => {
           if (config.apiKey) {
             headers["X-API-Key"] = config.apiKey;
           }
+          // 스케줄 이름을 헤더로 전송 (파일명에 포함하기 위해)
+          if (schedule.schedule_name) {
+            headers["X-Schedule-Name"] = schedule.schedule_name;
+          }
+          // 스케줄 ID도 헤더로 전송 (추적용)
+          headers["X-Schedule-Id"] = schedule.id;
           // config의 customHeaders 병합
           if (config.customHeaders && typeof config.customHeaders === "object") {
             Object.assign(headers, config.customHeaders);

@@ -194,6 +194,10 @@
                 <span class="info-label">현재 재생:</span>
                 <span id="currentFile">없음</span>
             </div>
+            <div class="info-item" id="currentScheduleNameItem" style="display: none;">
+                <span class="info-label">스케줄명:</span>
+                <span id="currentScheduleName">-</span>
+            </div>
             <div class="info-item">
                 <span class="info-label">다음 확인:</span>
                 <span id="nextCheck">-</span>
@@ -238,11 +242,21 @@
         }
 
         // 정보 업데이트
-        function updateInfo(currentFile, nextCheck) {
+        function updateInfo(currentFile, nextCheck, scheduleName = null) {
             const infoEl = document.getElementById('info');
             document.getElementById('currentFile').textContent = currentFile || '없음';
             document.getElementById('nextCheck').textContent = nextCheck || '-';
             document.getElementById('deviceId').textContent = getDeviceId();
+            
+            // 스케줄 이름 표시
+            const scheduleNameItem = document.getElementById('currentScheduleNameItem');
+            const scheduleNameEl = document.getElementById('currentScheduleName');
+            if (scheduleName) {
+                scheduleNameEl.textContent = scheduleName;
+                scheduleNameItem.style.display = 'flex';
+            } else {
+                scheduleNameItem.style.display = 'none';
+            }
             
             // 출력 장치 정보 (PC 환경)
             const outputDeviceEl = document.getElementById('outputDevice');
@@ -355,7 +369,15 @@
                 }
                 
                 const nextCheck = new Date(Date.now() + POLL_INTERVAL);
-                updateInfo(lastCheckedFile || null, nextCheck.toLocaleTimeString('ko-KR'));
+                // 현재 재생 중인 오디오의 스케줄 이름 찾기
+                let currentScheduleName = null;
+                if (currentAudioId && data.audio_list) {
+                    const currentAudio = data.audio_list.find(a => a.filename === currentAudioId);
+                    if (currentAudio && currentAudio.schedule_name) {
+                        currentScheduleName = currentAudio.schedule_name;
+                    }
+                }
+                updateInfo(lastCheckedFile || null, nextCheck.toLocaleTimeString('ko-KR'), currentScheduleName);
                 
             } catch (error) {
                 console.error('Error checking audio:', error);
@@ -412,8 +434,12 @@
             audioPlayer.src = audio.url;
             currentAudioId = audio.filename;
             
-            updateStatus(`재생 준비: ${audio.filename}`, 'waiting');
-            updateInfo(audio.filename, '-');
+            // 스케줄 이름 표시
+            const scheduleName = audio.schedule_name || null;
+            const displayName = scheduleName || audio.filename;
+            
+            updateStatus(`재생 준비: ${displayName}`, 'waiting');
+            updateInfo(audio.filename, '-', scheduleName);
             updateAudioListHighlight(audio.filename);
             
             audioPlayer.onended = () => {
@@ -586,6 +612,11 @@
             
             listEl.innerHTML = audioList.map(audio => {
                 const isCurrent = audio.filename === currentAudioId;
+                // 스케줄 이름이 있으면 표시, 없으면 파일명 표시
+                const displayName = audio.schedule_name || audio.display_name || audio.filename;
+                // 파일명은 작은 글씨로 표시
+                const filenameDisplay = audio.schedule_name ? `<div style="font-size: 12px; opacity: 0.7; margin-top: 4px;">${audio.filename}</div>` : '';
+                
                 return `
                     <div class="audio-item ${isCurrent ? 'playing' : ''}" 
                          data-filename="${audio.filename}" 
@@ -593,7 +624,8 @@
                          data-size="${audio.size || 0}"
                          style="cursor: pointer;"
                          onclick="selectAndPlayAudio('${audio.filename}', '${audio.url}', ${audio.size || 0})">
-                        <div class="audio-filename">${audio.filename}</div>
+                        <div class="audio-filename">${displayName}</div>
+                        ${filenameDisplay}
                         <div class="audio-time">${audio.modified} (${formatSize(audio.size)})</div>
                     </div>
                 `;

@@ -49,8 +49,25 @@ $files = array_filter($files, function($file) {
 
 foreach ($files as $file) {
     $filePath = $audioDir . '/' . $file;
+    
+    // 파일명에서 스케줄 이름 추출 (형식: "스케줄이름_2025-11-20_10-11-11.mp3" 또는 "broadcast_2025-11-20_10-11-11.mp3")
+    $scheduleName = null;
+    $displayName = $file;
+    
+    // 파일명에서 스케줄 이름 추출 시도
+    if (preg_match('/^(.+?)_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})\.(mp3|wav|ogg)$/i', $file, $matches)) {
+        $potentialScheduleName = $matches[1];
+        // "broadcast"가 아닌 경우에만 스케줄 이름으로 사용
+        if (strtolower($potentialScheduleName) !== 'broadcast') {
+            $scheduleName = $potentialScheduleName;
+            $displayName = $scheduleName;
+        }
+    }
+    
     $fileInfo = [
         'filename' => $file,
+        'schedule_name' => $scheduleName, // 스케줄 이름 (있으면)
+        'display_name' => $displayName, // 표시 이름
         'url' => 'https://nanum.online/tts/api/broadcast/audio.php?file=' . urlencode($file),
         'size' => filesize($filePath),
         'modified' => date('Y-m-d H:i:s', filemtime($filePath)),

@@ -153,9 +153,22 @@ if (stripos($contentType, 'wav') !== false) {
     $extension = 'ogg';
 }
 
-// 오디오 파일 저장
+// 스케줄 이름 가져오기 (헤더에서)
+$scheduleName = $_SERVER['HTTP_X_SCHEDULE_NAME'] ?? null;
+$scheduleId = $_SERVER['HTTP_X_SCHEDULE_ID'] ?? null;
+
+// 파일명 생성 (스케줄 이름이 있으면 포함)
 $timestamp = date('Y-m-d_H-i-s');
-$audioFile = $audioDir . '/broadcast_' . $timestamp . '.' . $extension;
+if ($scheduleName && !empty(trim($scheduleName))) {
+    // 스케줄 이름을 파일명에 안전하게 포함 (특수문자 제거)
+    $safeScheduleName = preg_replace('/[^a-zA-Z0-9가-힣_\-]/u', '_', trim($scheduleName));
+    $safeScheduleName = mb_substr($safeScheduleName, 0, 50); // 최대 50자
+    $filename = $safeScheduleName . '_' . $timestamp . '.' . $extension;
+} else {
+    $filename = 'broadcast_' . $timestamp . '.' . $extension;
+}
+
+$audioFile = $audioDir . '/' . $filename;
 
 if (file_put_contents($audioFile, $audioData) === false) {
     $errorMsg = 'Failed to save audio file';
