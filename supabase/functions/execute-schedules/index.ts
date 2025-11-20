@@ -183,11 +183,16 @@ serve(async (req) => {
       try {
         const scheduleTime = new Date(schedule.scheduled_time);
         const timeDiff = (now.getTime() - scheduleTime.getTime()) / 1000; // 초 단위
+        console.log(`[execute-schedules] ========================================`);
         console.log(`[execute-schedules] Processing schedule ${schedule.id}`);
-        console.log(`  Scheduled time: ${schedule.scheduled_time}`);
-        console.log(`  Current time: ${nowISO}`);
-        console.log(`  Time difference: ${timeDiff > 0 ? `${Math.abs(timeDiff)}초 지남` : `${Math.abs(timeDiff)}초 남음`}`);
-        console.log(`  Target channel: ${schedule.target_channel}`);
+        console.log(`[execute-schedules] Schedule name: ${schedule.schedule_name || "Unnamed"}`);
+        console.log(`[execute-schedules] Scheduled time: ${schedule.scheduled_time} (UTC)`);
+        console.log(`[execute-schedules] Current time: ${nowISO} (UTC)`);
+        console.log(`[execute-schedules] Time difference: ${timeDiff > 0 ? `${Math.abs(timeDiff)}초 지남` : `${Math.abs(timeDiff)}초 남음`}`);
+        console.log(`[execute-schedules] Target channel: ${schedule.target_channel}`);
+        console.log(`[execute-schedules] Generation ID: ${schedule.generation_id}`);
+        console.log(`[execute-schedules] User ID: ${schedule.user_id}`);
+        console.log(`[execute-schedules] ========================================`);
 
         // 음원 데이터 조회
         const { data: generation, error: genError } = await supabaseClient
