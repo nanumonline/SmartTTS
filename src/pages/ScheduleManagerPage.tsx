@@ -601,45 +601,194 @@ export default function ScheduleManagerPage() {
         </div>
 
         {viewMode === "calendar" ? (
-          /* 달력 보기 */
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
-              <Card>
-                <CardHeader>
-                  <CardTitle>방송 일정 달력</CardTitle>
-                  <CardDescription>날짜를 선택하여 스케줄을 확인하세요</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Calendar
-                    mode="single"
-                    selected={selectedDate}
-                    onSelect={setSelectedDate}
-                    modifiers={{
-                      routine: getRoutineDates(),
-                      event: getEventDates(),
-                    }}
-                    modifiersClassNames={{
-                      routine: "bg-blue-500/40 text-blue-700 dark:text-blue-300 font-semibold border-2 border-blue-500 rounded-md hover:bg-blue-500/50",
-                      event: "bg-purple-500/40 text-purple-700 dark:text-purple-300 font-semibold border-2 border-purple-500 rounded-md hover:bg-purple-500/50",
-                    }}
-                    className="rounded-md border"
-                  />
-                  {/* 범례 */}
-                  <div className="mt-4 flex items-center gap-4 text-xs">
-                    <div className="flex items-center gap-2">
-                      <div className="w-4 h-4 rounded border-2 border-blue-500 bg-blue-500/40" />
-                      <span className="text-muted-foreground">일상 방송</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-4 h-4 rounded border-2 border-purple-500 bg-purple-500/40" />
-                      <span className="text-muted-foreground">기간 방송</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+          /* 달력 보기 - 크게 표시 */
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-2xl">방송 일정 달력</CardTitle>
+                <CardDescription>날짜를 클릭하여 스케줄을 확인하세요</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Calendar
+                  mode="single"
+                  selected={selectedDate}
+                  onSelect={setSelectedDate}
+                  className="rounded-md border w-full"
+                  classNames={{
+                    months: "flex flex-col space-y-4",
+                    month: "space-y-4",
+                    caption: "flex justify-center pt-1 relative items-center text-lg font-semibold",
+                    caption_label: "text-lg font-semibold",
+                    nav: "space-x-1 flex items-center",
+                    nav_button: cn(
+                      "h-8 w-8 bg-transparent p-0 opacity-50 hover:opacity-100 border rounded-md"
+                    ),
+                    nav_button_previous: "absolute left-1",
+                    nav_button_next: "absolute right-1",
+                    table: "w-full border-collapse space-y-1",
+                    head_row: "flex",
+                    head_cell: "text-muted-foreground rounded-md w-14 font-normal text-sm",
+                    row: "flex w-full mt-2",
+                    cell: "h-24 w-14 text-center text-sm p-0 relative border border-border/50 rounded-md hover:bg-muted/50 transition-colors",
+                    day: cn(
+                      "h-full w-full p-0 font-normal flex flex-col items-center justify-start pt-1 gap-1 overflow-hidden"
+                    ),
+                    day_selected:
+                      "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground",
+                    day_today: "bg-accent text-accent-foreground font-semibold",
+                    day_outside:
+                      "day-outside text-muted-foreground opacity-50",
+                    day_disabled: "text-muted-foreground opacity-50",
+                    day_hidden: "invisible",
+                  }}
+                  components={{
+                    Day: ({ date, displayMonth }) => {
+                      const daySchedules = schedules.filter((schedule) => {
+                        const scheduleDate = new Date(schedule.scheduledTime);
+                        return (
+                          scheduleDate.getFullYear() === date.getFullYear() &&
+                          scheduleDate.getMonth() === date.getMonth() &&
+                          scheduleDate.getDate() === date.getDate()
+                        );
+                      }).sort((a, b) => {
+                        const timeA = new Date(a.scheduledTime).getTime();
+                        const timeB = new Date(b.scheduledTime).getTime();
+                        return timeA - timeB;
+                      });
 
-            <div className="lg:col-span-1">
+                      const isSelected = selectedDate && 
+                        date.getFullYear() === selectedDate.getFullYear() &&
+                        date.getMonth() === selectedDate.getMonth() &&
+                        date.getDate() === selectedDate.getDate();
+                      
+                      const isToday = 
+                        date.getFullYear() === new Date().getFullYear() &&
+                        date.getMonth() === new Date().getMonth() &&
+                        date.getDate() === new Date().getDate();
+
+                      return (
+                        <div
+                          className={cn(
+                            "h-full w-full p-0 font-normal flex flex-col items-center justify-start pt-1 gap-1 overflow-hidden rounded-md cursor-pointer hover:bg-muted/50 transition-colors",
+                            isSelected && "bg-primary text-primary-foreground",
+                            isToday && !isSelected && "bg-accent text-accent-foreground font-semibold"
+                          )}
+                          onClick={() => setSelectedDate(date)}
+                        >
+                          <span className={cn(
+                            "text-sm font-medium",
+                            isSelected && "text-primary-foreground",
+                            isToday && !isSelected && "text-accent-foreground"
+                          )}>
+                            {date.getDate()}
+                          </span>
+                          <div className="flex flex-col gap-0.5 w-full px-0.5 overflow-y-auto max-h-[60px]">
+                            {daySchedules.slice(0, 3).map((schedule) => {
+                              const scheduleType = getScheduleType(schedule);
+                              const scheduleName = (schedule as any).scheduleName || "스케줄";
+                              const scheduleTime = new Date(schedule.scheduledTime);
+                              const timeStr = scheduleTime.toLocaleTimeString("ko-KR", { 
+                                hour: "2-digit", 
+                                minute: "2-digit",
+                                hour12: false
+                              });
+                              const status = schedule.status || "scheduled";
+                              
+                              // 색상 결정: 타입별 + 상태별
+                              let bgColor = "";
+                              let textColor = "";
+                              let borderColor = "";
+                              
+                              if (scheduleType === "routine") {
+                                if (status === "sent") {
+                                  bgColor = "bg-green-500/20";
+                                  textColor = "text-green-700 dark:text-green-300";
+                                  borderColor = "border-green-500/50";
+                                } else if (status === "failed") {
+                                  bgColor = "bg-red-500/20";
+                                  textColor = "text-red-700 dark:text-red-300";
+                                  borderColor = "border-red-500/50";
+                                } else {
+                                  bgColor = "bg-blue-500/20";
+                                  textColor = "text-blue-700 dark:text-blue-300";
+                                  borderColor = "border-blue-500/50";
+                                }
+                              } else {
+                                if (status === "sent") {
+                                  bgColor = "bg-green-500/20";
+                                  textColor = "text-green-700 dark:text-green-300";
+                                  borderColor = "border-green-500/50";
+                                } else if (status === "failed") {
+                                  bgColor = "bg-red-500/20";
+                                  textColor = "text-red-700 dark:text-red-300";
+                                  borderColor = "border-red-500/50";
+                                } else {
+                                  bgColor = "bg-purple-500/20";
+                                  textColor = "text-purple-700 dark:text-purple-300";
+                                  borderColor = "border-purple-500/50";
+                                }
+                              }
+
+                              return (
+                                <button
+                                  key={schedule.id}
+                                  className={cn(
+                                    "w-full text-[9px] px-1 py-0.5 rounded border text-left truncate hover:opacity-80 transition-opacity",
+                                    bgColor,
+                                    textColor,
+                                    borderColor,
+                                    isSelected && "opacity-90"
+                                  )}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingSchedule(schedule);
+                                    setIsEditDialogOpen(true);
+                                  }}
+                                  title={`${scheduleName} - ${timeStr}`}
+                                >
+                                  <div className="truncate font-medium">{scheduleName}</div>
+                                  <div className="truncate opacity-80">{timeStr}</div>
+                                </button>
+                              );
+                            })}
+                            {daySchedules.length > 3 && (
+                              <div className={cn(
+                                "text-[9px] px-1 py-0.5 text-center font-medium",
+                                isSelected ? "text-primary-foreground/70" : "text-muted-foreground"
+                              )}>
+                                +{daySchedules.length - 3}개
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    },
+                  }}
+                />
+                {/* 범례 */}
+                <div className="mt-6 flex items-center gap-6 text-sm flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded border-2 border-blue-500 bg-blue-500/20" />
+                    <span className="text-muted-foreground">일상 방송</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded border-2 border-purple-500 bg-purple-500/20" />
+                    <span className="text-muted-foreground">기간 방송</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded border-2 border-green-500 bg-green-500/20" />
+                    <span className="text-muted-foreground">전송됨</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded border-2 border-red-500 bg-red-500/20" />
+                    <span className="text-muted-foreground">실패</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* 선택된 날짜의 상세 스케줄 목록 */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card>
                 <CardHeader>
                   <CardTitle>
