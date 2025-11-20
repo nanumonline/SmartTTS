@@ -164,11 +164,13 @@ switch ($extension) {
 }
 
 // 오디오 파일 전송
+// 헤더는 변환 여부와 관계없이 먼저 설정
 header('Content-Type: ' . $mimeType);
-header('Content-Length: ' . $fileSize);
 header('Content-Disposition: inline; filename="' . basename($filename) . '"');
 header('Accept-Ranges: bytes');
-header('Cache-Control: public, max-age=3600');
+header('Cache-Control: no-cache, no-store, must-revalidate'); // 변환 중이므로 캐시 비활성화
+header('Pragma: no-cache');
+header('Expires: 0');
 header('Access-Control-Allow-Origin: *');
 
 // 출력 버퍼링 비활성화 (대용량 파일을 위해)
@@ -176,12 +178,28 @@ if (ob_get_level()) {
     ob_end_clean();
 }
 
+// Content-Length는 변환 여부에 따라 다르게 설정
+// (변환된 데이터인 경우 위에서 재설정됨)
+if ($audioData === null) {
+    header('Content-Length: ' . $fileSize);
+}
+
 // JSON 배열에서 변환된 데이터인 경우
 if ($audioData !== null) {
     // 변환된 바이너리 데이터를 직접 출력
+    // 출력 전에 첫 바이트 확인 (디버깅)
+    $firstByteHex = bin2hex(substr($audioData, 0, 3));
+    error_log("[audio.php] Sending converted binary data: {$filename} ({$fileSize} bytes, first bytes: {$firstByteHex})");
+    
+    // Content-Length 헤더 재설정 (변환된 데이터 크기)
+    header('Content-Length: ' . $fileSize, true);
+    
+    // 변환된 바이너리 데이터를 직접 출력
     echo $audioData;
     flush();
-    error_log("[audio.php] Sent converted binary data: {$filename} ({$fileSize} bytes)");
+    
+    error_log("[audio.php] Successfully sent converted binary data: {$filename}");
+    exit();
 } else {
     // 정상적인 바이너리 파일인 경우
     $handle = fopen($audioFile, 'rb');
