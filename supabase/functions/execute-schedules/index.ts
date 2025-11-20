@@ -524,31 +524,46 @@ serve(async (req) => {
             Object.assign(headers, config.customHeaders);
           }
 
-          console.log(
-            `[execute-schedules] Sending audio to ${channel.endpoint} (${audioData.byteLength} bytes, ${mimeType})`
-          );
+          console.log(`[execute-schedules] ────────────────────────────────────────`);
+          console.log(`[execute-schedules] Sending audio to endpoint: ${channel.endpoint}`);
+          console.log(`[execute-schedules] Audio size: ${audioData.byteLength} bytes`);
+          console.log(`[execute-schedules] MIME type: ${mimeType}`);
+          console.log(`[execute-schedules] Headers:`, JSON.stringify(headers, null, 2));
+          console.log(`[execute-schedules] ────────────────────────────────────────`);
 
           // ArrayBuffer를 직접 전송 (바이너리 데이터)
           // fetch API는 ArrayBuffer를 자동으로 바이너리로 전송합니다
+          const fetchStartTime = Date.now();
           const response = await fetch(channel.endpoint, {
             method: "POST",
             headers,
             body: audioData, // ArrayBuffer를 직접 전송 (바이너리)
           });
+          const fetchDuration = Date.now() - fetchStartTime;
+
+          console.log(`[execute-schedules] Response received in ${fetchDuration}ms`);
+          console.log(`[execute-schedules] Response status: ${response.status} ${response.statusText}`);
 
           if (!response.ok) {
             const errorText = await response.text().catch(() => response.statusText);
+            console.error(`[execute-schedules] HTTP Error Response:`, errorText);
             throw new Error(`HTTP ${response.status}: ${errorText || response.statusText}`);
           }
 
           const responseText = await response.text().catch(() => "");
-          console.log(`[execute-schedules] Successfully sent to ${channel.endpoint}`);
-          console.log(`[execute-schedules] Response status: ${response.status}`);
-          console.log(`[execute-schedules] Response body: ${responseText.substring(0, 200)}`);
+          console.log(`[execute-schedules] ✅ Successfully sent to ${channel.endpoint}`);
+          console.log(`[execute-schedules] Response body (first 200 chars): ${responseText.substring(0, 200)}`);
         } catch (sendError) {
-          console.error(`[execute-schedules] Failed to send to channel ${channel.endpoint}:`, sendError);
-          console.error(`[execute-schedules] Error details:`, sendError instanceof Error ? sendError.message : String(sendError));
-          console.error(`[execute-schedules] Error stack:`, sendError instanceof Error ? sendError.stack : "N/A");
+          console.error(`[execute-schedules] ❌ Failed to send to channel ${channel.endpoint}`);
+          console.error(`[execute-schedules] Error type: ${sendError instanceof Error ? sendError.constructor.name : typeof sendError}`);
+          console.error(`[execute-schedules] Error message:`, sendError instanceof Error ? sendError.message : String(sendError));
+          if (sendError instanceof Error && sendError.stack) {
+            console.error(`[execute-schedules] Error stack:`, sendError.stack);
+          }
+          if (sendError instanceof TypeError && sendError.message.includes('fetch')) {
+            console.error(`[execute-schedules] Network error: Unable to connect to ${channel.endpoint}`);
+            console.error(`[execute-schedules] Check if the endpoint URL is correct and accessible`);
+          }
           
           // 실패 시 상태 업데이트
           await supabaseClient
