@@ -134,14 +134,27 @@ if ($isJsonArray) {
     // 첫 바이트 확인 (디버깅용)
     $firstByteHex = bin2hex(substr($fileContent, 0, 3));
     error_log("[audio.php] Binary file detected: {$filename} (first bytes: {$firstByteHex})");
+    
+    // MP3 파일 시그니처 확인을 위한 첫 바이트
+    $firstBytes = substr($fileContent, 0, 3);
 }
 
-// MP3 파일 시그니처 확인
+// MP3 파일 시그니처 확인 (변환된 데이터 또는 원본 파일)
 $isValidMP3 = false;
-if (substr($firstBytes, 0, 3) === 'ID3') {
-    $isValidMP3 = true;
-} elseif (ord($firstBytes[0]) === 0xFF && (ord($firstBytes[1]) & 0xE0) === 0xE0) {
-    $isValidMP3 = true;
+if ($audioData !== null) {
+    // 변환된 데이터인 경우
+    $checkBytes = substr($audioData, 0, 3);
+} else {
+    // 원본 파일인 경우
+    $checkBytes = substr($fileContent, 0, 3);
+}
+
+if (strlen($checkBytes) >= 3) {
+    if ($checkBytes === 'ID3') {
+        $isValidMP3 = true;
+    } elseif (ord($checkBytes[0]) === 0xFF && (ord($checkBytes[1]) & 0xE0) === 0xE0) {
+        $isValidMP3 = true;
+    }
 }
 
 // MIME 타입 결정
