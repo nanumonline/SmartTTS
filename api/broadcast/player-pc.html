@@ -551,7 +551,8 @@
                 if (hasUserInteraction) {
                     audioPlayer.play().then(() => {
                         isPlaying = true;
-                        updateStatus(`재생 중: ${audio.filename}`, 'connected');
+                        const displayName = audio.schedule_name || audio.filename;
+                        updateStatus(`재생 중: ${displayName}`, 'connected');
                     }).catch(error => {
                         console.error('Auto-play error:', error);
                         updateStatus('재생 버튼을 클릭하세요', 'waiting');
@@ -563,7 +564,8 @@
 
             audioPlayer.onplay = () => {
                 isPlaying = true;
-                updateStatus(`재생 중: ${audio.filename}`, 'connected');
+                const displayName = audio.schedule_name || audio.filename;
+                updateStatus(`재생 중: ${displayName}`, 'connected');
             };
 
             audioPlayer.onpause = () => {
