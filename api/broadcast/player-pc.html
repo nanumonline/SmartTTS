@@ -467,32 +467,40 @@
                     }
                     
                     // 실제 파일 내용 확인 (처음 몇 바이트)
-                    const rangeResponse = await fetch(audio.url, {
-                        method: 'GET',
-                        headers: {
-                            'Range': 'bytes=0-15'
-                        }
-                    });
-                    
-                    if (rangeResponse.ok) {
-                        const firstBytes = await rangeResponse.arrayBuffer();
-                        const bytes = new Uint8Array(firstBytes);
-                        const hexString = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(' ');
-                        console.log('Audio file first bytes (hex):', hexString);
+                    try {
+                        const rangeResponse = await fetch(audio.url, {
+                            method: 'GET',
+                            headers: {
+                                'Range': 'bytes=0-15'
+                            }
+                        });
                         
-                        // JSON 배열 문자열인지 확인
-                        if (bytes[0] === 0x5B) { // '[' 문자
-                            errorMessage = '오디오 파일이 JSON 배열 문자열입니다 (유효한 MP3 파일이 아닙니다)';
-                        }
-                        // MP3 시그니처 확인
-                        else if (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) {
-                            console.log('Valid MP3 file detected (ID3 tag)');
-                        } else if (bytes[0] === 0xFF && (bytes[1] & 0xE0) === 0xE0) {
-                            console.log('Valid MP3 file detected (MPEG frame)');
+                        if (rangeResponse.ok) {
+                            const firstBytes = await rangeResponse.arrayBuffer();
+                            const bytes = new Uint8Array(firstBytes);
+                            const hexString = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(' ');
+                            console.log('Audio file first bytes (hex):', hexString);
+                            
+                            // JSON 배열 문자열인지 확인
+                            if (bytes[0] === 0x5B) { // '[' 문자
+                                errorMessage = '오디오 파일이 JSON 배열 문자열입니다. audio.php가 변환하지 못했습니다.';
+                                console.error('JSON array string detected in response. audio.php conversion may have failed.');
+                            }
+                            // MP3 시그니처 확인
+                            else if (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) {
+                                console.log('✅ Valid MP3 file detected (ID3 tag)');
+                            } else if (bytes[0] === 0xFF && (bytes[1] & 0xE0) === 0xE0) {
+                                console.log('✅ Valid MP3 file detected (MPEG frame)');
+                            } else {
+                                console.warn('⚠️ Unknown audio file format:', hexString);
+                                errorMessage += ' (파일 형식을 인식할 수 없습니다)';
+                            }
                         } else {
-                            console.warn('Unknown audio file format:', hexString);
-                            errorMessage += ' (파일 형식을 인식할 수 없습니다)';
+                            console.warn('Range request failed:', rangeResponse.status, rangeResponse.statusText);
                         }
+                    } catch (rangeError) {
+                        console.warn('Range request error (may not support Range requests):', rangeError);
+                        // Range 요청이 실패해도 계속 진행 (일부 서버는 Range를 지원하지 않을 수 있음)
                     }
                 } catch (fetchError) {
                     console.error('Failed to check audio file:', fetchError);
@@ -532,16 +540,32 @@
             audioPlayer.load();
         }
 
-        // 테스트 오디오 재생
+        // 테스트 오디오 재생 (로컬 서버의 오디오 파일 사용)
         function testAudio() {
-            const testAudioUrl = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
-            const testAudio = {
-                filename: 'test-audio.mp3',
-                url: testAudioUrl,
-                size: 0,
-                modified: new Date().toISOString()
-            };
-            playAudio(testAudio);
+            // 로컬 서버의 오디오 파일 목록에서 첫 번째 파일 사용
+            checkAudio().then(() => {
+                const audioList = document.getElementById('audioList');
+                const firstAudioItem = audioList?.querySelector('.audio-item');
+                if (firstAudioItem) {
+                    const filename = firstAudioItem.querySelector('.audio-filename')?.textContent;
+                    if (filename) {
+                        const testAudio = {
+                            filename: filename,
+                            url: `${API_BASE}/audio.php?file=${encodeURIComponent(filename)}`,
+                            size: 0,
+                            modified: new Date().toISOString()
+                        };
+                        playAudio(testAudio);
+                    } else {
+                        updateStatus('테스트할 오디오 파일이 없습니다', 'waiting');
+                    }
+                } else {
+                    updateStatus('테스트할 오디오 파일이 없습니다', 'waiting');
+                }
+            }).catch(error => {
+                console.error('Failed to load audio list for test:', error);
+                updateStatus('테스트 오디오 로드 실패', 'disconnected');
+            });
         }
 
         // 오디오 목록 업데이트
