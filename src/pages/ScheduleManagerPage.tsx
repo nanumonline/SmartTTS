@@ -1083,18 +1083,28 @@ export default function ScheduleManagerPage() {
               <Label>스케줄 유형</Label>
               <Select
                 value={newSchedule.scheduleType}
-                onValueChange={(value: "routine" | "event") =>
-                  setNewSchedule({ ...newSchedule, scheduleType: value })
-                }
+                onValueChange={(value: "routine" | "event") => {
+                  // 타입 변경 시 종료일 초기화 (일상방송은 종료일 불필요)
+                  setNewSchedule({ 
+                    ...newSchedule, 
+                    scheduleType: value,
+                    endDate: value === "routine" ? "" : newSchedule.endDate
+                  });
+                }}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="routine">일상 방송 (아침, 점심, 저녁 등 정기 방송)</SelectItem>
-                  <SelectItem value="event">기간 방송 (축제, 행사 등 특정 기간 방송)</SelectItem>
+                  <SelectItem value="routine">일상 방송 (시작일만 필요, 올해까지 반복)</SelectItem>
+                  <SelectItem value="event">기간 방송 (시작일-종료일 필요, 기간 동안 반복)</SelectItem>
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">
+                {newSchedule.scheduleType === "routine" 
+                  ? "일상 방송은 시작일만 설정하면 됩니다. 반복 옵션에 따라 올해(12월 31일)까지 자동으로 반복됩니다."
+                  : "기간 방송은 시작일과 종료일을 모두 설정해야 합니다. 반복 옵션에 따라 설정한 기간 동안 반복됩니다."}
+              </p>
             </div>
 
             {/* 음원 선택 */}
@@ -1289,115 +1299,216 @@ export default function ScheduleManagerPage() {
 
             {/* 기간 선택 */}
             <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-4">
+              <div className={cn("grid gap-4", newSchedule.scheduleType === "event" ? "grid-cols-2" : "grid-cols-1")}>
                 <div className="space-y-2">
                   <Label>시작일</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
+                  <div className="space-y-2">
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={cn(
+                            "w-full justify-start text-left font-normal",
+                            !newSchedule.startDate && "text-muted-foreground"
+                          )}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {newSchedule.startDate ? (
+                            new Date(newSchedule.startDate + 'T00:00:00').toLocaleDateString("ko-KR", { timeZone: 'Asia/Seoul' })
+                          ) : (
+                            <span>날짜 선택</span>
+                          )}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={newSchedule.startDate ? new Date(newSchedule.startDate + 'T00:00:00') : undefined}
+                          onSelect={(date) => {
+                            if (date) {
+                              // KST 기준으로 날짜 문자열 생성 (YYYY-MM-DD)
+                              const year = date.getFullYear();
+                              const month = String(date.getMonth() + 1).padStart(2, '0');
+                              const day = String(date.getDate()).padStart(2, '0');
+                              const dateString = `${year}-${month}-${day}`;
+                              setNewSchedule({ ...newSchedule, startDate: dateString });
+                            }
+                          }}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                    {/* 시작일 빠른 선택 */}
+                    <div className="flex items-center gap-2 flex-wrap">
                       <Button
-                        variant="outline"
-                        className={cn(
-                          "w-full justify-start text-left font-normal",
-                          !newSchedule.startDate && "text-muted-foreground"
-                        )}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {newSchedule.startDate ? (
-                          new Date(newSchedule.startDate).toLocaleDateString("ko-KR")
-                        ) : (
-                          <span>날짜 선택</span>
-                        )}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={newSchedule.startDate ? new Date(newSchedule.startDate) : undefined}
-                        onSelect={(date) => {
-                          if (date) {
-                            setNewSchedule({ ...newSchedule, startDate: date.toISOString().split('T')[0] });
-                          }
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => {
+                          const today = new Date();
+                          const year = today.getFullYear();
+                          const month = String(today.getMonth() + 1).padStart(2, '0');
+                          const day = String(today.getDate()).padStart(2, '0');
+                          setNewSchedule({ ...newSchedule, startDate: `${year}-${month}-${day}` });
                         }}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-            <div className="space-y-2">
-                  <Label>종료일</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
+                      >
+                        오늘
+                      </Button>
                       <Button
-                        variant="outline"
-                        className={cn(
-                          "w-full justify-start text-left font-normal",
-                          !newSchedule.endDate && "text-muted-foreground"
-                        )}
-                        disabled={!newSchedule.startDate}
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => {
+                          const today = new Date();
+                          const dayOfWeek = today.getDay();
+                          const diff = today.getDate() - dayOfWeek; // 일요일로 이동
+                          const startOfWeek = new Date(today.setDate(diff));
+                          const year = startOfWeek.getFullYear();
+                          const month = String(startOfWeek.getMonth() + 1).padStart(2, '0');
+                          const day = String(startOfWeek.getDate()).padStart(2, '0');
+                          setNewSchedule({ ...newSchedule, startDate: `${year}-${month}-${day}` });
+                        }}
                       >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {newSchedule.endDate ? (
-                          new Date(newSchedule.endDate).toLocaleDateString("ko-KR")
-                        ) : (
-                          <span>날짜 선택</span>
-                        )}
+                        이번주
                       </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={newSchedule.endDate ? new Date(newSchedule.endDate) : undefined}
-                        onSelect={(date) => {
-                          if (date) {
-                            setNewSchedule({ ...newSchedule, endDate: date.toISOString().split('T')[0] });
-                          }
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => {
+                          const today = new Date();
+                          const year = today.getFullYear();
+                          const month = String(today.getMonth() + 1).padStart(2, '0');
+                          setNewSchedule({ ...newSchedule, startDate: `${year}-${month}-01` });
                         }}
-                        disabled={(date) => {
-                          if (!newSchedule.startDate) return true;
-                          return date < new Date(newSchedule.startDate);
+                      >
+                        이번달
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => {
+                          const today = new Date();
+                          const year = today.getFullYear();
+                          setNewSchedule({ ...newSchedule, startDate: `${year}-01-01` });
                         }}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
+                      >
+                        올해
+                      </Button>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span>빠른 선택:</span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => {
-                    const today = new Date();
-                    const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-                    setNewSchedule({
-                      ...newSchedule,
-                      startDate: today.toISOString().split('T')[0],
-                      endDate: endOfMonth.toISOString().split('T')[0],
-                    });
-                  }}
-                >
-                  이번 달
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => {
-                    const today = new Date();
-                    const endOfYear = new Date(today.getFullYear(), 11, 31);
-                    setNewSchedule({
-                      ...newSchedule,
-                      startDate: today.toISOString().split('T')[0],
-                      endDate: endOfYear.toISOString().split('T')[0],
-                    });
-                  }}
-                >
-                  올해
-                </Button>
+                {/* 종료일 (기간방송만 표시) */}
+                {newSchedule.scheduleType === "event" && (
+                  <div className="space-y-2">
+                    <Label>종료일</Label>
+                    <div className="space-y-2">
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            className={cn(
+                              "w-full justify-start text-left font-normal",
+                              !newSchedule.endDate && "text-muted-foreground"
+                            )}
+                            disabled={!newSchedule.startDate}
+                          >
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {newSchedule.endDate ? (
+                              new Date(newSchedule.endDate + 'T00:00:00').toLocaleDateString("ko-KR", { timeZone: 'Asia/Seoul' })
+                            ) : (
+                              <span>날짜 선택</span>
+                            )}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={newSchedule.endDate ? new Date(newSchedule.endDate + 'T00:00:00') : undefined}
+                            onSelect={(date) => {
+                              if (date) {
+                                // KST 기준으로 날짜 문자열 생성 (YYYY-MM-DD)
+                                const year = date.getFullYear();
+                                const month = String(date.getMonth() + 1).padStart(2, '0');
+                                const day = String(date.getDate()).padStart(2, '0');
+                                const dateString = `${year}-${month}-${day}`;
+                                setNewSchedule({ ...newSchedule, endDate: dateString });
+                              }
+                            }}
+                            disabled={(date) => {
+                              if (!newSchedule.startDate) return true;
+                              const startDate = new Date(newSchedule.startDate + 'T00:00:00');
+                              return date < startDate;
+                            }}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      {/* 기간설정 빠른 선택 */}
+                      {newSchedule.startDate && (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={() => {
+                              if (!newSchedule.startDate) return;
+                              const start = new Date(newSchedule.startDate + 'T00:00:00');
+                              const end = new Date(start);
+                              end.setDate(end.getDate() + 6); // 7일 후 (한주)
+                              const year = end.getFullYear();
+                              const month = String(end.getMonth() + 1).padStart(2, '0');
+                              const day = String(end.getDate()).padStart(2, '0');
+                              setNewSchedule({ ...newSchedule, endDate: `${year}-${month}-${day}` });
+                            }}
+                          >
+                            한주
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={() => {
+                              if (!newSchedule.startDate) return;
+                              const start = new Date(newSchedule.startDate + 'T00:00:00');
+                              const end = new Date(start.getFullYear(), start.getMonth() + 1, 0); // 해당 월의 마지막 날
+                              const year = end.getFullYear();
+                              const month = String(end.getMonth() + 1).padStart(2, '0');
+                              const day = String(end.getDate()).padStart(2, '0');
+                              setNewSchedule({ ...newSchedule, endDate: `${year}-${month}-${day}` });
+                            }}
+                          >
+                            한달
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={() => {
+                              if (!newSchedule.startDate) return;
+                              const start = new Date(newSchedule.startDate + 'T00:00:00');
+                              const end = new Date(start.getFullYear(), 11, 31); // 해당 년도의 마지막 날
+                              const year = end.getFullYear();
+                              const month = String(end.getMonth() + 1).padStart(2, '0');
+                              const day = String(end.getDate()).padStart(2, '0');
+                              setNewSchedule({ ...newSchedule, endDate: `${year}-${month}-${day}` });
+                            }}
+                          >
+                            올해까지
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
