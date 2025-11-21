@@ -80,7 +80,10 @@ export default function ScheduleManagerPage() {
     repeatOption: "once",
     scheduleType: "routine" as "routine" | "event", // routine: 일상 방송, event: 기간 방송
   });
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
+  // 오늘 날짜를 로컬 타임존의 순수 날짜로 초기화
+  const today = new Date();
+  const todayNormalized = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(todayNormalized);
   const [viewMode, setViewMode] = useState<"calendar" | "list">("calendar");
   const [audioSearchQuery, setAudioSearchQuery] = useState("");
   const [selectedAudioPreviewId, setSelectedAudioPreviewId] = useState<string | null>(null);
@@ -279,28 +282,50 @@ export default function ScheduleManagerPage() {
       return;
     }
 
-    if (!newSchedule.startDate || !newSchedule.endDate) {
+    // 일상방송은 시작일만 필요, 기간방송은 시작일과 종료일 모두 필요
+    if (!newSchedule.startDate) {
       toast({
         title: "입력 필요",
-        description: "시작일과 종료일을 선택해주세요.",
+        description: "시작일을 선택해주세요.",
         variant: "destructive",
       });
       return;
     }
 
-    if (new Date(newSchedule.startDate) > new Date(newSchedule.endDate)) {
+    if (newSchedule.scheduleType === "event" && !newSchedule.endDate) {
       toast({
-        title: "입력 오류",
-        description: "종료일은 시작일 이후여야 합니다.",
+        title: "입력 필요",
+        description: "기간 방송의 경우 종료일을 선택해주세요.",
         variant: "destructive",
       });
       return;
+    }
+
+    // 기간방송인 경우에만 종료일 검증
+    if (newSchedule.scheduleType === "event" && newSchedule.endDate) {
+      if (new Date(newSchedule.startDate) > new Date(newSchedule.endDate)) {
+        toast({
+          title: "입력 오류",
+          description: "종료일은 시작일 이후여야 합니다.",
+          variant: "destructive",
+        });
+        return;
+      }
     }
 
     try {
       // 기간 내 각 날짜에 대해 스케줄 생성
       const startDate = new Date(newSchedule.startDate);
-      const endDate = new Date(newSchedule.endDate);
+      // 일상방송의 경우 올해 12월 31일을 종료일로 설정, 기간방송은 입력된 종료일 사용
+      let endDate: Date;
+      if (newSchedule.scheduleType === "routine") {
+        // 일상방송: 올해 12월 31일까지
+        const currentYear = new Date().getFullYear();
+        endDate = new Date(currentYear, 11, 31); // 11 = 12월 (0-based)
+      } else {
+        // 기간방송: 사용자가 입력한 종료일
+        endDate = new Date(newSchedule.endDate!);
+      }
       const schedulesToCreate: dbService.ScheduleRequestEntry[] = [];
 
       // 기본 전송 시간 파싱 (로컬 시간 기준)
@@ -585,11 +610,14 @@ export default function ScheduleManagerPage() {
   // 선택한 날짜의 스케줄 필터링 및 시간순 정렬
   const getSchedulesForDate = (date: Date | undefined) => {
     if (!date) return [];
-    const dateStr = date.toISOString().split('T')[0];
+    // 캘린더와 동일한 방식으로 로컬 날짜 기준으로 비교
     const filtered = schedules.filter((schedule) => {
       const scheduleDate = new Date(schedule.scheduledTime);
-      const scheduleDateStr = scheduleDate.toISOString().split('T')[0];
-      return scheduleDateStr === dateStr;
+      return (
+        scheduleDate.getFullYear() === date.getFullYear() &&
+        scheduleDate.getMonth() === date.getMonth() &&
+        scheduleDate.getDate() === date.getDate()
+      );
     });
     
     // 시간순 정렬 (오름차순: 오전부터 오후까지)
@@ -677,20 +705,28 @@ export default function ScheduleManagerPage() {
         </div>
 
         {viewMode === "calendar" ? (
-          /* 달력 보기 - 그리드 2개 (왼쪽: 달력, 오른쪽: 상세 리스트) */
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
             {/* 왼쪽: 달력 (3/5 폭) */}
             <div className="lg:col-span-3">
-              <Card>
-                <CardHeader>
+              <Card className="h-full flex flex-col">
+                <CardHeader className="flex-shrink-0">
                   <CardTitle className="text-xl">방송 일정 달력</CardTitle>
                   <CardDescription>날짜를 클릭하여 스케줄을 확인하세요</CardDescription>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="flex-1 overflow-hidden">
                 <Calendar
                   mode="single"
                   selected={selectedDate}
-                  onSelect={setSelectedDate}
+                  defaultMonth={todayNormalized}
+                  onSelect={(date) => {
+                    // 날짜를 로컬 타임존의 순수 날짜로 정규화하여 설정
+                    if (date) {
+                      const normalizedDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+                      setSelectedDate(normalizedDate);
+                    } else {
+                      setSelectedDate(undefined);
+                    }
+                  }}
                   className="rounded-md border w-full"
                   classNames={{
                     months: "flex flex-col space-y-4",
@@ -705,9 +741,9 @@ export default function ScheduleManagerPage() {
                     nav_button_next: "absolute right-1",
                     table: "w-full border-collapse space-y-1",
                     head_row: "flex",
-                    head_cell: "text-muted-foreground rounded-md w-16 font-normal text-sm",
+                    head_cell: "text-muted-foreground rounded-md w-[110%] font-semibold text-sm px-3 py-2 text-center",
                     row: "flex w-full mt-2",
-                    cell: "h-28 w-16 text-center text-sm p-0 relative border border-border/50 rounded-md hover:bg-muted/50 transition-colors",
+                    cell: "h-28 w-[110%] text-center text-sm p-0 relative border border-border/50 rounded-md hover:bg-muted/50 transition-colors",
                     day: cn(
                       "h-full w-full p-0 font-normal flex flex-col items-center justify-start pt-1 gap-1 overflow-hidden"
                     ),
@@ -734,10 +770,21 @@ export default function ScheduleManagerPage() {
                         return timeA - timeB;
                       });
 
-                      const isSelected = selectedDate && 
-                        date.getFullYear() === selectedDate.getFullYear() &&
-                        date.getMonth() === selectedDate.getMonth() &&
-                        date.getDate() === selectedDate.getDate();
+                      // 날짜 비교를 위해 로컬 타임존의 순수 날짜만 비교
+                      const isSelected = selectedDate && (() => {
+                        // 로컬 타임존의 날짜 부분만 추출하여 비교
+                        const dateYear = date.getFullYear();
+                        const dateMonth = date.getMonth();
+                        const dateDay = date.getDate();
+                        
+                        const selectedYear = selectedDate.getFullYear();
+                        const selectedMonth = selectedDate.getMonth();
+                        const selectedDay = selectedDate.getDate();
+                        
+                        return dateYear === selectedYear && 
+                               dateMonth === selectedMonth && 
+                               dateDay === selectedDay;
+                      })();
                       
                       const isToday = 
                         date.getFullYear() === new Date().getFullYear() &&
@@ -751,16 +798,20 @@ export default function ScheduleManagerPage() {
                             isSelected && "bg-primary text-primary-foreground",
                             isToday && !isSelected && "bg-accent text-accent-foreground font-semibold"
                           )}
-                          onClick={() => setSelectedDate(date)}
+                          onClick={() => {
+                            // 날짜를 로컬 타임존의 순수 날짜로 정규화하여 설정
+                            const normalizedDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+                            setSelectedDate(normalizedDate);
+                          }}
                         >
                           <span className={cn(
-                            "text-sm font-medium",
+                            "text-base font-semibold",
                             isSelected && "text-primary-foreground",
                             isToday && !isSelected && "text-accent-foreground"
                           )}>
                             {date.getDate()}
                           </span>
-                          <div className="flex flex-col gap-0.5 w-full px-0.5 overflow-y-auto max-h-[70px]">
+                          <div className="flex flex-col gap-1 w-full px-1 overflow-y-auto max-h-[70px]">
                             {daySchedules.slice(0, 3).map((schedule) => {
                               const scheduleType = getScheduleType(schedule);
                               const scheduleName = (schedule as any).scheduleName || "스케줄";
@@ -846,7 +897,7 @@ export default function ScheduleManagerPage() {
                                     <TooltipTrigger asChild>
                                       <button
                                         className={cn(
-                                          "w-full text-[9px] px-1 py-0.5 rounded border text-left truncate hover:opacity-80 transition-opacity",
+                                          "w-full text-[10px] px-1.5 py-1 rounded border text-left truncate hover:opacity-90 transition-opacity",
                                           bgColor,
                                           textColor,
                                           borderColor,
@@ -858,8 +909,8 @@ export default function ScheduleManagerPage() {
                                           setIsEditDialogOpen(true);
                                         }}
                                       >
-                                        <div className="truncate font-medium">{scheduleName}</div>
-                                        <div className="truncate opacity-80">{timeStr}</div>
+                                        <div className="truncate font-semibold leading-tight">{scheduleName}</div>
+                                        <div className="truncate opacity-75 text-[9px] leading-tight mt-0.5">{timeStr}</div>
                                       </button>
                                     </TooltipTrigger>
                                     <TooltipContent side="right" className="max-w-xs">
@@ -871,7 +922,7 @@ export default function ScheduleManagerPage() {
                             })}
                             {daySchedules.length > 3 && (
                               <div className={cn(
-                                "text-[9px] px-1 py-0.5 text-center font-medium",
+                                "text-[10px] px-1.5 py-1 text-center font-semibold",
                                 isSelected ? "text-primary-foreground/70" : "text-muted-foreground"
                               )}>
                                 +{daySchedules.length - 3}개
@@ -904,23 +955,25 @@ export default function ScheduleManagerPage() {
                 </div>
               </CardContent>
             </Card>
+            </div>
 
             {/* 오른쪽: 상세 스케줄 리스트 (2/5 폭) */}
             <div className="lg:col-span-2">
-              <Card>
-                <CardHeader>
-                  <CardTitle>
+              <Card className="h-full flex flex-col">
+                <CardHeader className="pb-3 flex-shrink-0">
+                  <CardTitle className="text-lg font-semibold">
                     {selectedDate
                       ? `${selectedDate.getFullYear()}년 ${selectedDate.getMonth() + 1}월 ${selectedDate.getDate()}일`
                       : "날짜 선택"}
                   </CardTitle>
-                  <CardDescription>
+                  <CardDescription className="text-sm font-medium mt-1">
                     {selectedDateSchedules.length > 0
                       ? `${selectedDateSchedules.length}개의 스케줄`
                       : "스케줄이 없습니다"}
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-3">
+                <CardContent className="flex-1 flex flex-col overflow-hidden p-0">
+                  <div className="flex-[0.5] overflow-y-auto px-4 py-4 space-y-3">
                   {selectedDateSchedules.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-4">
                       선택한 날짜에 스케줄이 없습니다.
@@ -953,15 +1006,17 @@ export default function ScheduleManagerPage() {
                             setIsEditDialogOpen(true);
                           }}
                         >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-2">
-                                <p className="font-medium text-sm truncate">
+                          <div className="grid grid-cols-2 gap-3">
+                            {/* 왼쪽 그리드: 스케줄명, 타입, 시간, 채널 */}
+                            <div className="space-y-2 min-w-0">
+                              {/* 스케줄명과 타입 */}
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-semibold text-sm truncate">
                                   {scheduleName}
                                 </p>
                                 <Badge 
                                   variant="outline" 
-                                  className={`text-xs ${
+                                  className={`text-xs font-medium whitespace-nowrap ${
                                     scheduleType === "event"
                                       ? "bg-purple-500/10 text-purple-600 border-purple-500/20"
                                       : "bg-blue-500/10 text-blue-600 border-blue-500/20"
@@ -970,76 +1025,129 @@ export default function ScheduleManagerPage() {
                                   {scheduleType === "event" ? "기간" : "일상"}
                                 </Badge>
                               </div>
-                              <div className="space-y-1.5">
-                                {/* 시간 표시 - 더 눈에 띄게 */}
-                                <div className="flex items-center gap-1.5 text-xs font-semibold">
-                                  <Clock className="w-3.5 h-3.5 text-primary" />
-                                  <span className="text-foreground">{timeStr}</span>
-                                </div>
-                                {/* 채널 정보 - 더 명확하게 */}
-                                <div className="flex items-start gap-1.5 text-xs">
-                                  <Radio className="w-3.5 h-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
-                                  <div className="flex flex-col gap-1 min-w-0">
-                                    {channelInfo ? (
-                                      <>
-                                        <div className="flex items-center gap-1.5 flex-wrap">
-                                          <span className="font-medium text-foreground">{channelInfo.name}</span>
-                                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">
-                                            {channelInfo.type}
-                                          </Badge>
-                                        </div>
-                                        {channelInfo.endpoint ? (
-                                          <div className="flex items-center gap-1">
-                                            <span className="text-[10px] px-1.5 py-0.5 bg-green-500/10 text-green-600 dark:text-green-400 rounded font-medium">
-                                              ✓ endpoint 설정됨
-                                            </span>
-                                            <span className="text-[10px] text-muted-foreground truncate max-w-[200px]" title={channelInfo.endpoint}>
-                                              {channelInfo.endpoint}
-                                            </span>
-                                          </div>
-                                        ) : (
-                                          <span className="text-[10px] px-1.5 py-0.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded font-medium">
-                                            ⚠ endpoint 없음
-                                          </span>
-                                        )}
-                                      </>
-                                    ) : (
+                              {/* 시간 표시 */}
+                              <div className="flex items-center gap-2 text-xs font-medium">
+                                <Clock className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+                                <span className="text-foreground">{timeStr}</span>
+                              </div>
+                              {/* 채널 정보 */}
+                              <div className="flex items-start gap-2 text-xs">
+                                <Radio className="w-3.5 h-3.5 text-muted-foreground mt-0.5 flex-shrink-0" />
+                                <div className="flex flex-col gap-1 min-w-0">
+                                  {channelInfo ? (
+                                    <>
                                       <div className="flex items-center gap-1.5 flex-wrap">
-                                        <span className="text-muted-foreground">{schedule.targetChannel}</span>
-                                        <span className="text-[10px] px-1.5 py-0.5 bg-red-500/10 text-red-600 dark:text-red-400 rounded font-medium">
-                                          ❌ 채널 없음
-                                        </span>
+                                        <span className="font-semibold text-foreground truncate">{channelInfo.name}</span>
+                                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-medium whitespace-nowrap">
+                                          {channelInfo.type}
+                                        </Badge>
                                       </div>
-                                    )}
-                                  </div>
+                                    </>
+                                  ) : (
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="text-muted-foreground truncate">{schedule.targetChannel}</span>
+                                      <span className="text-[10px] px-1.5 py-0.5 bg-red-500/10 text-red-600 dark:text-red-400 rounded font-medium whitespace-nowrap">
+                                        ❌ 채널 없음
+                                      </span>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             </div>
-                            <div className="flex items-center gap-1 flex-shrink-0">
-                              {getStatusBadge(schedule.status)}
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeleteSchedule(schedule.id || "");
-                                }}
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </Button>
+                            
+                            {/* 오른쪽 그리드: 상태, 미리듣기, 삭제, endpoint */}
+                            <div className="space-y-2 flex flex-col items-end">
+                              {/* 상태, 미리듣기, 삭제 버튼 */}
+                              <div className="flex items-center gap-1">
+                                {getStatusBadge(schedule.status)}
+                                {gen && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-5 w-5"
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      const scheduleId = schedule.id || "";
+                                      if (selectedAudioPreviewId === scheduleId) {
+                                        setSelectedAudioPreviewId(null);
+                                      } else {
+                                        // preview URL이 없으면 미리 로드
+                                        const genId = String(gen.id);
+                                        if (!previewUrls[genId] && !gen.audioUrl) {
+                                          setLoadingPreviewIds((prev) => new Set(prev).add(genId));
+                                          await ensureGenerationAudio(gen);
+                                          setLoadingPreviewIds((prev) => {
+                                            const next = new Set(prev);
+                                            next.delete(genId);
+                                            return next;
+                                          });
+                                        }
+                                        setSelectedAudioPreviewId(scheduleId);
+                                      }
+                                    }}
+                                  >
+                                    <Play className={cn(
+                                      "w-3 h-3",
+                                      selectedAudioPreviewId === (schedule.id || "") && "text-primary fill-primary"
+                                    )} />
+                                  </Button>
+                                )}
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-5 w-5"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteSchedule(schedule.id || "");
+                                  }}
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
+                              </div>
+                              {/* Endpoint 정보 */}
+                              <div className="flex flex-col items-end gap-1 w-full">
+                                {channelInfo?.endpoint ? (
+                                  <>
+                                    <span className="text-[10px] px-1.5 py-0.5 bg-green-500/10 text-green-600 dark:text-green-400 rounded font-medium whitespace-nowrap">
+                                      ✓ endpoint 설정됨
+                                    </span>
+                                    <span className="text-[10px] text-muted-foreground truncate max-w-full text-right" title={channelInfo.endpoint}>
+                                      {channelInfo.endpoint}
+                                    </span>
+                                  </>
+                                ) : channelInfo ? (
+                                  <span className="text-[10px] px-1.5 py-0.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded font-medium whitespace-nowrap">
+                                    ⚠ endpoint 없음
+                                  </span>
+                                ) : null}
+                              </div>
                             </div>
                           </div>
+                          {/* 미리듣기 AudioPlayer */}
+                          {gen && selectedAudioPreviewId === (schedule.id || "") && (
+                            <div className="mt-3 pt-3 border-t border-border/50" onClick={(e) => e.stopPropagation()}>
+                              <AudioPlayer
+                                audioUrl={previewUrls[String(gen.id)] || gen.audioUrl || ""}
+                                title={gen.savedName || scheduleName || "생성된 음성"}
+                                cacheKey={gen.cacheKey}
+                                mimeType={gen.mimeType}
+                                className="w-full"
+                                onError={() => {
+                                  setSelectedAudioPreviewId(null);
+                                }}
+                              />
+                            </div>
+                          )}
                         </Card>
                       );
                     })
                   )}
+                  </div>
                 </CardContent>
               </Card>
             </div>
           </div>
         ) : (
-          /* 목록 보기 - 표 형식 */
           <div className="space-y-4">
             {/* 페이지당 항목 수 선택 */}
             <div className="flex items-center justify-between">
@@ -1319,10 +1427,9 @@ export default function ScheduleManagerPage() {
             )}
           </div>
         )}
-      </div>
 
-      {/* 스케줄 생성 다이얼로그 */}
-      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+        {/* 스케줄 생성 다이얼로그 */}
+        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>새 스케줄 생성</DialogTitle>
