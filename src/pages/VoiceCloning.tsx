@@ -18,6 +18,7 @@ import PageContainer from "@/components/layout/PageContainer";
 import PageHeader from "@/components/layout/PageHeader";
 import * as dbService from "@/services/dbService";
 import { formatDateTime } from "@/lib/pageUtils";
+import { getVoiceDisplayNameKo } from "@/lib/voiceNames";
 import { decodeUrlToBuffer } from "@/lib/audioMixer";
 import { 
   Mic2, 
@@ -1012,8 +1013,8 @@ const VoiceCloning = () => {
                   {(() => {
                     const sorted = [...allVoices].sort((a: any, b: any) => {
                       if (cloneBaseVoiceSortBy === "name") {
-                        const nameA = (a.name || a.voice_id || "").toLowerCase();
-                        const nameB = (b.name || b.voice_id || "").toLowerCase();
+                        const nameA = getVoiceDisplayNameKo(a.name, a.voice_id, a.name_ko).toLowerCase();
+                        const nameB = getVoiceDisplayNameKo(b.name, b.voice_id, b.name_ko).toLowerCase();
                         return cloneBaseVoiceSortOrder === "asc" 
                           ? nameA.localeCompare(nameB, "ko") 
                           : nameB.localeCompare(nameA, "ko");
@@ -1045,7 +1046,7 @@ const VoiceCloning = () => {
                         <SelectItem key={voice.voice_id} value={voice.voice_id} className="text-white focus:bg-gray-700">
                             <div className="flex items-center gap-2">
                             <span className={`inline-block w-2 h-2 rounded-full ${genderColor}`}></span>
-                            <span>{voice.name || voice.voice_id}</span>
+                            <span>{getVoiceDisplayNameKo(voice.name, voice.voice_id, voice.name_ko)}</span>
                             {flags && <span className="text-xs">{flags}</span>}
                               </div>
                         </SelectItem>

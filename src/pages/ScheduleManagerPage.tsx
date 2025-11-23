@@ -29,10 +29,12 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
-  RefreshCw
+  RefreshCw,
+  CheckSquare,
+  Square
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useLocation } from "react-router-dom";
 import * as dbService from "@/services/dbService";
 import { useToast } from "@/components/ui/use-toast";
 import { formatDateTime, purposeOptions, localTimeToISOString, isoToLocalDateTimeString, localDateTimeStringToISO } from "@/lib/pageUtils";
@@ -41,28 +43,19 @@ import PageHeader from "@/components/layout/PageHeader";
 import PageContainer from "@/components/layout/PageContainer";
 import AudioPlayer from "@/components/AudioPlayer";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import BroadcastDialog from "@/components/BroadcastDialog";
+import { Checkbox } from "@/components/ui/checkbox";
 
-// 카테고리별 색상 매핑
-const getPurposeColor = (purposeId: string): string => {
-  const colorMap: Record<string, string> = {
-    announcement: "bg-blue-500/10 text-blue-600 border-blue-500/20 dark:bg-blue-500/20 dark:text-blue-400 dark:border-blue-500/30",
-    emergency: "bg-red-500/10 text-red-600 border-red-500/20 dark:bg-red-500/20 dark:text-red-400 dark:border-red-500/30",
-    greeting: "bg-purple-500/10 text-purple-600 border-purple-500/20 dark:bg-purple-500/20 dark:text-purple-400 dark:border-purple-500/30",
-    policy: "bg-indigo-500/10 text-indigo-600 border-indigo-500/20 dark:bg-indigo-500/20 dark:text-indigo-400 dark:border-indigo-500/30",
-    event: "bg-pink-500/10 text-pink-600 border-pink-500/20 dark:bg-pink-500/20 dark:text-pink-400 dark:border-pink-500/30",
-    promotion: "bg-orange-500/10 text-orange-600 border-orange-500/20 dark:bg-orange-500/20 dark:text-orange-400 dark:border-orange-500/30",
-    service: "bg-green-500/10 text-green-600 border-green-500/20 dark:bg-green-500/20 dark:text-green-400 dark:border-green-500/30",
-    welfare: "bg-teal-500/10 text-teal-600 border-teal-500/20 dark:bg-teal-500/20 dark:text-teal-400 dark:border-teal-500/30",
-    traffic: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20 dark:bg-yellow-500/20 dark:text-yellow-400 dark:border-yellow-500/30",
-    mixed: "bg-fuchsia-500/10 text-fuchsia-600 border-fuchsia-500/20 dark:bg-fuchsia-500/20 dark:text-fuchsia-400 dark:border-fuchsia-500/30",
-  };
-  return colorMap[purposeId] || "bg-gray-500/10 text-gray-600 border-gray-500/20 dark:bg-gray-500/20 dark:text-gray-400 dark:border-gray-500/30";
-};
+import { getPurposeColor } from "@/lib/categoryColors";
 
 export default function ScheduleManagerPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
+  
+  // 즉시 송출 모드 확인 (URL 경로가 /send/broadcast인 경우)
+  const isBroadcastMode = location.pathname === "/send/broadcast";
   const [schedules, setSchedules] = useState<dbService.ScheduleRequestEntry[]>([]);
   const [generations, setGenerations] = useState<dbService.GenerationEntry[]>([]);
   const [channels, setChannels] = useState<any[]>([]);
@@ -89,11 +82,13 @@ export default function ScheduleManagerPage() {
   const [selectedAudioPreviewId, setSelectedAudioPreviewId] = useState<string | null>(null);
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
   const [loadingPreviewIds, setLoadingPreviewIds] = useState<Set<string>>(new Set());
-  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; id: string | null }>({ open: false, id: null });
+  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; id: string | null; isPeriodDelete?: boolean; scheduleName?: string }>({ open: false, id: null, isPeriodDelete: false, scheduleName: "" });
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [sortBy, setSortBy] = useState<"name" | "type" | "channel" | "time" | "repeat" | "status" | "none">("time");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [broadcastDialog, setBroadcastDialog] = useState<{ open: boolean; generationId: string; generationName?: string }>({ open: false, generationId: "", generationName: "" });
+  const [selectedSchedules, setSelectedSchedules] = useState<Set<string>>(new Set());
 
   // 스케줄 타입 판별 함수 (useMemo보다 앞에 정의)
   const getScheduleType = (schedule: dbService.ScheduleRequestEntry): "routine" | "event" => {
@@ -174,6 +169,22 @@ export default function ScheduleManagerPage() {
 
     return () => clearInterval(interval);
   }, [user?.id]);
+
+  // 송출 성공 후 상태 추적을 위한 추가 새로고침
+  const handleBroadcastSuccess = useCallback(() => {
+    // 즉시 새로고침
+    loadSchedules();
+    
+    // 5초 후 다시 한 번 새로고침 (상태 업데이트 확인을 위해)
+    setTimeout(() => {
+      loadSchedules();
+    }, 5000);
+    
+    // 10초 후 한 번 더 새로고침
+    setTimeout(() => {
+      loadSchedules();
+    }, 10000);
+  }, []);
 
   const loadChannels = async () => {
     if (!user?.id) return;
@@ -315,38 +326,97 @@ export default function ScheduleManagerPage() {
 
     try {
       // 기간 내 각 날짜에 대해 스케줄 생성
-      const startDate = new Date(newSchedule.startDate);
-      // 일상방송의 경우 올해 12월 31일을 종료일로 설정, 기간방송은 입력된 종료일 사용
+      // 날짜 문자열을 파싱하여 KST 기준으로 날짜 정보 추출 (시간대 의존성 제거)
+      const startDateStr = newSchedule.startDate;
+      const startDateParts = startDateStr.split('-');
+      const startYear = parseInt(startDateParts[0], 10);
+      const startMonth = parseInt(startDateParts[1], 10) - 1; // 0-based
+      const startDay = parseInt(startDateParts[2], 10);
+      
+      // 반복 옵션에 따라 종료일 설정
       let endDate: Date;
       if (newSchedule.scheduleType === "routine") {
-        // 일상방송: 올해 12월 31일까지
-        const currentYear = new Date().getFullYear();
-        endDate = new Date(currentYear, 11, 31); // 11 = 12월 (0-based)
+        // 일상방송: 반복 옵션에 따라 종료일 결정
+        if (newSchedule.repeatOption === "once") {
+          // 1회만: 시작일만 저장 (복제 없음)
+          endDate = new Date(startYear, startMonth, startDay);
+        } else {
+          // daily/weekly/monthly: 올해 12월 31일까지
+          const currentYear = new Date().getFullYear();
+          endDate = new Date(currentYear, 11, 31); // 11 = 12월 (0-based)
+        }
       } else {
         // 기간방송: 사용자가 입력한 종료일
-        endDate = new Date(newSchedule.endDate!);
+        const endDateStr = newSchedule.endDate!;
+        const endDateParts = endDateStr.split('-');
+        const endYear = parseInt(endDateParts[0], 10);
+        const endMonth = parseInt(endDateParts[1], 10) - 1; // 0-based
+        const endDay = parseInt(endDateParts[2], 10);
+        endDate = new Date(endYear, endMonth, endDay);
       }
       const schedulesToCreate: dbService.ScheduleRequestEntry[] = [];
 
-      // 기본 전송 시간 파싱 (로컬 시간 기준)
+      // 기본 전송 시간 파싱 (KST 기준, 명시적으로 시간대 지정)
       const baseTimeStr = newSchedule.scheduledTime 
         ? newSchedule.scheduledTime.split('T')[1]?.slice(0, 5) || '09:00'
         : '09:00';
       const [baseHours, baseMinutes] = baseTimeStr.split(':').map(Number);
       
-      // 시작일부터 종료일까지 반복
-      for (let date = new Date(startDate); date <= endDate; date.setDate(date.getDate() + 1)) {
-        // 하루에 여러 번 전송하는 경우
-        if (newSchedule.timesPerDay === 1) {
-          // 1회만 전송
-          // 로컬 시간대로 날짜와 시간 설정
-          const year = date.getFullYear();
-          const month = date.getMonth();
-          const day = date.getDate();
+      // 기존 스케줄 로드 (중복 체크용)
+      const existingSchedules = await dbService.loadScheduleRequests(user.id);
+      
+      // 중복 체크 헬퍼 함수: 같은 채널, 같은 시간(분 단위까지)인지 확인
+      const checkTimeConflict = (scheduledTimeISO: string, targetChannel: string): boolean => {
+        // UTC 시간을 분 단위로 정규화 (초, 밀리초 제거)
+        const scheduleTime = new Date(scheduledTimeISO);
+        const scheduleTimeNormalized = new Date(
+          scheduleTime.getFullYear(),
+          scheduleTime.getMonth(),
+          scheduleTime.getDate(),
+          scheduleTime.getHours(),
+          scheduleTime.getMinutes()
+        );
+        
+        return existingSchedules.some((existing) => {
+          // 같은 채널이고, 상태가 scheduled 또는 processing인 경우만 체크
+          if (existing.targetChannel !== targetChannel) return false;
+          if (existing.status !== "scheduled" && existing.status !== "processing") return false;
           
-          // 로컬 시간을 UTC ISO 문자열로 변환
-          const scheduleISO = localTimeToISOString(year, month, day, baseHours, baseMinutes);
+          // 시간을 분 단위로 정규화하여 비교
+          const existingTime = new Date(existing.scheduledTime);
+          const existingTimeNormalized = new Date(
+            existingTime.getFullYear(),
+            existingTime.getMonth(),
+            existingTime.getDate(),
+            existingTime.getHours(),
+            existingTime.getMinutes()
+          );
           
+          return scheduleTimeNormalized.getTime() === existingTimeNormalized.getTime();
+        });
+      };
+      
+      // 중복된 시간 정보를 저장 (사용자에게 표시용)
+      const conflictTimes: Array<{ date: string; time: string }> = [];
+      
+      // 반복 옵션에 따라 스케줄 생성
+      if (newSchedule.repeatOption === "once" && newSchedule.scheduleType === "routine") {
+        // 일상방송에서 1회만: 시작일만 저장
+        // KST 기준 날짜 정보를 그대로 사용
+        const year = startYear;
+        const month = startMonth;
+        const day = startDay;
+        
+        // KST 시간을 UTC ISO 문자열로 변환
+        const scheduleISO = localTimeToISOString(year, month, day, baseHours, baseMinutes);
+        
+        // 중복 체크
+        if (checkTimeConflict(scheduleISO, newSchedule.targetChannel)) {
+          const conflictDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const conflictTime = `${String(baseHours).padStart(2, '0')}:${String(baseMinutes).padStart(2, '0')}`;
+          conflictTimes.push({ date: conflictDate, time: conflictTime });
+          // 중복된 스케줄은 추가하지 않음 (continue 대신 조건문으로 처리)
+        } else {
           schedulesToCreate.push({
             generationId: newSchedule.generationId,
             targetChannel: newSchedule.targetChannel,
@@ -356,41 +426,125 @@ export default function ScheduleManagerPage() {
             scheduleName: newSchedule.scheduleName,
             scheduleType: newSchedule.scheduleType,
           } as any);
-        } else {
-          // 여러 번 전송: 하루를 균등하게 분할
-          const intervalMinutes = Math.floor((24 * 60) / newSchedule.timesPerDay);
-          for (let i = 0; i < newSchedule.timesPerDay; i++) {
-            const year = date.getFullYear();
-            const month = date.getMonth();
-            const day = date.getDate();
-            const totalMinutes = (baseHours * 60 + baseMinutes) + (i * intervalMinutes);
-            const hours = Math.floor(totalMinutes / 60) % 24;
-            const minutes = totalMinutes % 60;
+        }
+      } else {
+        // 반복 옵션이 있는 경우: 시작일부터 종료일까지 반복
+        // KST 기준으로 날짜 순회 (시간대 의존성 제거)
+        const startDateObj = new Date(startYear, startMonth, startDay);
+        const endDateObj = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+        const startDayOfWeek = startDateObj.getDay(); // 초기 요일 저장
+        const startDayOfMonth = startDay; // 초기 일자 저장
+        
+        for (let currentDate = new Date(startDateObj); currentDate <= endDateObj; currentDate.setDate(currentDate.getDate() + 1)) {
+          const currentYear = currentDate.getFullYear();
+          const currentMonth = currentDate.getMonth();
+          const currentDay = currentDate.getDate();
+          const currentDayOfWeek = currentDate.getDay();
+          const currentDayOfMonth = currentDay;
+          
+          // 반복 옵션에 따라 날짜 필터링
+          if (newSchedule.repeatOption === "weekly") {
+            // 주간 반복: 요일이 같은 날만 (월요일 = 1, 일요일 = 0)
+            if (currentDayOfWeek !== startDayOfWeek) {
+              continue; // 요일이 다르면 스킵
+            }
+          } else if (newSchedule.repeatOption === "monthly") {
+            // 월간 반복: 같은 일자만
+            if (currentDayOfMonth !== startDayOfMonth) {
+              continue; // 일자가 다르면 스킵
+            }
+          }
+          // daily이거나 event 타입이면 모든 날짜 포함
+          
+          // 하루에 여러 번 전송하는 경우
+          if (newSchedule.timesPerDay === 1) {
+            // 1회만 전송
+            // KST 시간을 UTC ISO 문자열로 변환
+            const scheduleISO = localTimeToISOString(currentYear, currentMonth, currentDay, baseHours, baseMinutes);
             
-            // 로컬 시간을 UTC ISO 문자열로 변환
-            const scheduleISO = localTimeToISOString(year, month, day, hours, minutes);
+            // 중복 체크
+            if (checkTimeConflict(scheduleISO, newSchedule.targetChannel)) {
+              const conflictDate = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(currentDay).padStart(2, '0')}`;
+              const conflictTime = `${String(baseHours).padStart(2, '0')}:${String(baseMinutes).padStart(2, '0')}`;
+              conflictTimes.push({ date: conflictDate, time: conflictTime });
+              continue; // 중복된 스케줄은 추가하지 않음
+            }
             
             schedulesToCreate.push({
-        generationId: newSchedule.generationId,
-        targetChannel: newSchedule.targetChannel,
+              generationId: newSchedule.generationId,
+              targetChannel: newSchedule.targetChannel,
               scheduledTime: scheduleISO,
-        repeatOption: newSchedule.repeatOption,
-        status: "scheduled",
+              repeatOption: newSchedule.repeatOption,
+              status: "scheduled",
               scheduleName: newSchedule.scheduleName,
               scheduleType: newSchedule.scheduleType,
             } as any);
+          } else {
+            // 여러 번 전송: 하루를 균등하게 분할
+            const intervalMinutes = Math.floor((24 * 60) / newSchedule.timesPerDay);
+            for (let i = 0; i < newSchedule.timesPerDay; i++) {
+              const totalMinutes = (baseHours * 60 + baseMinutes) + (i * intervalMinutes);
+              const hours = Math.floor(totalMinutes / 60) % 24;
+              const minutes = totalMinutes % 60;
+              
+              // KST 시간을 UTC ISO 문자열로 변환
+              const scheduleISO = localTimeToISOString(currentYear, currentMonth, currentDay, hours, minutes);
+              
+              // 중복 체크
+              if (checkTimeConflict(scheduleISO, newSchedule.targetChannel)) {
+                const conflictDate = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(currentDay).padStart(2, '0')}`;
+                const conflictTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+                conflictTimes.push({ date: conflictDate, time: conflictTime });
+                continue; // 중복된 스케줄은 추가하지 않음
+              }
+              
+              schedulesToCreate.push({
+                generationId: newSchedule.generationId,
+                targetChannel: newSchedule.targetChannel,
+                scheduledTime: scheduleISO,
+                repeatOption: newSchedule.repeatOption,
+                status: "scheduled",
+                scheduleName: newSchedule.scheduleName,
+                scheduleType: newSchedule.scheduleType,
+              } as any);
+            }
           }
         }
       }
 
+      // 중복 시간이 있는 경우 경고 표시
+      if (conflictTimes.length > 0) {
+        const conflictList = conflictTimes
+          .slice(0, 5) // 최대 5개만 표시
+          .map(ct => `${ct.date} ${ct.time}`)
+          .join(", ");
+        const moreCount = conflictTimes.length > 5 ? ` 외 ${conflictTimes.length - 5}개` : "";
+        
+        toast({
+          title: "시간 중복",
+          description: `다음 시간에 이미 스케줄이 있습니다: ${conflictList}${moreCount}\n다른 시간을 선택해주세요.`,
+          variant: "destructive",
+        });
+        
+        // 중복이 있고 생성할 스케줄이 없으면 생성 중단
+        if (schedulesToCreate.length === 0) {
+          return;
+        }
+      }
+      
       // 모든 스케줄 저장
       for (const schedule of schedulesToCreate) {
         await dbService.saveScheduleRequest(user.id, schedule);
       }
       
+      // 성공 메시지 (중복이 있었으면 그 정보도 포함)
+      const successMessage = conflictTimes.length > 0
+        ? `${schedulesToCreate.length}개의 스케줄이 생성되었습니다. (${conflictTimes.length}개 시간 중복으로 제외됨)`
+        : `${schedulesToCreate.length}개의 스케줄이 생성되었습니다.`;
+      
       toast({
         title: "스케줄 생성 완료",
-        description: `${schedulesToCreate.length}개의 스케줄이 생성되었습니다.`,
+        description: successMessage,
       });
       
       setIsCreateDialogOpen(false);
@@ -411,6 +565,92 @@ export default function ScheduleManagerPage() {
       toast({
         title: "생성 실패",
         description: "스케줄 생성 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // 선택된 스케줄 일괄 삭제 함수
+  const handleBulkDelete = async () => {
+    if (!user?.id || selectedSchedules.size === 0) return;
+    
+    try {
+      const schedulesToDelete = schedules.filter((s) => selectedSchedules.has(s.id || ""));
+      if (schedulesToDelete.length === 0) {
+        toast({
+          title: "삭제 실패",
+          description: "삭제할 스케줄이 없습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      let deletedCount = 0;
+      let failedCount = 0;
+      const deletedScheduleNames = new Set<string>();
+
+      // 각 스케줄 삭제
+      for (const schedule of schedulesToDelete) {
+        try {
+          const scheduleType = getScheduleType(schedule);
+          const scheduleName = (schedule as any).scheduleName || "";
+          
+          if (scheduleType === "event" && scheduleName) {
+            // 기간 방송: 같은 이름을 가진 모든 스케줄 삭제
+            const sameNameSchedules = schedules.filter(
+              (s) => (s as any).scheduleName === scheduleName && getScheduleType(s) === "event"
+            );
+            
+            // 이미 삭제한 스케줄 이름인지 확인
+            if (!deletedScheduleNames.has(scheduleName)) {
+              deletedScheduleNames.add(scheduleName);
+              
+              for (const s of sameNameSchedules) {
+                const success = await dbService.deleteScheduleRequest(user.id, s.id || "");
+                if (success) {
+                  deletedCount++;
+                } else {
+                  failedCount++;
+                }
+              }
+            }
+          } else {
+            // 개별 스케줄 삭제
+            const success = await dbService.deleteScheduleRequest(user.id, schedule.id || "");
+            if (success) {
+              deletedCount++;
+            } else {
+              failedCount++;
+            }
+          }
+        } catch (error) {
+          console.error(`스케줄 ${schedule.id} 삭제 실패:`, error);
+          failedCount++;
+        }
+      }
+
+      // 선택 해제
+      setSelectedSchedules(new Set());
+
+      if (failedCount === 0) {
+        toast({
+          title: "삭제 완료",
+          description: `${deletedCount}개의 스케줄이 삭제되었습니다.`,
+        });
+      } else {
+        toast({
+          title: "부분 삭제",
+          description: `${deletedCount}개 삭제 완료, ${failedCount}개 삭제 실패`,
+          variant: "destructive",
+        });
+      }
+
+      await loadSchedules();
+    } catch (error) {
+      console.error("스케줄 일괄 삭제 실패:", error);
+      toast({
+        title: "삭제 실패",
+        description: "스케줄 삭제 중 오류가 발생했습니다.",
         variant: "destructive",
       });
     }
@@ -569,6 +809,8 @@ export default function ScheduleManagerPage() {
     switch (status) {
       case "scheduled":
         return <Badge variant="outline" className="bg-blue-500/10 text-blue-500">예약됨</Badge>;
+      case "processing":
+        return <Badge variant="outline" className="bg-yellow-500/10 text-yellow-500">진행 중</Badge>;
       case "sent":
         return <Badge variant="outline" className="bg-green-500/10 text-green-500">전송됨</Badge>;
       case "failed":
@@ -670,44 +912,212 @@ export default function ScheduleManagerPage() {
               <RefreshCw className="w-4 h-4" />
               새로고침
             </Button>
-            <Button
-              onClick={() => setIsCreateDialogOpen(true)}
-              className="flex items-center gap-2"
-            >
-              <Plus className="w-4 h-4" />
-              새 스케줄
-            </Button>
+            {!isBroadcastMode && (
+              <Button
+                onClick={() => setIsCreateDialogOpen(true)}
+                className="flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                새 스케줄
+              </Button>
+            )}
           </div>
         }
       />
 
       <div className="space-y-6">
-        {/* 뷰 모드 전환 */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Button
-              variant={viewMode === "calendar" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setViewMode("calendar")}
-            >
-              <CalendarIcon className="w-4 h-4 mr-2" />
-              달력 보기
-            </Button>
-            <Button
-              variant={viewMode === "list" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setViewMode("list")}
-            >
-              <Clock className="w-4 h-4 mr-2" />
-              목록 보기
-            </Button>
-          </div>
-        </div>
+        {/* 즉시 송출 모드: 음원 목록 표시 */}
+        {isBroadcastMode ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Music2 className="w-5 h-5" />
+                음원 목록
+              </CardTitle>
+              <CardDescription>
+                송출할 음원을 선택하고 "송출" 버튼을 클릭하세요
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {/* 검색 */}
+              <div className="relative mb-4">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                <Input
+                  placeholder="음원 검색..."
+                  value={audioSearchQuery}
+                  onChange={(e) => setAudioSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
 
-        {viewMode === "calendar" ? (
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
-            {/* 왼쪽: 달력 (3/5 폭) */}
-            <div className="lg:col-span-3">
+              {/* 음원 리스트 - 표 형식 */}
+              <div className="border rounded-lg overflow-hidden">
+                <ScrollArea className="h-[600px]">
+                  {generations.length === 0 ? (
+                    <div className="p-8 text-center text-muted-foreground">
+                      <Music2 className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                      <p>사용 가능한 음원이 없습니다</p>
+                      <p className="text-sm mt-2">먼저 음원을 생성해주세요</p>
+                    </div>
+                  ) : (
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted/50 sticky top-0 z-10">
+                        <tr>
+                          <th className="px-4 py-3 text-left font-medium text-muted-foreground w-2/5">음원명</th>
+                          <th className="px-4 py-3 text-left font-medium text-muted-foreground w-1/5">카테고리</th>
+                          <th className="px-4 py-3 text-center font-medium text-muted-foreground w-1/5">미리듣기</th>
+                          <th className="px-4 py-3 text-center font-medium text-muted-foreground w-1/5">송출</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {generations
+                          .filter((gen) => {
+                            if (!audioSearchQuery.trim()) return true;
+                            const query = audioSearchQuery.toLowerCase();
+                            return (
+                              gen.savedName?.toLowerCase().includes(query) ||
+                              gen.purposeLabel?.toLowerCase().includes(query) ||
+                              gen.voiceName?.toLowerCase().includes(query) ||
+                              gen.textPreview?.toLowerCase().includes(query)
+                            );
+                          })
+                          .map((gen) => {
+                            const isPreviewing = selectedAudioPreviewId === gen.id;
+                            const isLoading = loadingPreviewIds.has(String(gen.id));
+                            const previewUrl = previewUrls[String(gen.id)] || gen.audioUrl;
+                            return (
+                              <React.Fragment key={gen.id}>
+                                <tr className="border-b border-border hover:bg-muted/50 transition-colors">
+                                  <td className="px-4 py-3">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-medium">
+                                        {gen.savedName || `음원 ${gen.id}`}
+                                      </span>
+                                      {gen.isFavorite && (
+                                        <Star className="w-4 h-4 fill-yellow-400 text-yellow-400 flex-shrink-0" />
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {gen.purposeLabel && (
+                                      <Badge 
+                                        variant="outline" 
+                                        className={cn("text-xs px-2 py-0.5", getPurposeColor(gen.purpose || ""))}
+                                      >
+                                        {gen.purposeLabel}
+                                      </Badge>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3 text-center">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-8 w-8 p-0"
+                                      onClick={async (e) => {
+                                        e.stopPropagation();
+                                        if (isPreviewing) {
+                                          setSelectedAudioPreviewId(null);
+                                        } else {
+                                          setSelectedAudioPreviewId(gen.id || null);
+                                          const idStr = String(gen.id);
+                                          if (!previewUrl) {
+                                            setLoadingPreviewIds((prev) => new Set([...prev, idStr]));
+                                            try {
+                                              await ensureGenerationAudio(gen);
+                                            } catch (error) {
+                                              console.error("음원 복원 실패:", error);
+                                            } finally {
+                                              setLoadingPreviewIds((prev) => {
+                                                const next = new Set(prev);
+                                                next.delete(idStr);
+                                                return next;
+                                              });
+                                            }
+                                          }
+                                        }
+                                      }}
+                                    >
+                                      {isLoading ? (
+                                        <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                                      ) : (
+                                        <Play className={cn("w-4 h-4", isPreviewing && "text-primary")} />
+                                      )}
+                                    </Button>
+                                  </td>
+                                  <td className="px-4 py-3 text-center">
+                                    <Button
+                                      variant="default"
+                                      size="sm"
+                                      className="h-8 px-4"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setBroadcastDialog({
+                                          open: true,
+                                          generationId: String(gen.id || ""),
+                                          generationName: gen.savedName || undefined,
+                                        });
+                                      }}
+                                    >
+                                      <Radio className="w-4 h-4 mr-2" />
+                                      송출
+                                    </Button>
+                                  </td>
+                                </tr>
+                                {isPreviewing && previewUrl && (
+                                  <tr>
+                                    <td colSpan={4} className="px-4 py-3 bg-muted/30">
+                                      <AudioPlayer
+                                        audioUrl={previewUrl}
+                                        cacheKey={gen.cacheKey}
+                                        mimeType={gen.mimeType}
+                                        className="w-full"
+                                        onError={() => {
+                                          setSelectedAudioPreviewId(null);
+                                        }}
+                                      />
+                                    </td>
+                                  </tr>
+                                )}
+                              </React.Fragment>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  )}
+                </ScrollArea>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <>
+            {/* 뷰 모드 전환 */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant={viewMode === "calendar" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setViewMode("calendar")}
+                >
+                  <CalendarIcon className="w-4 h-4 mr-2" />
+                  달력 보기
+                </Button>
+                <Button
+                  variant={viewMode === "list" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setViewMode("list")}
+                >
+                  <Clock className="w-4 h-4 mr-2" />
+                  목록 보기
+                </Button>
+              </div>
+            </div>
+
+            {viewMode === "calendar" ? (
+          <>
+          {/* FHD/WFHD 최적화: 달력과 리스트를 나란히 배치 */}
+          <div className="grid grid-cols-1 lg:grid-cols-5 xl:grid-cols-7 gap-6 items-start">
+            {/* 왼쪽: 달력 (3/5 또는 4/7 폭) */}
+            <div className="lg:col-span-3 xl:col-span-4">
               <Card className="h-full flex flex-col">
                 <CardHeader className="flex-shrink-0">
                   <CardTitle className="text-xl">방송 일정 달력</CardTitle>
@@ -743,9 +1153,9 @@ export default function ScheduleManagerPage() {
                     head_row: "flex",
                     head_cell: "text-muted-foreground rounded-md w-[110%] font-semibold text-sm px-3 py-2 text-center",
                     row: "flex w-full mt-2",
-                    cell: "h-28 w-[110%] text-center text-sm p-0 relative border border-border/50 rounded-md hover:bg-muted/50 transition-colors",
+                    cell: "h-28 w-[110%] text-center text-sm p-0 relative border border-border/50 rounded-md hover:bg-muted/50 transition-colors min-w-0",
                     day: cn(
-                      "h-full w-full p-0 font-normal flex flex-col items-center justify-start pt-1 gap-1 overflow-hidden"
+                      "h-full w-full p-0 font-normal flex flex-col items-center justify-start pt-1 gap-1 overflow-hidden min-w-0"
                     ),
                     day_selected:
                       "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground",
@@ -811,7 +1221,7 @@ export default function ScheduleManagerPage() {
                           )}>
                             {date.getDate()}
                           </span>
-                          <div className="flex flex-col gap-1 w-full px-1 overflow-y-auto max-h-[70px]">
+                          <div className="flex flex-col gap-1 w-full px-1 overflow-y-auto max-h-[70px] min-w-0">
                             {daySchedules.slice(0, 3).map((schedule) => {
                               const scheduleType = getScheduleType(schedule);
                               const scheduleName = (schedule as any).scheduleName || "스케줄";
@@ -839,6 +1249,10 @@ export default function ScheduleManagerPage() {
                                   bgColor = "bg-red-500/10";
                                   textColor = "text-red-700 dark:text-red-300";
                                   borderColor = "border-red-500/20";
+                                } else if (status === "processing") {
+                                  bgColor = "bg-yellow-500/10";
+                                  textColor = "text-yellow-700 dark:text-yellow-300";
+                                  borderColor = "border-yellow-500/20";
                                 } else {
                                   bgColor = "bg-blue-500/5 dark:bg-blue-500/10";
                                   textColor = "text-blue-700 dark:text-blue-300";
@@ -853,6 +1267,10 @@ export default function ScheduleManagerPage() {
                                   bgColor = "bg-red-500/10";
                                   textColor = "text-red-700 dark:text-red-300";
                                   borderColor = "border-red-500/20";
+                                } else if (status === "processing") {
+                                  bgColor = "bg-yellow-500/10";
+                                  textColor = "text-yellow-700 dark:text-yellow-300";
+                                  borderColor = "border-yellow-500/20";
                                 } else {
                                   bgColor = "bg-purple-500/5 dark:bg-purple-500/10";
                                   textColor = "text-purple-700 dark:text-purple-300";
@@ -897,20 +1315,21 @@ export default function ScheduleManagerPage() {
                                     <TooltipTrigger asChild>
                                       <button
                                         className={cn(
-                                          "w-full text-[10px] px-1.5 py-1 rounded border text-left truncate hover:opacity-90 transition-opacity",
+                                          "w-full min-w-0 text-[10px] px-1.5 py-1 rounded border text-left truncate hover:opacity-90 transition-opacity",
                                           bgColor,
                                           textColor,
                                           borderColor,
                                           isSelected && "opacity-90"
                                         )}
+                                        style={{ width: '100%', minWidth: 0 }}
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           setEditingSchedule(schedule);
                                           setIsEditDialogOpen(true);
                                         }}
                                       >
-                                        <div className="truncate font-semibold leading-tight">{scheduleName}</div>
-                                        <div className="truncate opacity-75 text-[9px] leading-tight mt-0.5">{timeStr}</div>
+                                        <div className="truncate font-semibold leading-tight min-w-0">{scheduleName}</div>
+                                        <div className="truncate opacity-75 text-[9px] leading-tight mt-0.5 min-w-0">{timeStr}</div>
                                       </button>
                                     </TooltipTrigger>
                                     <TooltipContent side="right" className="max-w-xs">
@@ -958,7 +1377,8 @@ export default function ScheduleManagerPage() {
             </div>
 
             {/* 오른쪽: 상세 스케줄 리스트 (2/5 폭) */}
-            <div className="lg:col-span-2">
+            {/* 오른쪽: 선택된 날짜의 스케줄 리스트 (2/5 또는 3/7 폭) */}
+            <div className="lg:col-span-2 xl:col-span-3">
               <Card className="h-full flex flex-col">
                 <CardHeader className="pb-3 flex-shrink-0">
                   <CardTitle className="text-lg font-semibold">
@@ -1024,6 +1444,15 @@ export default function ScheduleManagerPage() {
                                 >
                                   {scheduleType === "event" ? "기간" : "일상"}
                                 </Badge>
+                                {/* 카테고리 배지 */}
+                                {gen?.purposeLabel && gen?.purpose && (
+                                  <Badge 
+                                    variant="outline" 
+                                    className={cn("text-xs px-1.5 py-0 font-medium", getPurposeColor(gen.purpose))}
+                                  >
+                                    {gen.purposeLabel}
+                                  </Badge>
+                                )}
                               </div>
                               {/* 시간 표시 */}
                               <div className="flex items-center gap-2 text-xs font-medium">
@@ -1147,6 +1576,7 @@ export default function ScheduleManagerPage() {
               </Card>
             </div>
           </div>
+          </>
         ) : (
           <div className="space-y-4">
             {/* 페이지당 항목 수 선택 */}
@@ -1184,11 +1614,56 @@ export default function ScheduleManagerPage() {
               </Card>
             ) : (
               <>
+                {/* 선택 삭제 버튼 */}
+                {selectedSchedules.size > 0 && (
+                  <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border">
+                    <p className="text-sm text-muted-foreground">
+                      {selectedSchedules.size}개 선택됨
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSelectedSchedules(new Set())}
+                      >
+                        선택 해제
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={async () => {
+                          if (confirm(`${selectedSchedules.size}개의 스케줄을 삭제하시겠습니까?`)) {
+                            await handleBulkDelete();
+                          }
+                        }}
+                      >
+                        <Trash2 className="w-4 h-4 mr-1" />
+                        선택 삭제 ({selectedSchedules.size})
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                
                 <div className="border rounded-lg overflow-hidden">
                   <ScrollArea className="h-[600px]">
                     <table className="w-full text-xs">
                       <thead className="bg-muted/50 sticky top-0 z-10">
                         <tr>
+                          <th className="px-3 py-2 w-10">
+                            <Checkbox
+                              checked={paginatedSchedules.length > 0 && paginatedSchedules.every(s => selectedSchedules.has(s.id || ""))}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  const allIds = new Set(paginatedSchedules.map(s => s.id || ""));
+                                  setSelectedSchedules(new Set([...selectedSchedules, ...allIds]));
+                                } else {
+                                  const pageIds = new Set(paginatedSchedules.map(s => s.id || ""));
+                                  setSelectedSchedules(new Set([...selectedSchedules].filter(id => !pageIds.has(id))));
+                                }
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </th>
                           <th 
                             className="px-3 py-2 text-left font-medium text-muted-foreground cursor-pointer hover:bg-muted/70 transition-colors"
                             onClick={() => {
@@ -1311,25 +1786,51 @@ export default function ScheduleManagerPage() {
             const gen = generations.find((g) => g.id === schedule.generationId);
                             const scheduleType = getScheduleType(schedule);
                             const scheduleName = (schedule as any).scheduleName || schedule.targetName || gen?.savedName || "스케줄";
+                            const channelInfo = getChannelInfo(schedule.targetChannel);
+                            const isSelected = selectedSchedules.has(schedule.id || "");
             return (
                               <tr
                                 key={schedule.id}
                                 className={cn(
-                                  "cursor-pointer transition-colors hover:bg-muted/50 border-b border-border border-l-4",
+                                  "transition-colors hover:bg-muted/50 border-b border-border border-l-4",
+                                  isSelected && "bg-primary/5 dark:bg-primary/10",
                                   scheduleType === "event"
                                     ? "border-l-purple-500 bg-purple-500/5 dark:bg-purple-500/10"
                                     : "border-l-blue-500 bg-blue-500/5 dark:bg-blue-500/10"
                                 )}
-                                onClick={() => {
-                                  // 스케줄 수정 모달 열기
-                                  setEditingSchedule(schedule);
-                                  setIsEditDialogOpen(true);
-                                }}
                               >
-                                <td className="px-3 py-2">
+                                <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                                  <Checkbox
+                                    checked={isSelected}
+                                    onCheckedChange={(checked) => {
+                                      const scheduleId = schedule.id || "";
+                                      if (checked) {
+                                        setSelectedSchedules(new Set([...selectedSchedules, scheduleId]));
+                                      } else {
+                                        const newSet = new Set(selectedSchedules);
+                                        newSet.delete(scheduleId);
+                                        setSelectedSchedules(newSet);
+                                      }
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                  />
+                                </td>
+                                <td 
+                                  className="px-3 py-2 cursor-pointer"
+                                  onClick={() => {
+                                    setEditingSchedule(schedule);
+                                    setIsEditDialogOpen(true);
+                                  }}
+                                >
                                   <span className="font-medium truncate block">{scheduleName}</span>
                                 </td>
-                                <td className="px-3 py-2">
+                                <td 
+                                  className="px-3 py-2 cursor-pointer"
+                                  onClick={() => {
+                                    setEditingSchedule(schedule);
+                                    setIsEditDialogOpen(true);
+                                  }}
+                                >
                                   <Badge 
                                     variant="outline" 
                                     className={cn(
@@ -1342,11 +1843,49 @@ export default function ScheduleManagerPage() {
                                     {scheduleType === "event" ? "기간" : "일상"}
                                   </Badge>
                                 </td>
-                                <td className="px-3 py-2">
-                                  <div className="flex items-center gap-1">
-                                    <Radio className="w-3 h-3 text-muted-foreground" />
-                                    <span className="truncate">{schedule.targetChannel}</span>
-                                  </div>
+                                <td 
+                                  className="px-3 py-2 cursor-pointer min-w-[180px]"
+                                  onClick={() => {
+                                    setEditingSchedule(schedule);
+                                    setIsEditDialogOpen(true);
+                                  }}
+                                >
+                                  {channelInfo ? (
+                                    <div className="flex flex-col gap-1">
+                                      <div className="flex items-center gap-1.5">
+                                        <Radio className="w-3 h-3 text-primary flex-shrink-0" />
+                                        <span className="font-semibold text-foreground truncate text-xs">{channelInfo.name}</span>
+                                      </div>
+                                      <div className="flex items-center gap-1.5 pl-4">
+                                        <Badge 
+                                          variant="outline" 
+                                          className={cn(
+                                            "text-[9px] px-1 py-0 h-4",
+                                            channelInfo.endpoint 
+                                              ? "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20"
+                                              : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
+                                          )}
+                                        >
+                                          {channelInfo.type}
+                                        </Badge>
+                                        {channelInfo.endpoint && (
+                                          <span className="text-[9px] text-green-600 dark:text-green-400 truncate" title={channelInfo.endpoint}>
+                                            ✓ endpoint
+                                          </span>
+                                        )}
+                                        {!channelInfo.endpoint && (
+                                          <span className="text-[9px] text-amber-600 dark:text-amber-400">
+                                            ⚠ endpoint 없음
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center gap-1">
+                                      <Radio className="w-3 h-3 text-muted-foreground" />
+                                      <span className="text-muted-foreground truncate text-[10px]">{schedule.targetChannel || "채널 없음"}</span>
+                                    </div>
+                                  )}
                                 </td>
                                 <td className="px-3 py-2">
                                   <span className="text-muted-foreground">{formatDateTime(schedule.scheduledTime)}</span>
@@ -1427,8 +1966,11 @@ export default function ScheduleManagerPage() {
             )}
           </div>
         )}
+          </>
+        )}
+      </div>
 
-        {/* 스케줄 생성 다이얼로그 */}
+      {/* 스케줄 생성 다이얼로그 */}
         <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -1511,9 +2053,10 @@ export default function ScheduleManagerPage() {
                     <table className="w-full text-xs">
                       <thead className="bg-muted/50 sticky top-0 z-10">
                         <tr>
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground w-1/2">음원명</th>
-                          <th className="px-3 py-2 text-left font-medium text-muted-foreground w-1/4">카테고리</th>
-                          <th className="px-3 py-2 text-center font-medium text-muted-foreground w-1/4">미리듣기</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground w-2/5">음원명</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground w-1/5">카테고리</th>
+                          <th className="px-3 py-2 text-center font-medium text-muted-foreground w-1/5">미리듣기</th>
+                          <th className="px-3 py-2 text-center font-medium text-muted-foreground w-1/5">송출</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1602,10 +2145,27 @@ export default function ScheduleManagerPage() {
                                       )}
                                     </Button>
                                   </td>
+                                  <td className="px-3 py-2 text-center">
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-6 px-2 text-[10px]"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setBroadcastDialog({
+                                          open: true,
+                                          generationId: String(gen.id || ""),
+                                          generationName: gen.savedName || undefined,
+                                        });
+                                      }}
+                                    >
+                                      송출
+                                    </Button>
+                                  </td>
                                 </tr>
                                 {isPreviewing && previewUrl && (
                                   <tr>
-                                    <td colSpan={3} className="px-3 py-2 bg-muted/30">
+                                    <td colSpan={4} className="px-3 py-2 bg-muted/30">
                                       <AudioPlayer
                                         audioUrl={previewUrl}
                                         cacheKey={gen.cacheKey}
@@ -2155,7 +2715,15 @@ export default function ScheduleManagerPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      </div>
+
+        {/* 송출 다이얼로그 */}
+        <BroadcastDialog
+          open={broadcastDialog.open}
+          onOpenChange={(open) => setBroadcastDialog({ ...broadcastDialog, open })}
+          generationId={broadcastDialog.generationId}
+          generationName={broadcastDialog.generationName}
+          onSuccess={handleBroadcastSuccess}
+        />
     </PageContainer>
   );
 }

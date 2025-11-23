@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +15,7 @@ import { useToast } from "@/components/ui/use-toast";
 export default function SendSetupPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
   const [channels, setChannels] = useState<any[]>([]);
   const [selectedChannel, setSelectedChannel] = useState<string>("");
   const [channelSettings, setChannelSettings] = useState({
@@ -29,6 +31,24 @@ export default function SendSetupPage() {
       loadChannels();
     }
   }, [user?.id]);
+
+  // URL 쿼리 파라미터에서 채널 ID 읽기
+  useEffect(() => {
+    const channelId = searchParams.get("channel");
+    if (channelId && channels.length > 0) {
+      const channel = channels.find((ch) => ch.id === channelId);
+      if (channel) {
+        setSelectedChannel(channel.id || "");
+        setChannelSettings({
+          name: channel.name,
+          type: channel.type,
+          endpoint: channel.endpoint || "",
+          enabled: channel.enabled,
+          testMode: false,
+        });
+      }
+    }
+  }, [searchParams, channels]);
 
   const loadChannels = async () => {
     if (!user?.id) return;

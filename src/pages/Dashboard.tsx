@@ -66,6 +66,11 @@ const Dashboard = () => {
     totalDuration: "0분",
     successRate: 0,
     monthlyUsage: 0,
+    // 작업큐 통계
+    pendingJobs: 0, // 대기중
+    processingJobs: 0, // 처리중/송출중
+    completedJobs: 0, // 완료
+    failedJobs: 0, // 실패
   });
   const [recentBroadcasts, setRecentBroadcasts] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -182,23 +187,31 @@ const Dashboard = () => {
     }
   };
 
+  // 요금제 정보 가져오기
+  const getPlanInfo = (planId: string) => {
+    const plans = {
+      basic: { name: "기본", credits: 20000, description: "약 30분" },
+      standard: { name: "표준", credits: 100000, description: "약 150분" },
+      premium: { name: "프리미엄", credits: 500000, description: "약 800분" },
+      custom: { name: "맞춤형", credits: 0, description: "무제한" },
+    };
+    return plans[planId as keyof typeof plans] || plans.standard;
+  };
+
   const fetchCreditBalance = async () => {
     try {
-      // Mock 데이터 (실제로는 Supabase Edge Function 호출)
-      const mockCredit: CreditBalance = {
-        balance: 45000,
+      // 사용자 요금제 정보 가져오기
+      const planInfo = getPlanInfo(user?.plan || "standard");
+      
+      // 요금제 정보를 크레딧 형태로 표시
+      const planCredit: CreditBalance = {
+        balance: planInfo.credits,
         currency: "KRW",
         lastUpdated: new Date().toISOString(),
       };
-      setCreditBalance(mockCredit);
-      // 임계치 체크
-      if (mockCredit.balance < 10000) {
-        addOperationLog("warning", "크레딧 잔액이 부족합니다. 충전이 필요합니다.");
-      } else if (mockCredit.balance < 50000) {
-        addOperationLog("info", "크레딧 잔액이 50% 이하입니다.");
-      }
+      setCreditBalance(planCredit);
     } catch (error: any) {
-      addOperationLog("error", `크레딧 조회 실패: ${error.message}`);
+      addOperationLog("error", `요금제 정보 조회 실패: ${error.message}`);
     }
   };
 
@@ -275,12 +288,23 @@ const Dashboard = () => {
       // 이번 달 사용량 (퍼센트, 예시로 89% 고정 - 실제로는 요금제 기준으로 계산)
       const monthlyUsage = 89; // TODO: 실제 요금제 기준으로 계산
 
+      // 작업큐 통계 계산 (스케줄 기반)
+      const pendingJobs = schedules.filter(s => s.status === "scheduled").length;
+      const processingJobs = schedules.filter(s => s.status === "processing").length;
+      const completedJobs = schedules.filter(s => s.status === "sent").length;
+      const failedJobs = schedules.filter(s => s.status === "failed").length;
+
       setStats({
         totalBroadcasts,
         activeBroadcasts,
         totalDuration: formatDuration(totalDurationSeconds),
         successRate,
         monthlyUsage,
+        // 작업큐 통계
+        pendingJobs,
+        processingJobs,
+        completedJobs,
+        failedJobs,
       });
 
       // 최근 방송 목록 생성 (예약 요청과 생성 이력 결합)
@@ -446,9 +470,9 @@ const Dashboard = () => {
         </div>
       )}
 
-      <div className="space-y-8">
-        {/* 사용량 & 크레딧 모니터링 패널 (TTS 생성 페이지에서 이동) */}
-        <div className="mb-8 grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="space-y-6">
+        {/* 사용량 & 크레딧 모니터링 패널 (FHD/WFHD 최적화: 4-5 컬럼) */}
+        <div className="mb-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4">
           <Card>
             <CardContent className="pt-6">
               <div className="space-y-2">
@@ -464,12 +488,17 @@ const Dashboard = () => {
           <Card>
             <CardContent className="pt-6">
               <div className="space-y-2">
-                <span className="text-sm font-medium text-muted-foreground">크레딧 잔액</span>
-                <div className={`text-2xl font-bold ${creditBalance.balance < 50000 ? "text-red-600" : creditBalance.balance < 100000 ? "text-orange-600" : "text-green-600"}`}>
-                  ₩{creditBalance.balance.toLocaleString()}
+                <span className="text-sm font-medium text-muted-foreground">회원 요금제</span>
+                <div className="flex items-center gap-2">
+                  <div className={`text-2xl font-bold ${user?.plan === "premium" ? "text-purple-600" : user?.plan === "standard" ? "text-primary" : user?.plan === "basic" ? "text-blue-600" : "text-green-600"}`}>
+                    {getPlanInfo(user?.plan || "standard").name}
+                  </div>
+                  <Badge variant="outline" className="text-xs">
+                    {getPlanInfo(user?.plan || "standard").description}
+                  </Badge>
                 </div>
-                <div className="w-full bg-muted h-2 rounded-full overflow-hidden">
-                  <div className={`h-full transition-all ${creditBalance.balance < 50000 ? "bg-red-600" : "bg-green-600"}`} style={{ width: `${Math.min((creditBalance.balance / 500000) * 100, 100)}%` }} />
+                <div className="text-xs text-muted-foreground">
+                  크레딧: ₩{creditBalance.balance.toLocaleString()}
                 </div>
               </div>
             </CardContent>
@@ -493,8 +522,8 @@ const Dashboard = () => {
           </Card>
         </div>
 
-        {/* Stats Overview */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        {/* Stats Overview (FHD/WFHD 최적화: 4-6 컬럼) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4 mb-6">
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
@@ -552,9 +581,66 @@ const Dashboard = () => {
           </Card>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* 작업큐 통계 (FHD/WFHD 최적화: 4-6 컬럼) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4 mb-6">
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">대기중</p>
+                  <p className="text-2xl font-bold">{stats.pendingJobs}</p>
+                </div>
+                <div className="w-12 h-12 bg-yellow-50 dark:bg-yellow-500/10 rounded-lg flex items-center justify-center">
+                  <Clock className="w-6 h-6 text-yellow-500" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">송출중</p>
+                  <p className="text-2xl font-bold">{stats.processingJobs}</p>
+                </div>
+                <div className="w-12 h-12 bg-blue-50 dark:bg-blue-500/10 rounded-lg flex items-center justify-center">
+                  <Radio className="w-6 h-6 text-blue-500" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">완료</p>
+                  <p className="text-2xl font-bold">{stats.completedJobs}</p>
+                </div>
+                <div className="w-12 h-12 bg-green-50 dark:bg-green-500/10 rounded-lg flex items-center justify-center">
+                  <CheckCircle className="w-6 h-6 text-green-500" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">실패</p>
+                  <p className="text-2xl font-bold">{stats.failedJobs}</p>
+                </div>
+                <div className="w-12 h-12 bg-red-50 dark:bg-red-500/10 rounded-lg flex items-center justify-center">
+                  <AlertCircle className="w-6 h-6 text-red-500" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Quick Actions & Recent Broadcasts (FHD/WFHD 최적화: 2-3 컬럼) */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
           {/* Quick Actions */}
-          <div className="lg:col-span-1">
+          <div className="lg:col-span-1 xl:col-span-1">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -615,7 +701,7 @@ const Dashboard = () => {
           </div>
 
           {/* Recent Broadcasts */}
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-1 xl:col-span-2">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">

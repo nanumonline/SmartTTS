@@ -16,6 +16,8 @@ import { correctKoreanPostpositions } from "@/lib/koreanPostposition";
 import { Pagination, PaginationContent, PaginationItem } from "@/components/ui/pagination";
 import PageHeader from "@/components/layout/PageHeader";
 import PageContainer from "@/components/layout/PageContainer";
+import { getPurposeColor } from "@/lib/categoryColors";
+import { cn } from "@/lib/utils";
 
 export default function MessageTemplatePage() {
   const { user } = useAuth();
@@ -743,7 +745,14 @@ export default function MessageTemplatePage() {
                       <div className="flex items-center gap-2 mb-2">
                         <h3 className="font-medium">{template.templateName}</h3>
                           <Badge variant="outline">{getCategoryLabel(template.templateCategory || "")}</Badge>
-                          <Badge variant="secondary" className="text-xs">{getPurposeLabel(template.purpose || "")}</Badge>
+                          {template.purpose && (
+                            <Badge 
+                              variant="outline" 
+                              className={cn("text-xs", getPurposeColor(template.purpose))}
+                            >
+                              {getPurposeLabel(template.purpose)}
+                            </Badge>
+                          )}
                       </div>
                       <p className="text-sm text-muted-foreground line-clamp-2">
                         {template.text}

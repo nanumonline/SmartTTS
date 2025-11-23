@@ -73,6 +73,65 @@ export function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
+// Hex 색상을 HSL로 변환
+export function hexToHsl(hex: string): string {
+  // # 제거
+  const cleanHex = hex.replace('#', '');
+  
+  // RGB 추출
+  const r = parseInt(cleanHex.substring(0, 2), 16) / 255;
+  const g = parseInt(cleanHex.substring(2, 4), 16) / 255;
+  const b = parseInt(cleanHex.substring(4, 6), 16) / 255;
+
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0, s = 0, l = (max + min) / 2;
+
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    
+    switch (max) {
+      case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+      case g: h = ((b - r) / d + 2) / 6; break;
+      case b: h = ((r - g) / d + 4) / 6; break;
+    }
+  }
+
+  h = Math.round(h * 360);
+  s = Math.round(s * 100);
+  l = Math.round(l * 100);
+
+  return `${h} ${s}% ${l}%`;
+}
+
+// 브랜드 색상을 CSS 변수로 적용
+export function applyBrandColors(primaryColor: string, secondaryColor: string): void {
+  if (typeof document === 'undefined') return;
+
+  const root = document.documentElement;
+  
+  // Hex를 HSL로 변환
+  const primaryHsl = hexToHsl(primaryColor);
+  const secondaryHsl = hexToHsl(secondaryColor);
+
+  // CSS 변수 업데이트
+  root.style.setProperty('--primary', primaryHsl);
+  root.style.setProperty('--accent', secondaryHsl);
+  root.style.setProperty('--ring', primaryHsl);
+  
+  // 다크 모드에서도 동일하게 적용
+  root.style.setProperty('--sidebar-ring', primaryHsl);
+  root.style.setProperty('--sidebar-primary', primaryHsl);
+  
+  // 그라데이션도 업데이트
+  root.style.setProperty('--gradient-primary', `linear-gradient(135deg, hsl(${primaryHsl}), hsl(${secondaryHsl}))`);
+  root.style.setProperty('--gradient-audio', `linear-gradient(90deg, hsl(${primaryHsl}), hsl(${secondaryHsl}))`);
+  
+  // 그림자 효과도 업데이트
+  root.style.setProperty('--shadow-glow', `0 0 40px hsl(${primaryHsl} / 0.3)`);
+}
+
 // 클립보드 이미지를 DataURL로 변환
 export async function clipboardToDataUrl(): Promise<string | null> {
   // 클립보드 API 지원 여부 확인

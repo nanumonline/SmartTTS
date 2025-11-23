@@ -18,6 +18,7 @@ import PageContainer from "@/components/layout/PageContainer";
 import { Pagination, PaginationContent, PaginationItem } from "@/components/ui/pagination";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { getPurposeColor } from "@/lib/categoryColors";
 
 export default function ScriptsPage() {
   const { user } = useAuth();
@@ -357,170 +358,174 @@ export default function ScriptsPage() {
               </CardContent>
             </Card>
           ) : (
-          <div className="space-y-4">
-            <Card>
-              <CardContent className="p-0">
-                <div className="space-y-2 p-4">
-                  {paginatedScripts.map((script) => {
-                    const isFavorite = messageFavorites.has(String(script.id)) || script.isFavorite === true;
-                    return (
-                      <div
-                        key={script.id}
-                        className="rounded-lg border bg-card p-3 hover:bg-muted/50 transition-colors"
-                      >
-                        {editingId === script.id ? (
-                          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                            <div className="flex-1 min-w-0 space-y-3">
-                              <div className="flex flex-wrap gap-1">
-                                <Badge variant="outline" className="text-xs">
-                                  {getPurposeLabel(script.purpose)}
-                                </Badge>
-                                {script.tags && script.tags.length > 0 && (
-                                  <>
-                                    {script.tags.slice(0, 4).map((tag, idx) => (
-                                      <Badge key={idx} variant="secondary" className="text-xs">
-                                        {tag}
-                                      </Badge>
-                                    ))}
-                                    {script.tags.length > 4 && (
-                                      <Badge variant="secondary" className="text-xs">
-                                        +{script.tags.length - 4}
-                                      </Badge>
-                                    )}
-                                  </>
-                                )}
-                              </div>
-                              <Textarea
-                                value={editingText}
-                                onChange={(e) => setEditingText(e.target.value)}
-                                className="min-h-[80px]"
-                                placeholder="문구 내용을 입력하세요..."
-                              />
+          <>
+          {/* 문구 목록 (리스트 형식) */}
+          <Card>
+            <CardContent className="p-0">
+              <div className="divide-y divide-border">
+                {paginatedScripts.map((script) => {
+                  const isFavorite = messageFavorites.has(String(script.id)) || script.isFavorite === true;
+                  return (
+                    <div
+                      key={script.id}
+                      className="p-4 hover:bg-muted/50 transition-colors"
+                    >
+                      {editingId === script.id ? (
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                          <div className="flex-1 min-w-0 space-y-3">
+                            <div className="flex flex-wrap gap-1">
+                              <Badge variant="outline" className="text-xs">
+                                {getPurposeLabel(script.purpose)}
+                              </Badge>
+                              {script.tags && script.tags.length > 0 && (
+                                <>
+                                  {script.tags.slice(0, 4).map((tag, idx) => (
+                                    <Badge key={idx} variant="secondary" className="text-xs">
+                                      {tag}
+                                    </Badge>
+                                  ))}
+                                  {script.tags.length > 4 && (
+                                    <Badge variant="secondary" className="text-xs">
+                                      +{script.tags.length - 4}
+                                    </Badge>
+                                  )}
+                                </>
+                              )}
                             </div>
-                            <div className="flex w-full flex-col gap-2 sm:w-40">
-                              <Button
-                                size="sm"
-                                variant="default"
-                                onClick={handleSaveEdit}
-                                className="w-full"
-                              >
-                                <Save className="w-4 h-4 mr-2" />
-                                저장
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={handleCancelEdit}
-                                className="w-full"
-                              >
-                                <X className="w-4 h-4 mr-2" />
-                                취소
-                              </Button>
-                            </div>
+                            <Textarea
+                              value={editingText}
+                              onChange={(e) => setEditingText(e.target.value)}
+                              className="min-h-[80px]"
+                              placeholder="문구 내용을 입력하세요..."
+                            />
                           </div>
-                        ) : (
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-                            <div className="flex-1 min-w-0 space-y-2">
-                              <div className="flex flex-wrap gap-1">
-                                <Badge variant="outline" className="text-xs">
-                                  {getPurposeLabel(script.purpose)}
-                                </Badge>
-                                {script.tags && script.tags.length > 0 && (
-                                  <>
-                                    {script.tags.slice(0, 4).map((tag, idx) => (
-                                      <Badge key={idx} variant="secondary" className="text-xs">
-                                        {tag}
-                                      </Badge>
-                                    ))}
-                                    {script.tags.length > 4 && (
-                                      <Badge variant="secondary" className="text-xs">
-                                        +{script.tags.length - 4}
-                                      </Badge>
-                                    )}
-                                  </>
-                                )}
-                              </div>
-                              <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
-                                {script.text}
-                              </p>
-                            </div>
-                            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (script.id) toggleFavorite(script.id);
-                                    }}
-                                    className={cn(
-                                      "h-9 w-9 transition-colors",
-                                      isFavorite
-                                        ? "text-yellow-500 hover:text-yellow-600"
-                                        : "text-muted-foreground hover:text-yellow-500"
-                                    )}
-                                    aria-label={isFavorite ? "즐겨찾기 제거" : "즐겨찾기 추가"}
-                                  >
-                                    <Star className={cn("w-4 h-4", isFavorite && "fill-current")} />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>{isFavorite ? "즐겨찾기 제거" : "즐겨찾기 추가"}</TooltipContent>
-                              </Tooltip>
-
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    size="icon"
-                                    variant="default"
-                                    className="h-9 w-9"
-                                    onClick={() => navigate(`/audio/tts?loadMessage=${script.id}`)}
-                                    aria-label="음원 생성 페이지로 이동"
-                                  >
-                                    <Volume2 className="w-4 h-4" />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>음원 생성</TooltipContent>
-                              </Tooltip>
-
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    size="icon"
-                                    variant="outline"
-                                    className="h-9 w-9"
-                                    onClick={() => handleEdit(script)}
-                                    aria-label="문구 편집"
-                                  >
-                                    <Edit className="w-4 h-4" />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>편집</TooltipContent>
-                              </Tooltip>
-
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    size="icon"
-                                    variant="outline"
-                                    className="h-9 w-9 text-destructive hover:text-destructive hover:bg-destructive/10"
-                                    onClick={() => script.id && handleDelete(script.id)}
-                                    aria-label="문구 삭제"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>삭제</TooltipContent>
-                              </Tooltip>
-                            </div>
+                          <div className="flex flex-row gap-2 lg:flex-col lg:w-40">
+                            <Button
+                              size="sm"
+                              variant="default"
+                              onClick={handleSaveEdit}
+                              className="flex-1 lg:w-full"
+                            >
+                              <Save className="w-4 h-4 mr-2" />
+                              저장
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={handleCancelEdit}
+                              className="flex-1 lg:w-full"
+                            >
+                              <X className="w-4 h-4 mr-2" />
+                              취소
+                            </Button>
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                  </div>
-                </CardContent>
-              </Card>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                          <div className="flex-1 min-w-0 space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge 
+                                variant="outline" 
+                                className={cn("text-xs", getPurposeColor(script.purpose || ""))}
+                              >
+                                {getPurposeLabel(script.purpose)}
+                              </Badge>
+                              {script.tags && script.tags.length > 0 && (
+                                <>
+                                  {script.tags.slice(0, 4).map((tag, idx) => (
+                                    <Badge key={idx} variant="secondary" className="text-xs">
+                                      {tag}
+                                    </Badge>
+                                  ))}
+                                  {script.tags.length > 4 && (
+                                    <Badge variant="secondary" className="text-xs">
+                                      +{script.tags.length - 4}
+                                    </Badge>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                            <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed line-clamp-2 lg:line-clamp-none">
+                              {script.text}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2 lg:flex-shrink-0">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (script.id) toggleFavorite(script.id);
+                                  }}
+                                  className={cn(
+                                    "h-9 w-9 transition-colors",
+                                    isFavorite
+                                      ? "text-yellow-500 hover:text-yellow-600"
+                                      : "text-muted-foreground hover:text-yellow-500"
+                                  )}
+                                  aria-label={isFavorite ? "즐겨찾기 제거" : "즐겨찾기 추가"}
+                                >
+                                  <Star className={cn("w-4 h-4", isFavorite && "fill-current")} />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>{isFavorite ? "즐겨찾기 제거" : "즐겨찾기 추가"}</TooltipContent>
+                            </Tooltip>
+
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  size="icon"
+                                  variant="default"
+                                  className="h-9 w-9"
+                                  onClick={() => navigate(`/audio/tts?loadMessage=${script.id}`)}
+                                  aria-label="음원 생성 페이지로 이동"
+                                >
+                                  <Volume2 className="w-4 h-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>음원 생성</TooltipContent>
+                            </Tooltip>
+
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  size="icon"
+                                  variant="outline"
+                                  className="h-9 w-9"
+                                  onClick={() => handleEdit(script)}
+                                  aria-label="문구 편집"
+                                >
+                                  <Edit className="w-4 h-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>편집</TooltipContent>
+                            </Tooltip>
+
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  size="icon"
+                                  variant="outline"
+                                  className="h-9 w-9 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                  onClick={() => script.id && handleDelete(script.id)}
+                                  aria-label="문구 삭제"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>삭제</TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
 
             {/* 페이지네이션 - 항상 표시 */}
             <div className="flex justify-center pt-2">
@@ -563,7 +568,7 @@ export default function ScriptsPage() {
                 </PaginationContent>
               </Pagination>
             </div>
-          </div>
+          </>
         )}
       </div>
 

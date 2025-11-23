@@ -19,8 +19,23 @@ $files = array_filter($files, function($file) {
     return preg_match('/\.(mp3|wav|ogg)$/i', $file);
 });
 
+// 오늘 날짜 필터링 (선택적: date 파라미터로 특정 날짜 지정 가능)
+$targetDate = isset($_GET['date']) ? $_GET['date'] : date('Y-m-d');
+$targetDatePattern = str_replace('-', '-', $targetDate); // YYYY-MM-DD 형식
+
 $audioInfo = [];
 foreach ($files as $file) {
+    // 파일명에서 날짜 추출 (예: broadcast_2025-11-21_10-11-11.wav 또는 8시테스트_2025-11-21_10-11-11.wav)
+    if (preg_match('/(\d{4}-\d{2}-\d{2})/', $file, $matches)) {
+        $fileDate = $matches[1];
+        // 오늘 날짜와 일치하는 파일만 포함
+        if ($fileDate !== $targetDatePattern) {
+            continue;
+        }
+    } else {
+        // 날짜가 없는 파일은 제외 (또는 포함하려면 이 부분을 제거)
+        continue;
+    }
     $filePath = $audioDir . '/' . $file;
     $size = filesize($filePath);
     
@@ -73,6 +88,7 @@ echo json_encode([
     'success' => true,
     'audio_files' => $audioInfo,
     'count' => count($audioInfo),
+    'filter_date' => $targetDatePattern,
     'timestamp' => date('Y-m-d H:i:s')
 ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
 ?>

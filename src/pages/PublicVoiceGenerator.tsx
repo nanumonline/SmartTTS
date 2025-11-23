@@ -74,6 +74,9 @@ import PageContainer from "@/components/layout/PageContainer";
 import { formatDateTime, purposeOptions, getPurposeMeta } from "@/lib/pageUtils";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Stepper } from "@/components/ui/stepper";
+import { getPurposeColor } from "@/lib/categoryColors";
+import { cn } from "@/lib/utils";
+import { getVoiceDisplayNameKo } from "@/lib/voiceNames";
 
 // CloneFormState and CloneRequest 타입은 VoiceCloning.tsx로 이동됨
 
@@ -610,7 +613,7 @@ const PublicVoiceGenerator = () => {
 
   const getVoiceDisplayName = (voiceId: string) => {
     const meta = getVoiceMeta(voiceId);
-    return meta?.name || voiceId || "-";
+    return getVoiceDisplayNameKo(meta?.name, voiceId || meta?.voice_id || "", meta?.name_ko);
   };
 
   // registerCloneVoice와 openCloneModal은 VoiceCloning.tsx로 이동됨
@@ -2310,6 +2313,38 @@ const PublicVoiceGenerator = () => {
     });
   };
 
+  // API에서 가져온 음성 데이터에 DB의 name_ko를 병합하는 함수
+  const enrichVoicesWithNameKo = async (voices: any[]): Promise<any[]> => {
+    if (!voices || voices.length === 0) return voices;
+    
+    try {
+      // DB에서 name_ko 정보 가져오기
+      const catalog = await dbService.loadVoiceCatalog();
+      const nameKoMap = new Map<string, string>();
+      
+      catalog.forEach((voice: any) => {
+        const voiceId = voice.voice_id;
+        // loadVoiceCatalog는 voice_data에 name_ko를 포함시킴
+        // 따라서 voice.name_ko (voice_data.name_ko)를 직접 사용
+        const nameKo = voice.name_ko;
+        if (voiceId && nameKo) {
+          nameKoMap.set(voiceId, nameKo);
+        }
+      });
+      
+      // 각 음성에 name_ko 추가
+      return voices.map((voice: any) => {
+        if (voice.voice_id && nameKoMap.has(voice.voice_id)) {
+          return { ...voice, name_ko: nameKoMap.get(voice.voice_id) };
+        }
+        return voice;
+      });
+    } catch (error) {
+      console.warn("name_ko 병합 실패:", error);
+      return voices;
+    }
+  };
+
   const combineVoiceLists = (current: any[], incoming: any[]) => {
     if (!Array.isArray(incoming) || incoming.length === 0) return current;
     const map = new Map<string, any>();
@@ -2667,8 +2702,10 @@ const PublicVoiceGenerator = () => {
     const useCaseFilter = normalizeString(filters.useCase);
 
     return voices.filter((voice) => {
-      const voiceName = normalizeString(voice.name || voice.voice_id);
-      const matchesName = !keyword || voiceName.includes(keyword);
+      const voiceNameKo = getVoiceDisplayNameKo(voice.name, voice.voice_id, voice.name_ko);
+      const voiceName = normalizeString(voiceNameKo);
+      const originalName = normalizeString(voice.name || voice.voice_id);
+      const matchesName = !keyword || voiceName.includes(keyword) || originalName.includes(keyword);
 
       const voiceLanguages = Array.isArray(voice.language)
         ? voice.language
@@ -2763,8 +2800,10 @@ const PublicVoiceGenerator = () => {
             const data = await response.json();
         // 응답 형식: { items: [], total: 150, nextPageToken: "..." } 또는 배열/기타 필드
         const voices = data.items || (Array.isArray(data) ? data : (data.voices || data.data || []));
-        setAllVoices((prev) => combineVoiceLists(prev, voices));
-        setAvailableVoices((prev) => combineVoiceLists(prev.length > 0 ? prev : [], voices));
+        // DB의 name_ko 정보를 병합
+        const enrichedVoices = await enrichVoicesWithNameKo(voices);
+        setAllVoices((prev) => combineVoiceLists(prev, enrichedVoices));
+        setAvailableVoices((prev) => combineVoiceLists(prev.length > 0 ? prev : [], enrichedVoices));
         const nextToken = data.nextPageToken || data.next_page_token || data.next_token || null;
         setVoiceNextToken(nextToken || null);
         const total = data.total || data.totalCount || null;
@@ -2801,6 +2840,8 @@ const PublicVoiceGenerator = () => {
           // forceReload이거나 업데이트 필요하면 즉시 DB에 저장
           if (forceReload && voices.length > 0) {
             await dbService.syncVoiceCatalog(voices, true).catch(() => {});
+            // forceReload 후 모든 기존 음성의 name_ko도 업데이트
+            await dbService.updateAllVoiceNamesKo().catch(() => {});
             if (showToast) {
               toast({
                 title: "DB 저장 완료",
@@ -2812,6 +2853,8 @@ const PublicVoiceGenerator = () => {
             const needsUpdate = await dbService.shouldUpdateCatalog();
             if (needsUpdate && voices.length > 0) {
               await dbService.syncVoiceCatalog(voices, false).catch(() => {});
+              // 동기화 후 모든 기존 음성의 name_ko도 업데이트
+              await dbService.updateAllVoiceNamesKo().catch(() => {});
             }
           }
         }
@@ -2819,6 +2862,8 @@ const PublicVoiceGenerator = () => {
         // forceReload이 아니면 일별 동기화 (백그라운드)
         if (!forceReload) {
           dbService.syncVoiceCatalog(voices, false).catch(() => {});
+          // 백그라운드에서 모든 기존 음성의 name_ko도 업데이트
+          dbService.updateAllVoiceNamesKo().catch(() => {});
         }
 
         if (favoriteVoiceIds.size > 0) {
@@ -2886,15 +2931,17 @@ const PublicVoiceGenerator = () => {
       if (response?.ok) {
         const data = await response.json();
         const results = data.items || (Array.isArray(data) ? data : (data.voices || data.data || []));
+        // DB의 name_ko 정보를 병합
+        const enrichedResults = await enrichVoicesWithNameKo(results);
         // 마스터 목록 갱신 (중복 제거)
         setAllVoices((prev) => {
           const existingIds = new Set(prev.map((v: any) => v.voice_id));
-          const newVoices = results.filter((v: any) => !existingIds.has(v.voice_id));
+          const newVoices = enrichedResults.filter((v: any) => !existingIds.has(v.voice_id));
           return [...prev, ...newVoices];
         });
         setAvailableVoices((prev) => {
           const existingIds = new Set(prev.map((v: any) => v.voice_id));
-          const newVoices = results.filter((v: any) => !existingIds.has(v.voice_id));
+          const newVoices = enrichedResults.filter((v: any) => !existingIds.has(v.voice_id));
           return [...prev, ...newVoices];
         });
         
@@ -2963,16 +3010,18 @@ const PublicVoiceGenerator = () => {
       try { data = await response.json(); } catch {}
       const results = data.items || (Array.isArray(data) ? data : (data.voices || data.data || []));
       if (results?.length) {
+        // DB의 name_ko 정보를 병합
+        const enrichedResults = await enrichVoicesWithNameKo(results);
         setAllVoices(prev => {
           // 중복 제거
           const existingIds = new Set(prev.map((v: any) => v.voice_id));
-          const newVoices = results.filter((v: any) => !existingIds.has(v.voice_id));
+          const newVoices = enrichedResults.filter((v: any) => !existingIds.has(v.voice_id));
           return [...prev, ...newVoices];
         });
         setAvailableVoices(prev => {
           // 중복 제거
           const existingIds = new Set(prev.map((v: any) => v.voice_id));
-          const newVoices = results.filter((v: any) => !existingIds.has(v.voice_id));
+          const newVoices = enrichedResults.filter((v: any) => !existingIds.has(v.voice_id));
           return [...prev, ...newVoices];
         });
         setVoiceSearchResults(prev => {
@@ -3050,9 +3099,11 @@ const PublicVoiceGenerator = () => {
             if (currentVoices.length > 0) {
               console.log(`모든 음성 ${currentVoices.length}개를 DB에 저장합니다...`);
               // 비동기 작업을 별도로 실행
-              dbService.syncVoiceCatalog(currentVoices, true).then((success) => {
+              dbService.syncVoiceCatalog(currentVoices, true).then(async (success) => {
                 if (success) {
                   console.log(`✅ 모든 음성 ${currentVoices.length}개 DB 저장 완료`);
+                  // 동기화 후 모든 기존 음성의 name_ko도 업데이트
+                  await dbService.updateAllVoiceNamesKo().catch(() => {});
                   if (showToast) {
                     toast({
                       title: "DB 저장 완료",
@@ -4625,7 +4676,8 @@ const PublicVoiceGenerator = () => {
           </CardContent>
         </Card>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* FHD/WFHD 최적화: 2-3 컬럼 레이아웃 */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
           {/* 음성 생성 - 왼쪽 (주 역할) */}
           <div className="lg:col-span-2">
             <Card className="landio-card landio-fade-up">
@@ -4678,7 +4730,12 @@ const PublicVoiceGenerator = () => {
                             ? "음성이 비어 있습니다. 상단의 '음성 목록 업데이트' 버튼을 눌러주세요."
                             : "사용할 음성을 선택하세요"
                         }
-                      />
+                      >
+                        {selectedVoice && (() => {
+                          const voice = availableVoices.find((v: any) => v.voice_id === selectedVoice) || selectedVoiceInfo;
+                          return voice ? getVoiceDisplayNameKo(voice.name, voice.voice_id, voice.name_ko) : selectedVoice;
+                        })()}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       {/* API에서 가져온 실제 음성 목록 */}
@@ -4738,8 +4795,8 @@ const PublicVoiceGenerator = () => {
                               if (fa !== fb) return fb - fa; // 즐겨찾기 우선
                               
                               if (voiceSortBy === "name") {
-                                const nameA = (a.name || a.voice_id || "").toLowerCase();
-                                const nameB = (b.name || b.voice_id || "").toLowerCase();
+                                const nameA = getVoiceDisplayNameKo(a.name, a.voice_id, a.name_ko).toLowerCase();
+                                const nameB = getVoiceDisplayNameKo(b.name, b.voice_id, b.name_ko).toLowerCase();
                                 return voiceSortOrder === "asc" 
                                   ? nameA.localeCompare(nameB, "ko") 
                                   : nameB.localeCompare(nameA, "ko");
@@ -4765,7 +4822,7 @@ const PublicVoiceGenerator = () => {
                             });
                             return sorted;
                           })().map((voice: any) => {
-                          const voiceName = voice.name || voice.voice_id;
+                          const voiceName = getVoiceDisplayNameKo(voice.name, voice.voice_id, voice.name_ko);
                               const flags = (() => {
                                 const arr = Array.isArray(voice.language) ? voice.language : (voice.language ? [voice.language] : []);
                                 return arr.map((c: string) => languageCodeToFlag(c)).filter(Boolean).join(" ") || "";
@@ -4907,7 +4964,7 @@ const PublicVoiceGenerator = () => {
                             <SelectItem key={vid} value={vid}>
                               <div className="flex items-center gap-2">
                                 <span className={`inline-block w-2.5 h-2.5 rounded-full ${genderColor}`}></span>
-                                <span>{v.name || vid}</span>
+                                <span>{getVoiceDisplayNameKo(v.name, v.voice_id, v.name_ko)}</span>
                               </div>
                             </SelectItem>
                           );
@@ -6312,7 +6369,29 @@ const PublicVoiceGenerator = () => {
                       <div key={entry.id} className="rounded-xl border border-border bg-muted/20 p-3 transition-all hover:shadow-md" style={{ borderRadius: '12px' }}>
                         <div className="grid gap-3 md:grid-cols-[160px_minmax(0,1fr)_160px_auto] items-center">
                           <div className="space-y-1">
-                            <Badge>{entry.purposeLabel}</Badge>
+                            {(() => {
+                              // purpose가 있으면 직접 사용, 없으면 purposeLabel에서 역으로 찾기
+                              const purposeId = entry.purpose || 
+                                purposeOptions.find(p => p.label === entry.purposeLabel)?.id || 
+                                null;
+                              const displayLabel = entry.purposeLabel || 
+                                (entry.purpose ? purposeOptions.find(p => p.id === entry.purpose)?.label : null) || 
+                                entry.purpose || 
+                                "알 수 없음";
+                              
+                              return purposeId ? (
+                                <Badge 
+                                  variant="outline" 
+                                  className={cn("text-xs font-medium", getPurposeColor(purposeId))}
+                                >
+                                  {displayLabel}
+                                </Badge>
+                              ) : entry.purposeLabel ? (
+                                <Badge variant="outline" className="text-xs">
+                                  {displayLabel}
+                                </Badge>
+                              ) : null;
+                            })()}
                             <div className="text-xs text-muted-foreground">{formatDateTime(entry.createdAt)}</div>
                           </div>
                           <div className="space-y-1">
@@ -6379,7 +6458,7 @@ const PublicVoiceGenerator = () => {
                             <div className="text-xs text-muted-foreground">형식: {(entry.format || guessExtensionFromMime(entry.mimeType)).toUpperCase()} · Hash: {entry.paramHash ? entry.paramHash.slice(0, 8) : "-"}</div>
                           </div>
                           <div className="space-y-1 text-xs text-muted-foreground">
-                            <div>음성: {entry.voiceName || "-"}</div>
+                            <div>음성: {getVoiceDisplayNameKo(entry.voiceName, entry.voiceId || "", (entry as any).name_ko)}</div>
                             <div>언어: {languageKo}</div>
                             <div>상태: <Badge variant="outline" className="text-[10px] uppercase">{entry.status}</Badge></div>
                           </div>
@@ -6740,19 +6819,42 @@ const PublicVoiceGenerator = () => {
                 <Input
                   value={voiceFilters.name}
                   onChange={(e) => setVoiceFilters(prev => ({ ...prev, name: e.target.value }))}
-                  placeholder="예: Adam"
+                  placeholder="예: 아가사, Adam (한글/영문 모두 검색 가능)"
                   className="bg-gray-800/50 border-gray-600 text-white placeholder:text-gray-400 focus-visible:ring-gray-500"
                 />
                 {/* 이름 빠른 선택 */}
                 <div className="mt-2">
-                  <Select value={voiceFilters.name || undefined} onValueChange={(v) => setVoiceFilters(prev => ({ ...prev, name: v }))}>
+                  <Select value={voiceFilters.name || undefined} onValueChange={(v) => {
+                    // 한글 이름으로 선택된 경우, 원본 name이나 voice_id로 변환하여 필터링
+                    const selectedVoice = (allVoices.length > 0 ? allVoices : availableVoices).find((voice: any) => {
+                      const displayName = getVoiceDisplayNameKo(voice.name, voice.voice_id, voice.name_ko);
+                      return displayName === v || voice.name === v || voice.voice_id === v;
+                    });
+                    setVoiceFilters(prev => ({ ...prev, name: selectedVoice?.name || selectedVoice?.voice_id || v }));
+                  }}>
                     <SelectTrigger className="bg-gray-800/50 border-gray-600 text-white">
                       <SelectValue placeholder="이름 빠른 선택 (옵션)" />
                     </SelectTrigger>
-                    <SelectContent className="bg-gray-800 border-gray-600">
-                      {(availableVoices || []).map((v: any) => (
-                        <SelectItem key={v.voice_id} value={v.name || v.voice_id} className="text-white focus:bg-gray-700">{v.name || v.voice_id}</SelectItem>
-                      ))}
+                    <SelectContent className="bg-gray-800 border-gray-600 max-h-[300px]">
+                      {/* 한글 이름으로 정렬하여 표시 */}
+                      {[...(allVoices.length > 0 ? allVoices : availableVoices)]
+                        .sort((a: any, b: any) => {
+                          const nameA = getVoiceDisplayNameKo(a.name, a.voice_id, a.name_ko);
+                          const nameB = getVoiceDisplayNameKo(b.name, b.voice_id, b.name_ko);
+                          return nameA.localeCompare(nameB, "ko");
+                        })
+                        .map((v: any) => {
+                          const displayName = getVoiceDisplayNameKo(v.name, v.voice_id, v.name_ko);
+                          return (
+                            <SelectItem 
+                              key={v.voice_id} 
+                              value={displayName} 
+                              className="text-white focus:bg-gray-700"
+                            >
+                              {displayName}
+                            </SelectItem>
+                          );
+                        })}
                     </SelectContent>
                   </Select>
                 </div>
@@ -6856,11 +6958,12 @@ const PublicVoiceGenerator = () => {
                 ) : (
                   <div className="space-y-3">
                     {(() => {
-                      // 검색 결과 정렬
+                      // 검색 결과 정렬 (한글 이름 기준)
                       const sorted = [...voiceSearchResults].sort((a: any, b: any) => {
                         if (searchResultSortBy === "name") {
-                          const nameA = (a.name || a.voice_id || "").toLowerCase();
-                          const nameB = (b.name || b.voice_id || "").toLowerCase();
+                          // 한글 이름으로 정렬
+                          const nameA = getVoiceDisplayNameKo(a.name, a.voice_id, a.name_ko).toLowerCase();
+                          const nameB = getVoiceDisplayNameKo(b.name, b.voice_id, b.name_ko).toLowerCase();
                           return searchResultSortOrder === "asc" 
                             ? nameA.localeCompare(nameB, "ko") 
                             : nameB.localeCompare(nameA, "ko");
@@ -6901,7 +7004,7 @@ const PublicVoiceGenerator = () => {
                               <div>
                                 <div className="font-semibold flex items-center gap-2" style={{ color: '#FFFFFF' }}>
                                   <span className={`inline-block w-2.5 h-2.5 rounded-full ${genderColor}`}></span>
-                                  {voice.name || voice.voice_id}
+                                  {getVoiceDisplayNameKo(voice.name, voice.voice_id, voice.name_ko)}
                               </div>
                                 <div className="text-xs break-all" style={{ color: '#9CA3AF' }}>ID: {voice.voice_id}</div>
                               </div>

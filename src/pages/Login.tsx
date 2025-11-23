@@ -48,12 +48,15 @@ const Login = () => {
       <div className="relative z-10 w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-3 mb-4">
+          <Link 
+            to="/" 
+            className="inline-flex items-center gap-3 mb-4 cursor-pointer hover:opacity-80 transition-opacity"
+          >
             <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center">
               <Mic2 className="w-7 h-7 text-white" />
             </div>
             <span className="text-2xl font-bold gradient-text">Smart TTS</span>
-          </div>
+          </Link>
           <p className="text-muted-foreground">AI 기반 음성 방송 시스템</p>
         </div>
 

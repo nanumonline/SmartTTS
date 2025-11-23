@@ -13,8 +13,11 @@ import {
   loadBrandSettings, 
   fileToDataUrl, 
   clipboardToDataUrl,
+  applyBrandColors,
   type BrandSettings 
 } from "@/lib/brandSettings";
+import * as dbService from "@/services/dbService";
+import PageContainer from "@/components/layout/PageContainer";
 
 export default function SettingsBrandPage() {
   const { user } = useAuth();
@@ -32,22 +35,127 @@ export default function SettingsBrandPage() {
     enableBranding: true,
   });
   const [isUploading, setIsUploading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   // 저장된 브랜드 설정 로드
   useEffect(() => {
-    const saved = loadBrandSettings();
-    setBrandSettings({
-      ...saved,
-      organizationName: saved.organizationName || user?.organization || "",
-    });
-  }, [user?.organization]);
+    if (user?.id) {
+      loadBrandSettingsFromDB();
+    } else {
+      // 사용자 정보가 없으면 localStorage에서 로드 (하위 호환성)
+      const saved = loadBrandSettings();
+      setBrandSettings({
+        ...saved,
+        organizationName: saved.organizationName || user?.organization || "",
+      });
+      // 색상 적용
+      applyBrandColors(saved.primaryColor, saved.secondaryColor);
+    }
+  }, [user?.id, user?.organization]);
 
-  const handleSave = () => {
-    saveBrandSettings(brandSettings);
-    toast({
-      title: "저장 완료",
-      description: "브랜드 정책이 저장되었습니다.",
-    });
+  // 색상 변경 시 즉시 적용
+  useEffect(() => {
+    applyBrandColors(brandSettings.primaryColor, brandSettings.secondaryColor);
+  }, [brandSettings.primaryColor, brandSettings.secondaryColor]);
+
+  const loadBrandSettingsFromDB = async () => {
+    if (!user?.id) return;
+
+    setIsLoading(true);
+    try {
+      // 데이터베이스에서 브랜드 설정 로드
+      const settings = await dbService.loadUserSettings(user.id);
+      const brandData = settings?.preferences?.brand || {};
+
+      // 브랜드 설정 병합 (localStorage도 확인하여 하위 호환성 유지)
+      const localBrand = loadBrandSettings();
+      const mergedSettings: BrandSettings = {
+        organizationName: brandData.organizationName || localBrand.organizationName || user?.organization || "",
+        logoUrl: brandData.logoUrl || localBrand.logoUrl || "",
+        logoDataUrl: brandData.logoDataUrl || localBrand.logoDataUrl,
+        primaryColor: brandData.primaryColor || localBrand.primaryColor || "#3b82f6",
+        secondaryColor: brandData.secondaryColor || localBrand.secondaryColor || "#8b5cf6",
+        footerText: brandData.footerText || localBrand.footerText || "",
+        termsOfService: brandData.termsOfService || localBrand.termsOfService || "",
+        privacyPolicy: brandData.privacyPolicy || localBrand.privacyPolicy || "",
+        enableBranding: brandData.enableBranding !== undefined ? brandData.enableBranding : (localBrand.enableBranding !== undefined ? localBrand.enableBranding : true),
+      };
+
+      setBrandSettings(mergedSettings);
+      
+      // 색상 적용
+      applyBrandColors(mergedSettings.primaryColor, mergedSettings.secondaryColor);
+    } catch (error) {
+      console.error("브랜드 설정 로드 실패:", error);
+      // 에러 발생 시 localStorage에서 로드
+      const saved = loadBrandSettings();
+      setBrandSettings({
+        ...saved,
+        organizationName: saved.organizationName || user?.organization || "",
+      });
+      applyBrandColors(saved.primaryColor, saved.secondaryColor);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!user?.id) {
+      toast({
+        title: "오류",
+        description: "로그인이 필요합니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      // localStorage에도 저장 (하위 호환성)
+      saveBrandSettings(brandSettings);
+
+      // 데이터베이스에 저장
+      const currentSettings = await dbService.loadUserSettings(user.id);
+      const success = await dbService.saveUserSettings(user.id, {
+        ...currentSettings,
+        preferences: {
+          ...currentSettings?.preferences,
+          brand: {
+            organizationName: brandSettings.organizationName,
+            logoUrl: brandSettings.logoUrl,
+            logoDataUrl: brandSettings.logoDataUrl,
+            primaryColor: brandSettings.primaryColor,
+            secondaryColor: brandSettings.secondaryColor,
+            footerText: brandSettings.footerText,
+            termsOfService: brandSettings.termsOfService,
+            privacyPolicy: brandSettings.privacyPolicy,
+            enableBranding: brandSettings.enableBranding,
+          },
+        },
+      });
+
+      if (success) {
+        // 색상 적용
+        applyBrandColors(brandSettings.primaryColor, brandSettings.secondaryColor);
+        
+        toast({
+          title: "저장 완료",
+          description: "브랜드 정책이 저장되었습니다.",
+        });
+      } else {
+        throw new Error("설정 저장 실패");
+      }
+    } catch (error: any) {
+      console.error("브랜드 설정 저장 실패:", error);
+      toast({
+        title: "저장 실패",
+        description: "브랜드 정책 저장 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // 파일 업로드 처리
@@ -160,15 +268,16 @@ export default function SettingsBrandPage() {
   const currentLogoUrl = brandSettings.logoDataUrl || brandSettings.logoUrl;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">브랜드 정책</h1>
-          <p className="text-muted-foreground mt-1">
-            조직의 브랜드 정책을 설정합니다.
-          </p>
+    <PageContainer maxWidth="wide">
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">브랜드 정책</h1>
+            <p className="text-muted-foreground mt-1">
+              조직의 브랜드 정책을 설정합니다.
+            </p>
+          </div>
         </div>
-      </div>
 
       {/* 브랜드 설정 */}
       <Card>
@@ -288,30 +397,100 @@ export default function SettingsBrandPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>주요 색상</Label>
-              <Input
-                type="color"
-                value={brandSettings.primaryColor}
-                onChange={(e) =>
-                  setBrandSettings({
-                    ...brandSettings,
-                    primaryColor: e.target.value,
-                  })
-                }
-              />
+              <Label>주요 색상 (Primary)</Label>
+              <div className="flex items-center gap-3">
+                <Input
+                  type="color"
+                  value={brandSettings.primaryColor}
+                  onChange={(e) =>
+                    setBrandSettings({
+                      ...brandSettings,
+                      primaryColor: e.target.value,
+                    })
+                  }
+                  className="w-20 h-10 cursor-pointer"
+                />
+                <div className="flex-1">
+                  <Input
+                    type="text"
+                    value={brandSettings.primaryColor}
+                    onChange={(e) => {
+                      const color = e.target.value;
+                      if (/^#[0-9A-Fa-f]{6}$/.test(color)) {
+                        setBrandSettings({
+                          ...brandSettings,
+                          primaryColor: color,
+                        });
+                      }
+                    }}
+                    placeholder="#3b82f6"
+                    className="font-mono text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">버튼, 링크, 강조 요소에 사용</p>
+                </div>
+              </div>
+              {/* 색상 미리보기 */}
+              <div className="flex items-center gap-2 mt-2">
+                <div 
+                  className="w-12 h-12 rounded-lg border-2 border-border shadow-sm"
+                  style={{ backgroundColor: brandSettings.primaryColor }}
+                />
+                <Button 
+                  style={{ backgroundColor: brandSettings.primaryColor }}
+                  className="text-white hover:opacity-90"
+                >
+                  색상 미리보기
+                </Button>
+              </div>
             </div>
             <div className="space-y-2">
-              <Label>보조 색상</Label>
-              <Input
-                type="color"
-                value={brandSettings.secondaryColor}
-                onChange={(e) =>
-                  setBrandSettings({
-                    ...brandSettings,
-                    secondaryColor: e.target.value,
-                  })
-                }
-              />
+              <Label>보조 색상 (Secondary)</Label>
+              <div className="flex items-center gap-3">
+                <Input
+                  type="color"
+                  value={brandSettings.secondaryColor}
+                  onChange={(e) =>
+                    setBrandSettings({
+                      ...brandSettings,
+                      secondaryColor: e.target.value,
+                    })
+                  }
+                  className="w-20 h-10 cursor-pointer"
+                />
+                <div className="flex-1">
+                  <Input
+                    type="text"
+                    value={brandSettings.secondaryColor}
+                    onChange={(e) => {
+                      const color = e.target.value;
+                      if (/^#[0-9A-Fa-f]{6}$/.test(color)) {
+                        setBrandSettings({
+                          ...brandSettings,
+                          secondaryColor: color,
+                        });
+                      }
+                    }}
+                    placeholder="#8b5cf6"
+                    className="font-mono text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">액센트, 그라데이션에 사용</p>
+                </div>
+              </div>
+              {/* 색상 미리보기 */}
+              <div className="flex items-center gap-2 mt-2">
+                <div 
+                  className="w-12 h-12 rounded-lg border-2 border-border shadow-sm"
+                  style={{ backgroundColor: brandSettings.secondaryColor }}
+                />
+                <div 
+                  className="px-4 py-2 rounded-lg text-sm font-medium text-white"
+                  style={{ 
+                    background: `linear-gradient(135deg, ${brandSettings.primaryColor}, ${brandSettings.secondaryColor})`
+                  }}
+                >
+                  그라데이션 미리보기
+                </div>
+              </div>
             </div>
           </div>
 
@@ -392,11 +571,12 @@ export default function SettingsBrandPage() {
       </Card>
 
       <div className="flex justify-end">
-        <Button onClick={handleSave}>
+        <Button onClick={handleSave} disabled={isSaving || isLoading}>
           <Save className="w-4 h-4 mr-2" />
-          저장
+          {isSaving ? "저장 중..." : isLoading ? "로딩 중..." : "저장"}
         </Button>
       </div>
-    </div>
+      </div>
+    </PageContainer>
   );
 }

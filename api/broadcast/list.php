@@ -53,6 +53,7 @@ foreach ($files as $file) {
     // 파일명에서 스케줄 이름 추출
     // 형식 1: "스케줄이름_2025-11-20_10-11-11.mp3" (새 형식)
     // 형식 2: "broadcast_2025-11-20_10-11-11.mp3" (기존 형식)
+    // 형식 3: URL 인코딩된 파일명: "_EA_B5_90_..._2025-11-20_10-11-11.wav"
     $scheduleName = null;
     $displayName = $file;
     
@@ -60,12 +61,100 @@ foreach ($files as $file) {
     // 패턴: "문자열_YYYY-MM-DD_HH-MM-SS.확장자"
     if (preg_match('/^(.+?)_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})\.(mp3|wav|ogg)$/i', $file, $matches)) {
         $potentialScheduleName = $matches[1];
+        
+        // URL 인코딩된 파일명인지 확인 (퍼센트 인코딩 또는 언더스코어로 구분된 hex 패턴)
+        // 예: "_EA_B5_90_EC_9C_A1..." 형식 (언더스코어로 구분된 hex 문자)
+        $isUrlEncoded = false;
+        $decodedName = $potentialScheduleName;
+        
+        // 언더스코어로 구분된 hex 문자 패턴 확인
+        // 패턴: 언더스코어로 시작하고, hex 문자 두 자리 + 언더스코어가 반복되는 형태
+        // 예: _EA_B5_90_EC_9C_A1... 또는 _EA_B5_90__EB_AF_B9... (이중 언더스코어 포함)
+        // 모든 연속된 언더스코어를 단일 언더스코어로 치환한 후 패턴 확인
+        $normalized = preg_replace('/_+/', '_', $potentialScheduleName);
+        // 언더스코어로 시작하고, hex 문자(2자리)와 언더스코어가 반복되는 패턴 확인
+        // 패턴을 더 관대하게 수정: 언더스코어로 시작하고 대부분이 hex 문자인 경우
+        if (preg_match('/^_[0-9A-F]{2}(_[0-9A-F]{2})+_?$/i', $normalized) || 
+            (preg_match('/^_[0-9A-F_]+$/i', $normalized) && substr_count($normalized, '_') >= 3)) {
+            // 모든 언더스코어를 제거하여 hex 문자열 생성
+            $hexString = preg_replace('/_+/', '', $potentialScheduleName);
+            // hex 문자열이 비어있지 않은지 확인 (홀수 길이도 처리)
+            if (strlen($hexString) > 0 && ctype_xdigit($hexString)) {
+                // 홀수 길이인 경우 마지막 바이트 제거 (불완전한 바이트 처리)
+                if (strlen($hexString) % 2 !== 0) {
+                    $hexString = substr($hexString, 0, -1);
+                }
+                
+                // hex 문자열을 바이트로 변환
+                $bytes = '';
+                for ($i = 0; $i < strlen($hexString); $i += 2) {
+                    $hexByte = substr($hexString, $i, 2);
+                    if (strlen($hexByte) === 2) {
+                        $bytes .= chr(hexdec($hexByte));
+                    }
+                }
+                // UTF-8 바이트 배열을 문자열로 디코딩
+                if (!empty($bytes)) {
+                    // UTF-8 디코딩 (깨진 문자 무시)
+                    $decodedName = @mb_convert_encoding($bytes, 'UTF-8', 'UTF-8');
+                    
+                    // 디코딩 성공 여부 확인 (유효한 UTF-8 문자열이고 한글/영문 포함)
+                    // 마지막 문자가 깨져도 중간에 한글이 있으면 디코딩 성공으로 간주
+                    if ($decodedName !== false && 
+                        mb_strlen($decodedName, 'UTF-8') > 0) {
+                        // 한글 또는 영문/숫자가 포함되어 있으면 유효한 디코딩으로 간주
+                        if (preg_match('/[\x{AC00}-\x{D7A3}]/u', $decodedName) || 
+                            preg_match('/[a-zA-Z0-9]/', $decodedName)) {
+                            $isUrlEncoded = true;
+                            // 마지막 문자가 깨진 경우(물음표, 특수문자 등), 해당 문자 제거
+                            $decodedName = preg_replace('/[?\x00-\x08\x0B-\x1F\x7F]$/u', '', $decodedName);
+                            // 선행/후행 공백 제거
+                            $decodedName = trim($decodedName);
+                        } else {
+                            // 디코딩 실패 시 원본 사용
+                            $decodedName = $potentialScheduleName;
+                        }
+                    } else {
+                        // 디코딩 실패 시 원본 사용
+                        $decodedName = $potentialScheduleName;
+                    }
+                }
+            }
+        } elseif (strpos($potentialScheduleName, '%') !== false) {
+            // 퍼센트 인코딩된 경우 (예: %EA%B5%90...)
+            $decodedName = urldecode($potentialScheduleName);
+            if ($decodedName !== $potentialScheduleName && mb_check_encoding($decodedName, 'UTF-8')) {
+                $isUrlEncoded = true;
+            } else {
+                $decodedName = $potentialScheduleName;
+            }
+        }
+        
         // "broadcast"가 아닌 경우에만 스케줄 이름으로 사용
-        // 한글, 영문, 숫자, 언더스코어, 하이픈 포함 가능
         if (strtolower($potentialScheduleName) !== 'broadcast' && 
-            preg_match('/^[a-zA-Z0-9가-힣_\-]+$/u', $potentialScheduleName)) {
-            $scheduleName = $potentialScheduleName;
-            $displayName = $scheduleName;
+            strtolower($decodedName) !== 'broadcast') {
+            
+            // URL 인코딩이 해제되었거나 원래 한글/영문이 포함된 경우
+            if ($isUrlEncoded && $decodedName !== $potentialScheduleName) {
+                // 디코딩된 이름이 유효한지 확인
+                if (mb_strlen($decodedName, 'UTF-8') > 0 && mb_check_encoding($decodedName, 'UTF-8')) {
+                    // 유효한 UTF-8 문자열이면 사용 (한글, 영문, 숫자, 공백 등 포함 가능)
+                    $scheduleName = $decodedName;
+                    $displayName = $decodedName;
+                } else {
+                    // 디코딩 실패 시 원본 사용
+                    $displayName = $file;
+                }
+            } else {
+                // 원본이 이미 올바른 형식인 경우 (한글 포함 가능)
+                // broadcast가 아니고, 일반 한글/영문/숫자로 시작하는 경우
+                if (strtolower($potentialScheduleName) !== 'broadcast' && 
+                    (preg_match('/^[가-힣]/u', $potentialScheduleName) || 
+                     preg_match('/^[a-zA-Z0-9]/', $potentialScheduleName))) {
+                    $scheduleName = $potentialScheduleName;
+                    $displayName = $potentialScheduleName;
+                }
+            }
         }
     }
     

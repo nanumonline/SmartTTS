@@ -284,6 +284,30 @@ export async function loadGenerations(userId: string, limit: number = 200): Prom
       }
     }
 
+    // voice_id별 name_ko 매핑 생성 (성능 최적화)
+    const voiceIdSet = new Set((data || []).map((row: any) => row.voice_id).filter(Boolean));
+    const nameKoMap = new Map<string, string>();
+    
+    if (voiceIdSet.size > 0) {
+      try {
+        const { data: catalogData } = await supabase
+          .from("tts_voice_catalog")
+          .select("voice_id, name_ko")
+          .in("voice_id", Array.from(voiceIdSet));
+        
+        if (catalogData) {
+          catalogData.forEach((item: any) => {
+            if (item.voice_id && item.name_ko) {
+              nameKoMap.set(item.voice_id, item.name_ko);
+            }
+          });
+        }
+      } catch (error) {
+        // name_ko 조회 실패는 조용히 무시 (선택사항이므로)
+        console.warn("음성 한글 이름 조회 실패 (무시됨):", error);
+      }
+    }
+
     return (data || []).map((row: any) => {
       const derivedCacheKey = row.cache_key || (row.param_hash ? `hash_${row.param_hash}` : null);
 
@@ -296,7 +320,7 @@ export async function loadGenerations(userId: string, limit: number = 200): Prom
         ? row.is_favorite === true || row.is_favorite === 1
         : false;
 
-      return {
+      const entry: any = {
         id: row.id,
         purpose: row.purpose,
         purposeLabel: row.purpose_label,
@@ -324,6 +348,13 @@ export async function loadGenerations(userId: string, limit: number = 200): Prom
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       };
+      
+      // DB에서 가져온 name_ko 병합 (voice_id가 있을 때만)
+      if (row.voice_id && nameKoMap.has(row.voice_id)) {
+        entry.name_ko = nameKoMap.get(row.voice_id);
+      }
+      
+      return entry;
     });
   } catch (error: any) {
     if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
@@ -1267,6 +1298,371 @@ export async function deleteScheduleRequest(userId: string, id: string): Promise
   }
 }
 
+// ==================== 송출 기능 ====================
+
+export interface CustomerInfo {
+  customerId: string;
+  customerName: string;
+  categoryCode: string;
+  memo?: string;
+}
+
+export interface BroadcastOptions {
+  generationId: string;
+  channelId: string;
+  scheduleName?: string;
+  customerInfo?: CustomerInfo; // 플레이어 송출 옵션 선택 시
+}
+
+// Edge Function 호출 래퍼
+async function invokeBroadcastNow(
+  options: BroadcastOptions & {
+    scheduleType: "immediate" | "delayed" | "scheduled";
+    delayMinutes?: number;
+    scheduledTime?: string;
+  }
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  try {
+    // 전송 전 유효성 검사
+    if (!options.generationId || options.generationId.trim() === "") {
+      console.error("[broadcast] generationId is missing or empty");
+      return {
+        success: false,
+        error: "음원 ID가 없습니다. 음원을 선택해주세요.",
+      };
+    }
+    
+    if (!options.channelId || options.channelId.trim() === "") {
+      console.error("[broadcast] channelId is missing or empty");
+      return {
+        success: false,
+        error: "채널 ID가 없습니다. 채널을 선택해주세요.",
+      };
+    }
+    
+    if (!options.scheduleType) {
+      console.error("[broadcast] scheduleType is missing");
+      return {
+        success: false,
+        error: "송출 타입이 지정되지 않았습니다.",
+      };
+    }
+    
+    console.log("[dbService] invokeBroadcastNow called with options:", JSON.stringify(options, null, 2));
+    
+    // 사용자 세션 토큰 가져오기
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    
+    if (sessionError || !sessionData?.session?.access_token) {
+      console.error("[dbService] Failed to get session:", sessionError);
+      return {
+        success: false,
+        error: "인증이 필요합니다. 다시 로그인해주세요.",
+      };
+    }
+    
+    const accessToken = sessionData.session.access_token;
+    
+    // fetch API를 직접 사용하여 응답 본문을 확실하게 확인
+    const SUPABASE_URL = "https://gxxralruivyhdxyftsrg.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4eHJhbHJ1aXZ5aGR4eWZ0c3JnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE2NDM0MzQsImV4cCI6MjA3NzIxOTQzNH0.6lJjJq15spXWrktl-8d5qXI3L5FHkyaEArWiH2R5AjA";
+    
+    let responseData: any = null;
+    let responseError: any = null;
+    let responseStatus: number = 0;
+    
+    try {
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/broadcast-now`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${accessToken}`, // 사용자 세션 토큰 사용
+          "apikey": SUPABASE_ANON_KEY, // Supabase Edge Functions는 apikey도 필요
+        },
+        body: JSON.stringify(options),
+      });
+      
+      responseStatus = response.status;
+      const responseText = await response.text();
+      
+      console.log("[dbService] Raw response status:", responseStatus);
+      console.log("[dbService] Raw response text:", responseText);
+      
+      // 응답 본문 파싱 시도
+      try {
+        responseData = JSON.parse(responseText);
+        console.log("[dbService] Parsed response data:", responseData);
+      } catch (e) {
+        // JSON이 아닌 경우 텍스트로 저장
+        responseData = responseText;
+        console.log("[dbService] Response is not JSON, using as text:", responseText);
+      }
+      
+      // 400 이상의 상태 코드는 오류로 처리
+      if (!response.ok) {
+        responseError = {
+          name: "FunctionsHttpError",
+          message: `Edge Function returned a non-2xx status code: ${response.status}`,
+          status: response.status,
+          context: {},
+        };
+      }
+    } catch (fetchError: any) {
+      console.error("[dbService] Fetch error:", fetchError);
+      responseError = fetchError;
+    }
+    
+    // Supabase invoke와 호환되는 형태로 변환
+    const data = responseData;
+    const error = responseError;
+    
+    console.log("[dbService] Final response:", { 
+      status: responseStatus,
+      hasData: !!data, 
+      hasError: !!error,
+      dataType: typeof data,
+      dataValue: data,
+      errorType: error ? typeof error : null,
+      errorName: error?.name,
+      errorMessage: error?.message,
+    });
+    
+    // 상세한 로깅 (data와 error 모두 확인)
+    console.log("[dbService] Edge Function response:", { 
+      hasData: !!data, 
+      hasError: !!error,
+      dataType: typeof data,
+      dataValue: data,
+      dataKeys: data && typeof data === 'object' && data !== null ? Object.keys(data) : null,
+      errorType: error ? typeof error : null,
+      errorName: error?.name,
+      errorMessage: error?.message,
+      errorContext: error?.context,
+      errorContextKeys: error?.context && typeof error?.context === 'object' ? Object.keys(error.context) : null,
+    });
+    
+    // data를 문자열로 직렬화하여 로그 출력 (실제 응답 본문 확인)
+    if (data !== null && data !== undefined) {
+      try {
+        console.log("[dbService] Response data (stringified):", JSON.stringify(data, null, 2));
+      } catch (e) {
+        console.log("[dbService] Response data (could not stringify):", data);
+      }
+    }
+    
+    // error 객체 전체를 문자열로 직렬화하여 로그 출력
+    if (error !== null && error !== undefined) {
+      try {
+        console.log("[dbService] Error object (stringified):", JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+      } catch (e) {
+        console.log("[dbService] Error object (could not stringify):", error);
+      }
+    }
+    
+
+    // 오류 메시지 추출 함수
+    const extractErrorMessage = (errorObj: any, responseData: any): string => {
+      let errorMessage = "송출 중 오류가 발생했습니다.";
+      
+      console.log("[broadcast] Extracting error message from:", {
+        hasErrorObj: !!errorObj,
+        hasResponseData: !!responseData,
+        errorObjType: typeof errorObj,
+        responseDataType: typeof responseData,
+      });
+      
+      // 1. responseData에서 오류 메시지 확인 (가장 확실한 방법 - 우선순위 1)
+      if (responseData) {
+        if (typeof responseData === 'string') {
+          try {
+            const parsed = JSON.parse(responseData);
+            if (parsed?.error) {
+              errorMessage = parsed.error;
+              if (parsed.details) {
+                errorMessage += `: ${parsed.details}`;
+              }
+              if (parsed.received) {
+                console.error("[broadcast] Received data from Edge Function:", parsed.received);
+                const missingFields = Object.entries(parsed.received)
+                  .filter(([_, value]) => !value || value === null)
+                  .map(([key, _]) => key);
+                if (missingFields.length > 0) {
+                  errorMessage += ` (누락된 필드: ${missingFields.join(", ")})`;
+                }
+              }
+              return errorMessage;
+            }
+          } catch (e) {
+            // 파싱 실패 시 문자열 자체를 메시지로 사용
+            if (responseData.trim().length > 0) {
+              errorMessage = responseData;
+            }
+          }
+        } else if (typeof responseData === 'object' && responseData !== null) {
+          console.log("[broadcast] responseData is object, keys:", Object.keys(responseData));
+          if ('error' in responseData) {
+            errorMessage = (responseData as any).error || errorMessage;
+            if ((responseData as any).details) {
+              errorMessage += `: ${(responseData as any).details}`;
+            }
+            if ((responseData as any).hint) {
+              errorMessage += ` (${(responseData as any).hint})`;
+            }
+            if ((responseData as any).code) {
+              console.log("[broadcast] Error code:", (responseData as any).code);
+            }
+            if ((responseData as any).received) {
+              console.error("[broadcast] Received data from Edge Function:", (responseData as any).received);
+              const received = (responseData as any).received;
+              const missingFields = Object.entries(received)
+                .filter(([_, value]) => !value || value === null || value === "")
+                .map(([key, _]) => key);
+              if (missingFields.length > 0) {
+                errorMessage += ` [누락된 필드: ${missingFields.join(", ")}]`;
+              }
+            }
+            console.log("[broadcast] Extracted error message from responseData (object):", errorMessage);
+            return errorMessage;
+          } else {
+            console.log("[broadcast] responseData has no 'error' field, checking all keys");
+            // error 필드가 없어도 다른 오류 정보가 있을 수 있음
+            console.log("[broadcast] responseData full content:", JSON.stringify(responseData, null, 2));
+          }
+        }
+      }
+      
+      // 2. error.context에서 응답 본문 확인 (우선순위 2)
+      if (errorObj?.context) {
+        console.log("[broadcast] Error context:", JSON.stringify(errorObj.context, null, 2));
+        console.log("[broadcast] Error context keys:", Object.keys(errorObj.context));
+        
+        if (errorObj.context.body) {
+          try {
+            const contextBody = typeof errorObj.context.body === 'string' 
+              ? JSON.parse(errorObj.context.body) 
+              : errorObj.context.body;
+            if (contextBody?.error) {
+              errorMessage = contextBody.error;
+              if (contextBody.details) {
+                errorMessage += `: ${contextBody.details}`;
+              }
+              console.log("[broadcast] Extracted error message from context.body:", errorMessage);
+              return errorMessage;
+            }
+          } catch (e) {
+            console.warn("[broadcast] Failed to parse context.body:", e);
+          }
+        }
+        
+        if (errorObj.context.response) {
+          try {
+            const contextResponse = typeof errorObj.context.response === 'string'
+              ? JSON.parse(errorObj.context.response)
+              : errorObj.context.response;
+            if (contextResponse?.error) {
+              errorMessage = contextResponse.error;
+              if (contextResponse.details) {
+                errorMessage += `: ${contextResponse.details}`;
+              }
+              console.log("[broadcast] Extracted error message from context.response:", errorMessage);
+              return errorMessage;
+            }
+          } catch (e) {
+            console.warn("[broadcast] Failed to parse context.response:", e);
+          }
+        }
+      }
+      
+      // 3. error.message 확인 (우선순위 3)
+      if (errorObj?.message) {
+        if (errorObj.message !== "Edge Function returned a non-2xx status code") {
+          errorMessage = errorObj.message;
+          console.log("[broadcast] Using error.message:", errorMessage);
+        }
+      }
+      
+      return errorMessage;
+    };
+
+    // 중요: error가 있어도 data를 먼저 확인 (data에 실제 오류 정보가 있을 수 있음)
+    if (data && typeof data === 'object' && data !== null && 'error' in data) {
+      console.error("[broadcast] Error in response data:", data);
+      const errorMessage = extractErrorMessage(error, data);
+      return {
+        success: false,
+        error: errorMessage,
+      };
+    }
+    
+    // error가 있으면 실패 처리
+    if (error) {
+      console.error("[broadcast] Edge Function error:", error);
+      console.error("[broadcast] Error details:", JSON.stringify(error, null, 2));
+      
+      // data도 함께 전달 (Supabase Functions는 error가 있어도 data에 응답 본문이 있을 수 있음)
+      const errorMessage = extractErrorMessage(error, data);
+      
+      return {
+        success: false,
+        error: errorMessage,
+      };
+    }
+
+    return {
+      success: true,
+      data,
+    };
+  } catch (error: any) {
+    console.error("[broadcast] Failed to invoke broadcast function:", error);
+    console.error("[broadcast] Exception details:", JSON.stringify(error, null, 2));
+    return {
+      success: false,
+      error: error.message || "송출 중 오류가 발생했습니다.",
+    };
+  }
+}
+
+// 즉시 송출
+export async function broadcastImmediately(
+  options: BroadcastOptions
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  return invokeBroadcastNow({
+    ...options,
+    scheduleType: "immediate",
+  });
+}
+
+// 지연 송출
+export async function broadcastDelayed(
+  options: BroadcastOptions,
+  delayMinutes: number
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  if (delayMinutes <= 0) {
+    return {
+      success: false,
+      error: "Delay minutes must be greater than 0",
+    };
+  }
+
+  return invokeBroadcastNow({
+    ...options,
+    scheduleType: "delayed",
+    delayMinutes,
+  });
+}
+
+// 스케줄 송출 (프론트에서 직접 호출)
+export async function broadcastScheduled(
+  options: BroadcastOptions,
+  scheduledTime: string // ISO string
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  return invokeBroadcastNow({
+    ...options,
+    scheduleType: "scheduled",
+    scheduledTime,
+  });
+}
+
 // ==================== 검수 상태 ====================
 
 export interface ReviewStateEntry {
@@ -1914,8 +2310,12 @@ export async function loadMessageFavorites(userId: string): Promise<string[]> {
 // ==================== 음성 카탈로그 ====================
 
 // 음성 카탈로그 일별 동기화 (forceSync=true이면 일별 체크 무시)
+// 자동으로 한글 이름(name_ko)도 함께 업데이트
 export async function syncVoiceCatalog(voices: any[], forceSync: boolean = false): Promise<boolean> {
   try {
+    // voiceNames 유틸리티 함수 import
+    const { getVoiceNameKo } = await import("@/lib/voiceNames");
+
     if (!forceSync) {
       // 일별 동기화 체크 (forceSync가 false일 때만)
       const today = new Date();
@@ -1939,6 +2339,7 @@ export async function syncVoiceCatalog(voices: any[], forceSync: boolean = false
     console.log(`음성 카탈로그 동기화 시작: ${voices.length}개 (forceSync: ${forceSync})`);
     let successCount = 0;
     let failCount = 0;
+    let nameKoUpdatedCount = 0;
 
     for (const voice of voices) {
       if (!voice || !voice.voice_id) {
@@ -1946,14 +2347,51 @@ export async function syncVoiceCatalog(voices: any[], forceSync: boolean = false
         continue;
       }
 
+      // 한글 이름 자동 생성
+      let nameKo: string | null = null;
+      
+      // 1순위: voice.name이 있고 한글이 포함되어 있으면 그대로 사용
+      if (voice.name && /[가-힣]/.test(voice.name)) {
+        nameKo = voice.name;
+      }
+      // 2순위: 로컬 매핑 사용 (voice_id 또는 voice.name)
+      else {
+        // voice_id로 매핑 시도
+        const mappedName = getVoiceNameKo(voice.voice_id, null);
+        if (mappedName && mappedName !== voice.voice_id) {
+          nameKo = mappedName;
+        }
+        // voice.name으로 매핑 시도
+        else if (voice.name) {
+          const mappedNameFromVoice = getVoiceNameKo(voice.name, null);
+          if (mappedNameFromVoice && mappedNameFromVoice !== voice.name) {
+            nameKo = mappedNameFromVoice;
+          }
+          // 매핑이 없으면 voice.name 그대로 사용
+          else if (voice.name.trim() !== '') {
+            nameKo = voice.name;
+          }
+        }
+      }
+      
+      const shouldUpdateNameKo = nameKo && nameKo !== voice.voice_id && nameKo.trim() !== '';
+
+      const updateData: any = {
+        voice_id: voice.voice_id,
+        voice_data: voice, // 전체 음성 데이터 저장 (샘플 음원 포함)
+        synced_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      // 한글 이름 업데이트 (매핑이 있으면 항상 업데이트하여 비어있는 name_ko를 채움)
+      if (shouldUpdateNameKo) {
+        updateData.name_ko = nameKo;
+        nameKoUpdatedCount++;
+      }
+
       const { error } = await supabase
         .from("tts_voice_catalog")
-        .upsert({
-          voice_id: voice.voice_id,
-          voice_data: voice, // 전체 음성 데이터 저장 (샘플 음원 포함)
-          synced_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }, {
+        .upsert(updateData as any, {
           onConflict: "voice_id"
         });
 
@@ -1977,7 +2415,17 @@ export async function syncVoiceCatalog(voices: any[], forceSync: boolean = false
       }
     }
 
-    console.log(`✅ 음성 카탈로그 동기화 완료: 성공 ${successCount}개, 실패 ${failCount}개`);
+    console.log(`✅ 음성 카탈로그 동기화 완료: 성공 ${successCount}개, 실패 ${failCount}개, 한글 이름 업데이트 ${nameKoUpdatedCount}개`);
+    
+    // 동기화 완료 후 모든 기존 음성의 name_ko도 업데이트 (백그라운드, 에러 무시)
+    // 이렇게 하면 name_ko가 비어있는 기존 음성들도 자동으로 업데이트됨
+    if (successCount > 0) {
+      updateAllVoiceNamesKo().catch((err) => {
+        // 조용히 무시 (선택사항이므로)
+        console.warn("기존 음성 한글 이름 업데이트 실패 (무시됨):", err);
+      });
+    }
+    
     return successCount > 0;
   } catch (error: any) {
     if (error.code !== "PGRST205" && error.status !== 401) {
@@ -1987,12 +2435,125 @@ export async function syncVoiceCatalog(voices: any[], forceSync: boolean = false
   }
 }
 
+// 모든 음성의 한글 이름 일괄 업데이트 (기존 음성용)
+export async function updateAllVoiceNamesKo(): Promise<{ updated: number; skipped: number; errors: number }> {
+  try {
+    const { getVoiceNameKo } = await import("@/lib/voiceNames");
+
+    // 모든 음성 조회
+    const { data: voices, error: fetchError } = await supabase
+      .from("tts_voice_catalog")
+      .select("voice_id, name_ko");
+
+    if (fetchError) {
+      console.error("음성 목록 조회 실패:", fetchError);
+      return { updated: 0, skipped: 0, errors: 0 };
+    }
+
+    if (!voices || voices.length === 0) {
+      console.log("업데이트할 음성이 없습니다.");
+      return { updated: 0, skipped: 0, errors: 0 };
+    }
+
+    let updated = 0;
+    let skipped = 0;
+    let errors = 0;
+
+    console.log(`한글 이름 일괄 업데이트 시작: ${voices.length}개`);
+
+    for (const voice of voices) {
+      const voiceId = (voice as any).voice_id;
+      const existingNameKo = (voice as any).name_ko;
+
+      // 이미 한글 이름이 있고, voice_id와 다르면 스킵 (이미 설정됨)
+      if (existingNameKo && existingNameKo !== voiceId && existingNameKo.trim() !== "") {
+        skipped++;
+        continue;
+      }
+
+      // 한글 이름 생성
+      const nameKo = getVoiceNameKo(voiceId, null);
+
+      // 매핑이 없거나 voice_id와 같으면 스킵
+      if (!nameKo || nameKo === voiceId) {
+        skipped++;
+        continue;
+      }
+
+      // 한글 이름 업데이트
+      const { error: updateError } = await supabase
+        .from("tts_voice_catalog")
+        .update({ name_ko: nameKo } as any)
+        .eq("voice_id", voiceId);
+
+      if (updateError) {
+        console.warn(`음성 ${voiceId} 한글 이름 업데이트 실패:`, updateError);
+        errors++;
+      } else {
+        updated++;
+      }
+    }
+
+    console.log(`✅ 한글 이름 일괄 업데이트 완료: 업데이트 ${updated}개, 스킵 ${skipped}개, 오류 ${errors}개`);
+    return { updated, skipped, errors };
+  } catch (error: any) {
+    console.error("한글 이름 일괄 업데이트 실패:", error);
+    return { updated: 0, skipped: 0, errors: 0 };
+  }
+}
+
+// 특정 음성의 한글 이름 수동 업데이트
+export async function updateVoiceNameKo(voiceId: string, nameKo: string): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from("tts_voice_catalog")
+      .update({ name_ko: nameKo } as any)
+      .eq("voice_id", voiceId);
+
+    if (error) {
+      console.error(`음성 ${voiceId} 한글 이름 업데이트 실패:`, error);
+      return false;
+    }
+
+    console.log(`✅ 음성 ${voiceId} 한글 이름 업데이트 완료: ${nameKo}`);
+    return true;
+  } catch (error: any) {
+    console.error(`음성 ${voiceId} 한글 이름 업데이트 실패:`, error);
+    return false;
+  }
+}
+
+// 한글 이름이 없는 음성 목록 조회
+export async function getVoicesWithoutNameKo(): Promise<any[]> {
+  try {
+    const { data, error } = await supabase
+      .from("tts_voice_catalog")
+      .select("voice_id, voice_data, name_ko")
+      .or("name_ko.is.null,name_ko.eq.");
+
+    if (error) {
+      console.error("한글 이름 없는 음성 조회 실패:", error);
+      return [];
+    }
+
+    // name_ko가 없거나 voice_id와 같은 경우만 필터링
+    return (data || []).filter((voice: any) => {
+      const nameKo = (voice as any).name_ko;
+      const voiceId = (voice as any).voice_id;
+      return !nameKo || nameKo === voiceId;
+    });
+  } catch (error: any) {
+    console.error("한글 이름 없는 음성 조회 실패:", error);
+    return [];
+  }
+}
+
 // 음성 카탈로그 조회
 export async function loadVoiceCatalog(): Promise<any[]> {
   try {
     const { data, error } = await supabase
       .from("tts_voice_catalog")
-      .select("voice_data")
+      .select("voice_data, name_ko, voice_id")
       .order("synced_at", { ascending: false });
 
     if (error) {
@@ -2006,12 +2567,57 @@ export async function loadVoiceCatalog(): Promise<any[]> {
       }
       throw error;
     }
-    return (data || []).map((row: any) => row.voice_data);
+    // voice_data에 name_ko 추가
+    return (data || []).map((row: any) => {
+      const voiceData = row.voice_data || {};
+      // DB에 저장된 한글 이름이 있으면 추가
+      if ((row as any).name_ko) {
+        voiceData.name_ko = (row as any).name_ko;
+      }
+      // name_ko가 없고 voice_data.name이 있으면 name_ko로 사용
+      else if (voiceData.name && !voiceData.name_ko) {
+        voiceData.name_ko = voiceData.name;
+      }
+      return voiceData;
+    });
   } catch (error: any) {
     if (error.code !== "PGRST205") {
       console.error("음성 카탈로그 조회 실패:", error);
     }
     return [];
+  }
+}
+
+// 음성 ID로 한글 이름 조회
+export async function getVoiceNameKo(voiceId: string | null | undefined): Promise<string | null> {
+  if (!voiceId) return null;
+  
+  try {
+    const { data, error } = await supabase
+      .from("tts_voice_catalog")
+      .select("name_ko")
+      .eq("voice_id", voiceId)
+      .single();
+
+    if (error) {
+      // 테이블이 없거나 권한 문제면 조용히 null 반환
+      if (error.code === "PGRST205" || 
+          error.message?.includes("schema cache") ||
+          error.code === "42501" ||
+          error.code === "PGRST301" ||
+          error.code === "PGRST116") { // No rows returned
+        return null;
+      }
+      console.warn(`음성 한글 이름 조회 실패 (${voiceId}):`, error);
+      return null;
+    }
+
+    return (data as any)?.name_ko || null;
+  } catch (error: any) {
+    if (error.code !== "PGRST205") {
+      console.warn(`음성 한글 이름 조회 실패 (${voiceId}):`, error);
+    }
+    return null;
   }
 }
 

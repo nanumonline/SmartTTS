@@ -30,11 +30,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     echo json_encode([
         'service' => 'TTS Broadcasting API',
         'version' => '1.0.0',
+        'base_url' => 'https://nanum.online/tts/api/broadcast',
         'endpoints' => [
-            'POST /api/broadcast/' => 'Broadcast audio',
-            'GET /api/broadcast/list.php' => 'List audio files',
-            'GET /api/broadcast/audio.php?file={filename}' => 'Download audio file',
-            'GET /api/broadcast/player.html' => 'Tablet PC player'
+            'POST /tts/api/broadcast/' => 'Broadcast audio (send audio file)',
+            'GET /tts/api/broadcast/index.php' => 'API information (this endpoint)',
+            'GET /tts/api/broadcast/list.php' => 'List all audio files',
+            'GET /tts/api/broadcast/audio.php?file={filename}' => 'Download specific audio file',
+            'GET /tts/api/broadcast/player.html' => 'Tablet PC player (mobile device)',
+            'GET /tts/api/broadcast/player-pc.html' => 'PC broadcast player (desktop)',
+            'GET /tts/api/broadcast/check-audio.php' => 'Check audio file validity (supports ?date=YYYY-MM-DD filter)'
+        ],
+        'headers' => [
+            'X-Schedule-Name' => 'Schedule name (optional, URL-encoded)',
+            'X-Schedule-Id' => 'Schedule ID (optional)',
+            'X-Customer-Id' => 'Customer ID (for player broadcast, optional)',
+            'X-Customer-Name' => 'Customer name (for player broadcast, optional)',
+            'X-Category-Code' => 'Category code (for player broadcast, optional)',
+            'X-Memo' => 'Memo (for player broadcast, optional)'
         ],
         'timestamp' => date('Y-m-d H:i:s')
     ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
@@ -154,13 +166,39 @@ if (stripos($contentType, 'wav') !== false) {
 }
 
 // 스케줄 이름 가져오기 (헤더에서)
-$scheduleName = $_SERVER['HTTP_X_SCHEDULE_NAME'] ?? null;
+// 주의: Edge Function에서 URL 인코딩되어 전송될 수 있음 (encodeURIComponent 사용)
+$scheduleNameHeader = $_SERVER['HTTP_X_SCHEDULE_NAME'] ?? null;
 $scheduleId = $_SERVER['HTTP_X_SCHEDULE_ID'] ?? null;
+
+// 스케줄 이름 디코딩 (URL 인코딩된 경우)
+$scheduleName = null;
+if ($scheduleNameHeader && !empty(trim($scheduleNameHeader))) {
+    // Edge Function의 sanitizeHeaderValue는 ASCII가 아닌 경우 encodeURIComponent를 사용
+    // 따라서 퍼센트 인코딩된 경우를 처리
+    $decoded = urldecode($scheduleNameHeader);
+    
+    // 디코딩 성공 여부 확인 (변화가 있었고 유효한 UTF-8인지)
+    if ($decoded !== $scheduleNameHeader && 
+        mb_check_encoding($decoded, 'UTF-8') && 
+        mb_strlen($decoded, 'UTF-8') > 0) {
+        // 한글 또는 영문이 포함되어 있는지 확인
+        if (preg_match('/[\x{AC00}-\x{D7A3}]/u', $decoded) || 
+            preg_match('/[a-zA-Z0-9]/', $decoded)) {
+            $scheduleName = $decoded;
+        } else {
+            // 디코딩은 되었지만 유효한 문자가 없는 경우 원본 사용
+            $scheduleName = $scheduleNameHeader;
+        }
+    } else {
+        // 이미 디코딩된 상태이거나 일반 문자열
+        $scheduleName = $scheduleNameHeader;
+    }
+}
 
 // 파일명 생성 (스케줄 이름이 있으면 포함)
 $timestamp = date('Y-m-d_H-i-s');
 if ($scheduleName && !empty(trim($scheduleName))) {
-    // 스케줄 이름을 파일명에 안전하게 포함 (특수문자 제거)
+    // 스케줄 이름을 파일명에 안전하게 포함 (특수문자 제거, 한글은 유지)
     $safeScheduleName = preg_replace('/[^a-zA-Z0-9가-힣_\-]/u', '_', trim($scheduleName));
     $safeScheduleName = mb_substr($safeScheduleName, 0, 50); // 최대 50자
     $filename = $safeScheduleName . '_' . $timestamp . '.' . $extension;

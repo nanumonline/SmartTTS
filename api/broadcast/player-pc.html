@@ -218,6 +218,11 @@
             <button onclick="checkAudio()">수동 확인</button>
             <button onclick="togglePolling()" id="pollingBtn">폴링 중지</button>
             <button onclick="testAudio()">테스트 재생</button>
+            <select id="pollingIntervalSelect" onchange="changePollingInterval()">
+                <option value="5000">5초</option>
+                <option value="10000" selected>10초</option>
+                <option value="30000">30초</option>
+            </select>
         </div>
         
         <div class="audio-list" id="audioList"></div>
@@ -226,13 +231,18 @@
     <script>
         const API_BASE = 'https://nanum.online/tts/api/broadcast';
         const CHANNEL_ID = new URLSearchParams(window.location.search).get('channel_id') || 'pc';
-        const POLL_INTERVAL = 10000; // 10초마다 확인
+        
+        // 폴링 간격 (동적으로 변경 가능)
+        let POLL_INTERVAL = 10000; // 기본 10초
+        let fastPollingInterval = 5000; // 즉시 송출 시 5초
+        let lastAudioCheckTime = 0; // 마지막 오디오 확인 시간
         
         let currentAudioId = null;
         let isPlaying = false;
         let pollingInterval = null;
         let isPolling = true;
         let lastCheckedFile = null;
+        let isFastPolling = false; // 즉시 송출 모드 여부
 
         // 상태 업데이트
         function updateStatus(message, className) {
@@ -353,8 +363,30 @@
                         return;
                     }
                     
-                    if (latestAudio.filename !== lastCheckedFile && !isPlaying) {
+                    // 새로운 오디오가 있는지 확인
+                    const isNewAudio = latestAudio.filename !== lastCheckedFile;
+                    
+                    // 즉시 송출 감지: 파일이 방금 생성되었으면 (5분 이내)
+                    const audioTime = new Date(latestAudio.modified).getTime();
+                    const now = Date.now();
+                    const timeSinceAudio = now - audioTime;
+                    const isRecentAudio = timeSinceAudio < 5 * 60 * 1000; // 5분 이내
+                    
+                    // 즉시 송출 감지 시 빠른 폴링 모드로 전환
+                    if (isNewAudio && isRecentAudio && !isFastPolling) {
+                        console.log('즉시 송출 감지: 빠른 폴링 모드로 전환');
+                        isFastPolling = true;
+                        restartPolling();
+                    } else if (!isRecentAudio && isFastPolling) {
+                        // 오래된 오디오만 있으면 일반 폴링으로 복귀
+                        console.log('일반 폴링 모드로 복귀');
+                        isFastPolling = false;
+                        restartPolling();
+                    }
+                    
+                    if (isNewAudio && !isPlaying) {
                         lastCheckedFile = latestAudio.filename;
+                        lastAudioCheckTime = now;
                         playAudio(latestAudio);
                     } else if (isPlaying) {
                         updateStatus('재생 중... (새 오디오 대기)', 'connected');
@@ -368,16 +400,19 @@
                     updateAudioList([]);
                 }
                 
-                const nextCheck = new Date(Date.now() + POLL_INTERVAL);
-                // 현재 재생 중인 오디오의 스케줄 이름 찾기
+                const currentInterval = isFastPolling ? fastPollingInterval : POLL_INTERVAL;
+                const nextCheck = new Date(Date.now() + currentInterval);
+                // 현재 재생 중인 오디오의 스케줄 이름 및 표시 이름 찾기
                 let currentScheduleName = null;
+                let currentDisplayName = null;
                 if (currentAudioId && data.audio_list) {
                     const currentAudio = data.audio_list.find(a => a.filename === currentAudioId);
-                    if (currentAudio && currentAudio.schedule_name) {
-                        currentScheduleName = currentAudio.schedule_name;
+                    if (currentAudio) {
+                        currentScheduleName = currentAudio.schedule_name || null;
+                        currentDisplayName = currentAudio.display_name || currentAudio.schedule_name || null;
                     }
                 }
-                updateInfo(lastCheckedFile || null, nextCheck.toLocaleTimeString('ko-KR'), currentScheduleName);
+                updateInfo(lastCheckedFile || null, nextCheck.toLocaleTimeString('ko-KR'), currentScheduleName, currentDisplayName);
                 
             } catch (error) {
                 console.error('Error checking audio:', error);
@@ -434,12 +469,12 @@
             audioPlayer.src = audio.url;
             currentAudioId = audio.filename;
             
-            // 스케줄 이름 표시
+            // 표시 이름 우선순위: display_name > schedule_name > filename
             const scheduleName = audio.schedule_name || null;
-            const displayName = scheduleName || audio.filename;
+            const displayName = audio.display_name || audio.schedule_name || audio.filename;
             
             updateStatus(`재생 준비: ${displayName}`, 'waiting');
-            updateInfo(audio.filename, '-', scheduleName);
+            updateInfo(audio.filename, '-', scheduleName, displayName);
             updateAudioListHighlight(audio.filename);
             
             audioPlayer.onended = () => {
@@ -551,8 +586,8 @@
                 if (hasUserInteraction) {
                     audioPlayer.play().then(() => {
                         isPlaying = true;
-                        const displayName = audio.schedule_name || audio.filename;
-                        updateStatus(`재생 중: ${displayName}`, 'connected');
+                        const currentDisplayName = audio.display_name || audio.schedule_name || audio.filename;
+                        updateStatus(`재생 중: ${currentDisplayName}`, 'connected');
                     }).catch(error => {
                         console.error('Auto-play error:', error);
                         updateStatus('재생 버튼을 클릭하세요', 'waiting');
@@ -564,8 +599,8 @@
 
             audioPlayer.onplay = () => {
                 isPlaying = true;
-                const displayName = audio.schedule_name || audio.filename;
-                updateStatus(`재생 중: ${displayName}`, 'connected');
+                const currentDisplayName = audio.display_name || audio.schedule_name || audio.filename;
+                updateStatus(`재생 중: ${currentDisplayName}`, 'connected');
             };
 
             audioPlayer.onpause = () => {
@@ -604,7 +639,13 @@
         }
 
         // 오디오 목록 업데이트
+        // 전역 변수로 오디오 목록 저장 (selectAndPlayAudio에서 사용)
+        let globalAudioList = [];
+        
         function updateAudioList(audioList) {
+            // 전역 변수에 저장
+            globalAudioList = audioList || [];
+            
             const listEl = document.getElementById('audioList');
             
             if (audioList.length === 0) {
@@ -615,10 +656,11 @@
             listEl.innerHTML = audioList.map(audio => {
                 const isCurrent = audio.filename === currentAudioId;
                 // 스케줄 이름이 있으면 표시, 없으면 파일명 표시
+                // 표시 이름 우선순위: display_name > schedule_name > filename
                 const scheduleName = audio.schedule_name || null;
-                const displayName = scheduleName || audio.display_name || audio.filename;
-                // 파일명은 작은 글씨로 표시 (스케줄 이름이 있을 때만)
-                const filenameDisplay = scheduleName ? `<div style="font-size: 11px; opacity: 0.6; margin-top: 2px; font-family: monospace;">${audio.filename}</div>` : '';
+                const displayName = audio.display_name || audio.schedule_name || audio.filename;
+                // 파일명은 작은 글씨로 표시 (표시 이름이 파일명과 다를 때만)
+                const filenameDisplay = (displayName !== audio.filename) ? `<div style="font-size: 11px; opacity: 0.6; margin-top: 2px; font-family: monospace;">${audio.filename}</div>` : '';
                 
                 // HTML 이스케이프 처리
                 const safeDisplayName = displayName.replace(/'/g, "\\'").replace(/"/g, '&quot;');
@@ -651,16 +693,20 @@
                 return;
             }
             
-            // 오디오 목록에서 상세 정보 찾기
+            // 오디오 목록에서 상세 정보 찾기 (전역 변수 사용)
             const audioItem = document.querySelector(`[data-filename="${filename.replace(/'/g, "\\'")}"]`);
             const fullScheduleName = scheduleName || (audioItem ? audioItem.getAttribute('data-schedule-name') : null);
+            
+            // 전역 오디오 목록에서 상세 정보 찾기
+            const audioFromList = globalAudioList.find(a => a.filename === filename);
+            const finalDisplayName = audioFromList ? (audioFromList.display_name || audioFromList.schedule_name || filename) : (fullScheduleName || filename);
             
             const audio = {
                 filename: filename,
                 url: url,
                 size: size,
                 schedule_name: fullScheduleName || null,
-                display_name: fullScheduleName || filename,
+                display_name: finalDisplayName,
                 modified: new Date().toISOString()
             };
             
@@ -717,15 +763,41 @@
             if (pollingInterval) {
                 clearInterval(pollingInterval);
             }
-            pollingInterval = setInterval(checkAudio, POLL_INTERVAL);
+            const interval = isFastPolling ? fastPollingInterval : POLL_INTERVAL;
+            pollingInterval = setInterval(checkAudio, interval);
             checkAudio();
         }
-
+        
         // 폴링 중지
         function stopPolling() {
             if (pollingInterval) {
                 clearInterval(pollingInterval);
                 pollingInterval = null;
+            }
+        }
+        
+        // 폴링 재시작 (간격 변경 시)
+        function restartPolling() {
+            if (isPolling) {
+                stopPolling();
+                startPolling();
+            }
+        }
+        
+        // 폴링 간격 변경
+        function changePollingInterval() {
+            const select = document.getElementById('pollingIntervalSelect');
+            const newInterval = parseInt(select.value);
+            POLL_INTERVAL = newInterval;
+            
+            // 빠른 폴링 간격은 선택한 간격의 절반 (최소 5초)
+            fastPollingInterval = Math.max(5000, Math.floor(newInterval / 2));
+            
+            console.log(`폴링 간격 변경: 일반 ${POLL_INTERVAL}ms, 빠른 ${fastPollingInterval}ms`);
+            
+            // 현재 폴링 중이면 재시작
+            if (isPolling) {
+                restartPolling();
             }
         }
 

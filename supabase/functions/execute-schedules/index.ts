@@ -73,12 +73,16 @@ serve(async (req) => {
       second: '2-digit'
     });
 
-    console.log(`[execute-schedules] Current time (UTC): ${nowISO}`);
+    console.log(`[execute-schedules] ========================================`);
+    console.log(`[execute-schedules] Execution started at ${nowISO} (UTC)`);
     console.log(`[execute-schedules] Current time (KST): ${kstTimeString}`);
-    console.log(`[execute-schedules] Checking schedules between ${timeWindowStart} and ${timeWindowEnd} (UTC)`);
+    console.log(`[execute-schedules] Time window: ${timeWindowStart} ~ ${timeWindowEnd} (UTC)`);
+    console.log(`[execute-schedules] Time window: ${new Date(timeWindowStart).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} ~ ${new Date(timeWindowEnd).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} (KST)`);
+    console.log(`[execute-schedules] ========================================`);
 
     // 실행해야 할 스케줄 조회
     // 상태가 'scheduled'이고 시간 범위 내의 스케줄 조회
+    // 주의: 시간 범위는 넓게 잡되, 실제 실행 시에는 스케줄 시간을 정확히 확인함
     const { data: schedules, error: scheduleError } = await supabaseClient
       .from("tts_schedule_requests")
       .select("*")
@@ -98,7 +102,7 @@ serve(async (req) => {
       // 디버깅: 모든 상태의 스케줄 확인
       const { data: allSchedules } = await supabaseClient
         .from("tts_schedule_requests")
-        .select("id, scheduled_time, status, schedule_name, target_channel")
+        .select("id, scheduled_time, status, schedule_name, target_channel, customer_id, customer_name, category_code, memo, is_player_broadcast")
         .order("scheduled_time", { ascending: false })
         .limit(10);
       
@@ -195,6 +199,29 @@ serve(async (req) => {
         console.log(`[execute-schedules] User ID: ${schedule.user_id}`);
         console.log(`[execute-schedules] ========================================`);
 
+        // 스케줄 실행 시간 확인: 현재 시간이 스케줄 시간 이후여야 함
+        // 5초 여유를 두어 네트워크 지연 등을 고려 (과거 스케줄만 실행)
+        // 중요: 스케줄 시간이 아직 되지 않았으면 절대 실행하지 않음
+        const executionBuffer = 5 * 1000; // 5초 버퍼 (너무 일찍 실행 방지)
+        const timeUntilExecution = scheduleTime.getTime() - now.getTime();
+        
+        if (timeUntilExecution > executionBuffer) {
+          // 아직 실행 시간이 되지 않음
+          const remainingSeconds = timeUntilExecution / 1000;
+          const remainingMinutes = Math.floor(remainingSeconds / 60);
+          const remainingSecs = Math.floor(remainingSeconds % 60);
+          console.log(`[execute-schedules] ⏰ Schedule ${schedule.id} is not ready yet.`);
+          console.log(`[execute-schedules]   Scheduled: ${schedule.scheduled_time} (UTC)`);
+          console.log(`[execute-schedules]   Current: ${nowISO} (UTC)`);
+          console.log(`[execute-schedules]   Remaining: ${remainingMinutes}분 ${remainingSecs}초`);
+          console.log(`[execute-schedules]   SKIPPING - Will execute later`);
+          continue; // 아직 실행 시간이 되지 않았으므로 스킵
+        }
+        
+        // 스케줄 시간이 지났거나 5초 이내인 경우에만 실행
+        console.log(`[execute-schedules] ✅ Schedule ${schedule.id} is ready to execute`);
+        console.log(`[execute-schedules]   Time difference: ${timeUntilExecution <= 0 ? `${Math.abs(timeUntilExecution / 1000)}초 지남` : `${timeUntilExecution / 1000}초 남음`}`);
+
         // 음원 데이터 조회
         const { data: generation, error: genError } = await supabaseClient
           .from("tts_generations")
@@ -230,7 +257,24 @@ serve(async (req) => {
         
         // 음원 데이터 로드
         let audioData: ArrayBuffer | null = null;
+        // MIME 타입 결정: 믹싱 음원은 WAV 형식이므로 우선순위 확인
+        // generation.mime_type이 있으면 우선 사용, 없으면 audio_url에서 추론, 마지막으로 기본값
         let mimeType: string = generation.mime_type || "audio/mpeg";
+        
+        // 믹싱 음원인 경우 WAV 형식으로 가정 (믹싱 보드에서 생성된 음원)
+        // purpose가 'mixed'이거나 mime_type이 'audio/wav'인 경우 WAV로 처리
+        if (!generation.mime_type || generation.mime_type === "audio/mpeg") {
+          // audio_url에서 형식 추론 시도
+          if (generation.audio_url && generation.audio_url.includes(".wav")) {
+            mimeType = "audio/wav";
+          } else if (generation.audio_url && generation.audio_url.startsWith("data:")) {
+            // data URL에서 MIME 타입 추출
+            const mimeMatch = generation.audio_url.match(/data:([^;]+)/);
+            if (mimeMatch) {
+              mimeType = mimeMatch[1];
+            }
+          }
+        }
 
         // 1. audio_url이 data URL인 경우
         if (generation.audio_url && generation.audio_url.startsWith("data:")) {
@@ -519,15 +563,63 @@ serve(async (req) => {
           if (config.apiKey) {
             headers["X-API-Key"] = config.apiKey;
           }
+          // 헤더 값 검증 및 인코딩 함수 (한글/특수 문자를 안전한 형식으로 변환)
+          const sanitizeHeaderValue = (value: any): string => {
+            if (value === null || value === undefined) {
+              return "";
+            }
+            // 항상 문자열로 변환
+            let str = String(value);
+            
+            // 빈 문자열이면 그대로 반환
+            if (str.length === 0) {
+              return str;
+            }
+            
+            // Deno의 fetch는 헤더 값이 유효한 ByteString이어야 함
+            // 한글이나 특수 문자가 있으면 안전하게 처리
+            try {
+              // ASCII 문자만 포함되어 있는지 확인
+              const isASCII = /^[\x00-\x7F]*$/.test(str);
+              if (isASCII) {
+                // ASCII 문자만 포함된 경우 그대로 사용
+                return str;
+              } else {
+                // 한글/특수 문자가 포함된 경우 URL 인코딩
+                return encodeURIComponent(str);
+              }
+            } catch (e) {
+              // 인코딩 실패 시 빈 문자열 반환
+              console.warn(`[execute-schedules] Failed to sanitize header value: ${e}`);
+              return "";
+            }
+          };
+
           // 스케줄 이름을 헤더로 전송 (파일명에 포함하기 위해)
           if (schedule.schedule_name) {
-            headers["X-Schedule-Name"] = schedule.schedule_name;
+            headers["X-Schedule-Name"] = sanitizeHeaderValue(schedule.schedule_name);
           }
           // 스케줄 ID도 헤더로 전송 (추적용)
-          headers["X-Schedule-Id"] = schedule.id;
-          // config의 customHeaders 병합
+          headers["X-Schedule-Id"] = sanitizeHeaderValue(schedule.id);
+          
+          // 고객 정보 헤더 (플레이어 송출 시)
+          if ((schedule as any).customer_id) {
+            headers["X-Customer-Id"] = sanitizeHeaderValue((schedule as any).customer_id);
+          }
+          if ((schedule as any).customer_name) {
+            headers["X-Customer-Name"] = sanitizeHeaderValue((schedule as any).customer_name);
+          }
+          if ((schedule as any).category_code) {
+            headers["X-Category-Code"] = sanitizeHeaderValue((schedule as any).category_code);
+          }
+          if ((schedule as any).memo) {
+            headers["X-Memo"] = sanitizeHeaderValue((schedule as any).memo);
+          }
+          // config의 customHeaders 병합 (값도 검증)
           if (config.customHeaders && typeof config.customHeaders === "object") {
-            Object.assign(headers, config.customHeaders);
+            for (const [key, value] of Object.entries(config.customHeaders)) {
+              headers[key] = sanitizeHeaderValue(value);
+            }
           }
 
           console.log(`[execute-schedules] ────────────────────────────────────────`);
@@ -632,9 +724,15 @@ serve(async (req) => {
           scheduledTime: schedule.scheduled_time,
         });
 
-        console.log(
-          `[execute-schedules] ✅ Successfully executed schedule ${schedule.id} (${schedule.schedule_name || "Unnamed"})`
-        );
+        const kstSentTime = new Date(nowISO).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+        console.log(`[execute-schedules] ========================================`);
+        console.log(`[execute-schedules] ✅ Successfully executed schedule ${schedule.id}`);
+        console.log(`[execute-schedules] Schedule name: ${schedule.schedule_name || "Unnamed"}`);
+        console.log(`[execute-schedules] Scheduled time: ${schedule.scheduled_time} (UTC)`);
+        console.log(`[execute-schedules] Sent at: ${nowISO} (UTC) / ${kstSentTime} (KST)`);
+        console.log(`[execute-schedules] Channel: ${channel.name || channel.type} (${channel.endpoint})`);
+        console.log(`[execute-schedules] Audio size: ${audioData.byteLength} bytes`);
+        console.log(`[execute-schedules] ========================================`);
       } catch (error) {
         console.error(
           `[execute-schedules] Error processing schedule ${schedule.id}:`,
@@ -665,12 +763,28 @@ serve(async (req) => {
       }
     }
 
+    const executedCount = results.filter((r) => r.status === "sent").length;
+    const failedCount = results.filter((r) => r.status === "failed").length;
+    
+    console.log(`[execute-schedules] ========================================`);
+    console.log(`[execute-schedules] Execution completed`);
+    console.log(`[execute-schedules] Total schedules: ${schedules.length}`);
+    console.log(`[execute-schedules] Successfully executed: ${executedCount}`);
+    console.log(`[execute-schedules] Failed: ${failedCount}`);
+    console.log(`[execute-schedules] ========================================`);
+
     return new Response(
       JSON.stringify({
         message: "Schedule execution completed",
-        executed: results.filter((r) => r.status === "sent").length,
-        failed: results.filter((r) => r.status === "failed").length,
+        executed: executedCount,
+        failed: failedCount,
+        total: schedules.length,
         results,
+        timestamp: nowISO,
+        timeWindow: {
+          start: timeWindowStart,
+          end: timeWindowEnd,
+        },
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -678,7 +792,9 @@ serve(async (req) => {
       }
     );
   } catch (error) {
+    console.error("[execute-schedules] ========================================");
     console.error("[execute-schedules] Fatal error:", error);
+    console.error("[execute-schedules] ========================================");
     return new Response(
       JSON.stringify({
         error: error instanceof Error ? error.message : String(error),

@@ -25,6 +25,7 @@ import {
   RefreshCw
 } from "lucide-react";
 import * as dbService from "@/services/dbService";
+import { getVoiceDisplayNameKo } from "@/lib/voiceNames";
 
 // 언어 코드 → 국기 이모지
 const languageCodeToFlag = (code: string): string => {
@@ -224,6 +225,8 @@ const VoiceStylesPage = () => {
 
       // DB에 저장
       await dbService.syncVoiceCatalog(allVoicesData, true);
+      // 동기화 후 모든 기존 음성의 name_ko도 업데이트
+      await dbService.updateAllVoiceNamesKo().catch(() => {});
 
       setAvailableVoices(allVoicesData);
       setAllVoices(allVoicesData);
@@ -246,6 +249,46 @@ const VoiceStylesPage = () => {
       setIsLoadingVoices(false);
     }
   }, [isLoadingVoices, toast]);
+
+  // 한글 이름 일괄 업데이트
+  const [isUpdatingNameKo, setIsUpdatingNameKo] = useState(false);
+  const handleUpdateAllNameKo = useCallback(async () => {
+    if (!user?.id) {
+      toast({
+        title: "로그인 필요",
+        description: "한글 이름 업데이트를 사용하려면 로그인이 필요합니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsUpdatingNameKo(true);
+    try {
+      const result = await dbService.updateAllVoiceNamesKo();
+      if (result.updated > 0 || result.skipped > 0) {
+        toast({
+          title: "한글 이름 업데이트 완료",
+          description: `업데이트: ${result.updated}개, 스킵: ${result.skipped}개, 오류: ${result.errors}개`,
+        });
+        // 음성 목록 다시 로드하여 업데이트된 한글 이름 반영
+        await fetchVoices(false, false);
+      } else {
+        toast({
+          title: "업데이트할 항목 없음",
+          description: "모든 음성이 이미 한글 이름이 설정되어 있습니다.",
+        });
+      }
+    } catch (error: any) {
+      console.error("한글 이름 업데이트 실패:", error);
+      toast({
+        title: "한글 이름 업데이트 실패",
+        description: error?.message || "한글 이름을 업데이트하는 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUpdatingNameKo(false);
+    }
+  }, [user?.id, toast, fetchVoices]);
 
   // 초기 로드
   useEffect(() => {
@@ -327,10 +370,12 @@ const VoiceStylesPage = () => {
       }
       if (voiceFilters.name) {
         const nameLower = voiceFilters.name.toLowerCase();
-        filtered = filtered.filter((v: any) => 
-          (v.name || "").toLowerCase().includes(nameLower) || 
-          (v.voice_id || "").toLowerCase().includes(nameLower)
-        );
+        filtered = filtered.filter((v: any) => {
+          const voiceNameKo = getVoiceDisplayNameKo(v.name, v.voice_id, v.name_ko);
+          return voiceNameKo.toLowerCase().includes(nameLower) ||
+                 (v.name || "").toLowerCase().includes(nameLower) || 
+                 (v.voice_id || "").toLowerCase().includes(nameLower);
+        });
       }
       if (voiceFilters.gender) {
         filtered = filtered.filter((v: any) => (v.gender || "").toLowerCase() === voiceFilters.gender.toLowerCase());
@@ -413,8 +458,8 @@ const VoiceStylesPage = () => {
       if (fa !== fb) return fb - fa;
 
       if (voiceSortBy === "name") {
-        const nameA = (a.name || a.voice_id || "").toLowerCase();
-        const nameB = (b.name || b.voice_id || "").toLowerCase();
+        const nameA = getVoiceDisplayNameKo(a.name, a.voice_id, a.name_ko).toLowerCase();
+        const nameB = getVoiceDisplayNameKo(b.name, b.voice_id, b.name_ko).toLowerCase();
         return voiceSortOrder === "asc" 
           ? nameA.localeCompare(nameB, "ko") 
           : nameB.localeCompare(nameA, "ko");
@@ -485,8 +530,18 @@ const VoiceStylesPage = () => {
                 <Button
                   variant="outline"
                   size="sm"
+                  onClick={handleUpdateAllNameKo}
+                  disabled={isUpdatingNameKo || isLoadingVoices}
+                  title="모든 음성의 한글 이름을 일괄 업데이트합니다"
+                >
+                  <RefreshCw className={`w-4 h-4 mr-2 ${isUpdatingNameKo ? "animate-spin" : ""}`} />
+                  한글 이름 업데이트
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => fetchVoices(true, true)}
-                  disabled={isLoadingVoices}
+                  disabled={isLoadingVoices || isUpdatingNameKo}
                 >
                   <RefreshCw className={`w-4 h-4 mr-2 ${isLoadingVoices ? "animate-spin" : ""}`} />
                   새로고침
@@ -498,7 +553,7 @@ const VoiceStylesPage = () => {
             <ScrollArea className="h-[600px]">
               <div className="space-y-2">
                 {getSortedVoices(allVoices).map((voice: any) => {
-                  const voiceName = voice.name || voice.voice_id;
+                  const voiceName = getVoiceDisplayNameKo(voice.name, voice.voice_id, voice.name_ko);
                   const flags = (() => {
                     const arr = Array.isArray(voice.language) ? voice.language : (voice.language ? [voice.language] : []);
                     return arr.map((c: string) => languageCodeToFlag(c)).filter(Boolean).join(" ") || "";

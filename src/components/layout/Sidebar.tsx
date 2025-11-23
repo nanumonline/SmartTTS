@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
@@ -20,6 +20,8 @@ import {
   BookOpen,
   X,
   ChevronRight,
+  Radio,
+  Zap,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { loadBrandSettings, getLogoUrl } from "@/lib/brandSettings";
@@ -38,6 +40,12 @@ export const navItems: NavItem[] = [
     title: "대시보드",
     href: "/dashboard",
     icon: LayoutDashboard,
+  },
+  {
+    title: "긴급 방송",
+    href: "/emergency",
+    icon: Zap,
+    badge: "긴급",
   },
   {
     title: "문구·대본",
@@ -74,19 +82,9 @@ export const navItems: NavItem[] = [
     href: "/send",
     icon: Send,
     children: [
-      { title: "전송 설정", href: "/send/setup", icon: Settings },
+      { title: "즉시 송출", href: "/send/broadcast", icon: Radio },
       { title: "스케줄 관리", href: "/send/schedule", icon: Calendar },
-    ],
-  },
-  {
-    title: "관리",
-    href: "/manage",
-    icon: FolderOpen,
-    children: [
-      { title: "자산 관리", href: "/manage/assets", icon: Database },
       { title: "작업 큐", href: "/manage/jobs", icon: ClipboardList },
-      { title: "승인·컴플라이언스", href: "/manage/compliance", icon: Shield },
-      { title: "감사로그", href: "/manage/audit", icon: FileSearch },
     ],
   },
   {
@@ -106,6 +104,7 @@ export const navItems: NavItem[] = [
     children: [
       { title: "통합 관리", href: "/settings/integrations", icon: Settings },
       { title: "권한 설정", href: "/settings/roles", icon: Shield },
+      { title: "전송 설정", href: "/settings/setup", icon: Radio },
       { title: "브랜드 정책", href: "/settings/brand", icon: FileText },
     ],
   },
@@ -119,6 +118,7 @@ interface SidebarProps {
 
 export default function Sidebar({ className, isOpen = true, onToggle }: SidebarProps) {
   const location = useLocation();
+  const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
   const [expandedItems, setExpandedItems] = React.useState<Set<string>>(
     new Set([location.pathname.split("/")[1] || "dashboard"])
@@ -219,9 +219,10 @@ export default function Sidebar({ className, isOpen = true, onToggle }: SidebarP
         {/* Logo */}
         <div
           className={cn(
-            "flex h-16 items-center gap-3 border-b border-border px-4",
+            "flex h-16 items-center gap-3 border-b border-border px-4 cursor-pointer hover:bg-muted/50 transition-colors",
             isCompact && "justify-center"
           )}
+          onClick={() => navigate("/")}
         >
           {logoUrl && !isCompact ? (
             <div className="flex items-center gap-3 flex-1 min-w-0">

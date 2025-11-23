@@ -23,12 +23,9 @@ import AudioHistoryPage from "./pages/AudioHistoryPage";
 import MixBoardPage from "./pages/MixBoardPage";
 import SendSetupPage from "./pages/SendSetupPage";
 import ScheduleManagerPage from "./pages/ScheduleManagerPage";
-import ManageAssetsPage from "./pages/ManageAssetsPage";
 import ReportsSendsPage from "./pages/ReportsSendsPage";
 import MixPresetsPage from "./pages/MixPresetsPage";
 import ManageJobsPage from "./pages/ManageJobsPage";
-import ManageCompliancePage from "./pages/ManageCompliancePage";
-import ManageAuditPage from "./pages/ManageAuditPage";
 import ReportsQualityPage from "./pages/ReportsQualityPage";
 import SettingsIntegrationsPage from "./pages/SettingsIntegrationsPage";
 import SettingsRolesPage from "./pages/SettingsRolesPage";
@@ -37,6 +34,7 @@ import StorageSettingsPage from "./pages/StorageSettingsPage";
 import ScriptsTemplatesPage from "./pages/ScriptsTemplatesPage";
 import MessageManagementPage from "./pages/MessageManagementPage";
 import MessageTemplatePage from "./pages/MessageTemplatePage";
+import EmergencyBroadcastPage from "./pages/EmergencyBroadcastPage";
 
 const queryClient = new QueryClient();
 
@@ -186,11 +184,11 @@ const App = () => (
             
             {/* 전송·스케줄 */}
             <Route 
-              path="/send/setup" 
+              path="/send/broadcast" 
               element={
                 <ProtectedRoute>
                   <AppShell>
-                    <SendSetupPage />
+                    <ScheduleManagerPage />
                   </AppShell>
                 </ProtectedRoute>
               } 
@@ -217,43 +215,23 @@ const App = () => (
               } 
             />
             
-            {/* 관리 */}
+            {/* 긴급 방송 */}
             <Route 
-              path="/manage/assets" 
+              path="/emergency" 
               element={
                 <ProtectedRoute>
-                  <AppShell>
-                    <ManageAssetsPage />
-                  </AppShell>
+                  <EmergencyBroadcastPage />
                 </ProtectedRoute>
               } 
             />
-            <Route 
+            
+            {/* 관리 */}
+            <Route
               path="/manage/jobs" 
               element={
                 <ProtectedRoute>
                   <AppShell>
                     <ManageJobsPage />
-                  </AppShell>
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/manage/compliance" 
-              element={
-                <ProtectedRoute>
-                  <AppShell>
-                    <ManageCompliancePage />
-                  </AppShell>
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/manage/audit" 
-              element={
-                <ProtectedRoute>
-                  <AppShell>
-                    <ManageAuditPage />
                   </AppShell>
                 </ProtectedRoute>
               } 
@@ -324,6 +302,16 @@ const App = () => (
               } 
             />
             <Route 
+              path="/settings/setup" 
+              element={
+                <ProtectedRoute>
+                  <AppShell>
+                    <SendSetupPage />
+                  </AppShell>
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
               path="/settings/roles" 
               element={
                 <ProtectedRoute>
@@ -384,6 +372,17 @@ const App = () => (
                 <ProtectedRoute>
                   <AppShell>
                     <ScheduleManagerPage />
+                  </AppShell>
+                </ProtectedRoute>
+              } 
+            />
+            {/* 하위 호환성: 기존 전송 설정 라우트 리다이렉트 */}
+            <Route 
+              path="/send/setup" 
+              element={
+                <ProtectedRoute>
+                  <AppShell>
+                    <SendSetupPage />
                   </AppShell>
                 </ProtectedRoute>
               } 

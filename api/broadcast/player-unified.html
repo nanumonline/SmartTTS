@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>방송 플레이어 - 통합</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --pc-gradient: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+            --tablet-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --success-color: #10b981;
+            --error-color: #ef4444;
+            --warning-color: #fbbf24;
+            --glass-bg: rgba(255, 255, 255, 0.1);
+            --glass-border: rgba(255, 255, 255, 0.2);
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans KR', sans-serif;
+            background: var(--tablet-gradient);
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            transition: background 0.5s ease;
+            overflow-x: hidden;
+        }
+        
+        body.pc-mode {
+            background: var(--pc-gradient);
+        }
+        
+        /* 배경 애니메이션 */
+        .bg-animation {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            pointer-events: none;
+            overflow: hidden;
+        }
+        
+        .bg-circle {
+            position: absolute;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.05);
+            animation: float 20s infinite ease-in-out;
+        }
+        
+        .bg-circle:nth-child(1) {
+            width: 300px;
+            height: 300px;
+            top: 10%;
+            left: 10%;
+            animation-delay: 0s;
+        }
+        
+        .bg-circle:nth-child(2) {
+            width: 200px;
+            height: 200px;
+            top: 60%;
+            right: 10%;
+            animation-delay: 5s;
+        }
+        
+        .bg-circle:nth-child(3) {
+            width: 150px;
+            height: 150px;
+            bottom: 20%;
+            left: 20%;
+            animation-delay: 10s;
+        }
+        
+        @keyframes float {
+            0%, 100% {
+                transform: translate(0, 0) scale(1);
+                opacity: 0.5;
+            }
+            50% {
+                transform: translate(50px, -50px) scale(1.1);
+                opacity: 0.8;
+            }
+        }
+        
+        .container {
+            position: relative;
+            z-index: 1;
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            padding: 30px;
+            max-width: 600px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            transition: all 0.3s ease;
+        }
+        
+        body.pc-mode .container {
+            max-width: 900px;
+            padding: 40px;
+        }
+        
+        /* 헤더 */
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #fff 0%, rgba(255, 255, 255, 0.8) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        body.pc-mode .header h1 {
+            font-size: 36px;
+        }
+        
+        /* 모드 전환 버튼 */
+        .mode-switcher {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 6px;
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .mode-btn {
+            padding: 8px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: transparent;
+            color: rgba(255, 255, 255, 0.6);
+        }
+        
+        .mode-btn.active {
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+        
+        .mode-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+        }
+        
+        /* 디바이스 정보 */
+        .device-info {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 20px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .device-info-title {
+            font-weight: 600;
+            font-size: 16px;
+            margin-bottom: 5px;
+        }
+        
+        .device-info-desc {
+            font-size: 13px;
+            opacity: 0.8;
+        }
+        
+        /* 상태 표시 */
+        .status {
+            text-align: center;
+            padding: 18px 24px;
+            border-radius: 16px;
+            margin-bottom: 20px;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .status::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.5s ease;
+        }
+        
+        .status.connected::before {
+            animation: shimmer 2s infinite;
+        }
+        
+        @keyframes shimmer {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+        
+        .status.connected {
+            background: rgba(16, 185, 129, 0.25);
+            border: 2px solid rgba(16, 185, 129, 0.5);
+            color: var(--success-color);
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+        }
+        
+        .status.disconnected {
+            background: rgba(239, 68, 68, 0.25);
+            border: 2px solid rgba(239, 68, 68, 0.5);
+            color: var(--error-color);
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
+        }
+        
+        .status.waiting {
+            background: rgba(251, 191, 36, 0.25);
+            border: 2px solid rgba(251, 191, 36, 0.5);
+            color: var(--warning-color);
+            box-shadow: 0 0 20px rgba(251, 191, 36, 0.3);
+        }
+        
+        /* 정보 패널 */
+        .info {
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: none;
+        }
+        
+        .info.show {
+            display: block;
+            animation: slideDown 0.3s ease;
+        }
+        
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .info-item {
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .info-item:last-child {
+            margin-bottom: 0;
+            border-bottom: none;
+        }
+        
+        .info-label {
+            font-weight: 600;
+            opacity: 0.9;
+        }
+        
+        .info-value {
+            font-weight: 500;
+            text-align: right;
+            max-width: 60%;
+            word-break: break-word;
+        }
+        
+        /* 오디오 플레이어 */
+        .audio-wrapper {
+            margin: 20px 0;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 16px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        audio {
+            width: 100%;
+            border-radius: 12px;
+            outline: none;
+        }
+        
+        audio::-webkit-media-controls-panel {
+            background-color: rgba(0, 0, 0, 0.3);
+        }
+        
+        /* 컨트롤 버튼 */
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            margin: 20px 0;
+        }
+        
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: rgba(255, 255, 255, 0.15);
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        button::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.3);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+        
+        button:hover::before {
+            width: 300px;
+            height: 300px;
+        }
+        
+        button:hover {
+            background: rgba(255, 255, 255, 0.25);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        button.primary {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.8), rgba(5, 150, 105, 0.8));
+            border-color: rgba(16, 185, 129, 0.5);
+        }
+        
+        button.danger {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.8), rgba(220, 38, 38, 0.8));
+            border-color: rgba(239, 68, 68, 0.5);
+        }
+        
+        select {
+            padding: 12px 16px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            background: rgba(0, 0, 0, 0.3);
+            color: #fff;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            outline: none;
+            backdrop-filter: blur(10px);
+        }
+        
+        select:hover {
+            background: rgba(0, 0, 0, 0.4);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+        
+        /* 오디오 목록 */
+        .audio-list {
+            margin-top: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+            border-radius: 16px;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.1);
+        }
+        
+        .audio-list::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        .audio-list::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 4px;
+        }
+        
+        .audio-list::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+        }
+        
+        .audio-list::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.5);
+        }
+        
+        .audio-item {
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 10px;
+            font-size: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .audio-item:hover {
+            background: rgba(255, 255, 255, 0.12);
+            transform: translateX(5px);
+        }
+        
+        .audio-item.playing {
+            background: rgba(16, 185, 129, 0.25);
+            border: 2px solid rgba(16, 185, 129, 0.5);
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% {
+                box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+            }
+            50% {
+                box-shadow: 0 0 30px rgba(16, 185, 129, 0.5);
+            }
+        }
+        
+        .audio-filename {
+            font-weight: 600;
+            margin-bottom: 6px;
+            font-size: 15px;
+        }
+        
+        .audio-time {
+            font-size: 12px;
+            opacity: 0.8;
+        }
+        
+        .audio-schedule-name {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.7);
+            margin-top: 4px;
+        }
+        
+        /* PC 모드 전용 스타일 */
+        body.pc-mode .info-item {
+            flex-direction: row;
+        }
+        
+        body.pc-mode .controls {
+            gap: 15px;
+        }
+        
+        body.pc-mode button {
+            padding: 14px 28px;
+            font-size: 15px;
+        }
+        
+        /* 태블릿 모드 전용 스타일 */
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px;
+            }
+            
+            .header h1 {
+                font-size: 24px;
+            }
+            
+            .controls {
+                flex-direction: column;
+            }
+            
+            button, select {
+                width: 100%;
+            }
+        }
+        
+        /* 로딩 애니메이션 */
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* 빈 상태 */
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            opacity: 0.7;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-animation">
+        <div class="bg-circle"></div>
+        <div class="bg-circle"></div>
+        <div class="bg-circle"></div>
+    </div>
+    
+    <div class="container">
+        <div class="header">
+            <h1>📻 방송 플레이어</h1>
+            
+            <!-- 모드 전환 -->
+            <div class="mode-switcher">
+                <button class="mode-btn active" id="tabletModeBtn" onclick="switchMode('tablet')">
+                    📱 태블릿
+                </button>
+                <button class="mode-btn" id="pcModeBtn" onclick="switchMode('pc')">
+                    🖥️ PC
+                </button>
+            </div>
+            
+            <div class="device-info" id="deviceInfo">
+                <div class="device-info-title">태블릿 방송 송출 모드</div>
+                <div class="device-info-desc">방송 장비로 자동 출력됩니다</div>
+            </div>
+        </div>
+        
+        <div class="status" id="status">초기화 중...</div>
+        
+        <div class="info" id="info">
+            <div class="info-item">
+                <span class="info-label">현재 재생:</span>
+                <span class="info-value" id="currentFile">없음</span>
+            </div>
+            <div class="info-item" id="currentScheduleNameItem" style="display: none;">
+                <span class="info-label">스케줄명:</span>
+                <span class="info-value" id="currentScheduleName">-</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">다음 확인:</span>
+                <span class="info-value" id="nextCheck">-</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">디바이스 ID:</span>
+                <span class="info-value" id="deviceId">-</span>
+            </div>
+            <div class="info-item" id="outputDeviceItem" style="display: none;">
+                <span class="info-label">출력 장치:</span>
+                <span class="info-value" id="outputDevice">기본 사운드 카드</span>
+            </div>
+        </div>
+        
+        <div class="audio-wrapper">
+            <audio id="audioPlayer" controls preload="auto"></audio>
+        </div>
+        
+        <div class="controls">
+            <button onclick="checkAudio()" class="primary">수동 확인</button>
+            <button onclick="togglePolling()" id="pollingBtn" class="primary">폴링 중지</button>
+            <button onclick="testAudio()" id="testBtn" style="display: none;">테스트 재생</button>
+            <select id="pollingIntervalSelect" onchange="changePollingInterval()">
+                <option value="5000">5초</option>
+                <option value="10000" selected>10초</option>
+                <option value="30000">30초</option>
+            </select>
+        </div>
+        
+        <div class="audio-list" id="audioList"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'https://nanum.online/tts/api/broadcast';
+        const CHANNEL_ID = new URLSearchParams(window.location.search).get('channel_id') || 'default';
+        
+        // 폴링 간격
+        let POLL_INTERVAL = 10000; // 기본 10초
+        let currentMode = 'tablet'; // 'tablet' or 'pc'
+        
+        let currentAudioId = null;
+        let isPlaying = false;
+        let pollingInterval = null;
+        let isPolling = true;
+        let lastCheckedFile = null;
+        let lastAudioCheckTime = 0;
+
+        // 모드 전환
+        function switchMode(mode) {
+            currentMode = mode;
+            const body = document.body;
+            const tabletBtn = document.getElementById('tabletModeBtn');
+            const pcBtn = document.getElementById('pcModeBtn');
+            const deviceInfo = document.getElementById('deviceInfo');
+            const testBtn = document.getElementById('testBtn');
+            const outputDeviceItem = document.getElementById('outputDeviceItem');
+            
+            if (mode === 'pc') {
+                body.classList.add('pc-mode');
+                tabletBtn.classList.remove('active');
+                pcBtn.classList.add('active');
+                deviceInfo.innerHTML = `
+                    <div class="device-info-title">PC 방송 송출 모드</div>
+                    <div class="device-info-desc">사운드 카드를 통해 방송 장비로 자동 출력됩니다</div>
+                `;
+                testBtn.style.display = 'inline-block';
+                outputDeviceItem.style.display = 'flex';
+                updateOutputDevice();
+            } else {
+                body.classList.remove('pc-mode');
+                tabletBtn.classList.add('active');
+                pcBtn.classList.remove('active');
+                deviceInfo.innerHTML = `
+                    <div class="device-info-title">태블릿 방송 송출 모드</div>
+                    <div class="device-info-desc">방송 장비로 자동 출력됩니다</div>
+                `;
+                testBtn.style.display = 'none';
+                outputDeviceItem.style.display = 'none';
+            }
+            
+            // 모드 저장
+            localStorage.setItem('player_mode', mode);
+        }
+
+        // 상태 업데이트
+        function updateStatus(message, className) {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = message;
+            statusEl.className = 'status ' + (className || 'waiting');
+        }
+
+        // 정보 업데이트
+        function updateInfo(currentFile, nextCheck, scheduleName = null) {
+            const infoEl = document.getElementById('info');
+            document.getElementById('currentFile').textContent = currentFile || '없음';
+            document.getElementById('nextCheck').textContent = nextCheck || '-';
+            document.getElementById('deviceId').textContent = getDeviceId();
+            
+            // 스케줄 이름 표시
+            const scheduleNameItem = document.getElementById('currentScheduleNameItem');
+            const scheduleNameEl = document.getElementById('currentScheduleName');
+            if (scheduleName) {
+                scheduleNameEl.textContent = scheduleName;
+                scheduleNameItem.style.display = 'flex';
+            } else {
+                scheduleNameItem.style.display = 'none';
+            }
+            
+            infoEl.classList.add('show');
+        }
+
+        // 출력 장치 업데이트 (PC 모드)
+        function updateOutputDevice() {
+            if (currentMode !== 'pc') return;
+            
+            const outputDeviceEl = document.getElementById('outputDevice');
+            if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+                navigator.mediaDevices.enumerateDevices().then(devices => {
+                    const audioOutputs = devices.filter(d => d.kind === 'audiooutput');
+                    if (audioOutputs.length > 0) {
+                        const defaultDevice = audioOutputs.find(d => d.deviceId === 'default') || audioOutputs[0];
+                        outputDeviceEl.textContent = defaultDevice.label || '기본 사운드 카드';
+                    }
+                }).catch(err => {
+                    console.error('Failed to enumerate devices:', err);
+                });
+            }
+        }
+
+        // 디바이스 ID 생성/조회
+        function getDeviceId() {
+            let deviceId = localStorage.getItem('device_id');
+            if (!deviceId) {
+                deviceId = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                localStorage.setItem('device_id', deviceId);
+            }
+            return deviceId;
+        }
+
+        // 오디오 목록 확인
+        async function checkAudio() {
+            try {
+                updateStatus('오디오 확인 중...', 'waiting');
+                
+                const response = await fetch(`${API_BASE}/list.php?limit=5`);
+                const data = await response.json();
+                
+                if (data.success && data.audio_list && data.audio_list.length > 0) {
+                    const latestAudio = data.audio_list[0];
+                    
+                    // 새로운 오디오인지 확인
+                    if (latestAudio.filename !== lastCheckedFile && !isPlaying) {
+                        lastCheckedFile = latestAudio.filename;
+                        playAudio(latestAudio);
+                    } else if (isPlaying) {
+                        updateStatus('재생 중... (새 오디오 대기)', 'connected');
+                    } else {
+                        updateStatus('대기 중... (재생할 새 오디오 없음)', 'waiting');
+                    }
+                    
+                    updateAudioList(data.audio_list);
+                } else {
+                    updateStatus('대기 중... (재생할 오디오 없음)', 'waiting');
+                    updateAudioList([]);
+                }
+                
+                // 다음 확인 시간 업데이트
+                const nextCheck = new Date(Date.now() + POLL_INTERVAL);
+                const latestAudio = data?.audio_list?.[0];
+                updateInfo(
+                    lastCheckedFile || null, 
+                    nextCheck.toLocaleTimeString('ko-KR'),
+                    latestAudio?.schedule_name || null
+                );
+                
+            } catch (error) {
+                console.error('Error checking audio:', error);
+                updateStatus('연결 오류: ' + error.message, 'disconnected');
+            }
+        }
+
+        // 오디오 재생
+        function playAudio(audio) {
+            const audioPlayer = document.getElementById('audioPlayer');
+            
+            if (!audio || !audio.url || !audio.filename) {
+                console.error('Invalid audio data:', audio);
+                updateStatus('오디오 정보 오류', 'disconnected');
+                return;
+            }
+            
+            if (audioPlayer.src === audio.url && !audioPlayer.ended && !audioPlayer.paused) {
+                return;
+            }
+            
+            audioPlayer.onended = null;
+            audioPlayer.onerror = null;
+            audioPlayer.oncanplay = null;
+            
+            audioPlayer.src = audio.url;
+            currentAudioId = audio.filename;
+            
+            const scheduleName = audio.schedule_name || null;
+            const displayName = audio.display_name || audio.schedule_name || audio.filename;
+            
+            updateStatus(`재생 준비: ${displayName}`, 'waiting');
+            updateInfo(audio.filename, '-', scheduleName);
+            updateAudioListHighlight(audio.filename);
+            
+            audioPlayer.onended = () => {
+                console.log('Audio playback ended:', audio.filename);
+                isPlaying = false;
+                currentAudioId = null;
+                updateStatus('재생 완료', 'connected');
+                setTimeout(checkAudio, 1000);
+            };
+
+            audioPlayer.onerror = async (error) => {
+                console.error('Audio playback error:', error);
+                let errorMessage = '재생 오류: 오디오 파일을 확인할 수 없습니다';
+                
+                if (audioPlayer.error) {
+                    switch (audioPlayer.error.code) {
+                        case MediaError.MEDIA_ERR_ABORTED:
+                            errorMessage = '재생 중단됨';
+                            break;
+                        case MediaError.MEDIA_ERR_NETWORK:
+                            errorMessage = '네트워크 오류';
+                            break;
+                        case MediaError.MEDIA_ERR_DECODE:
+                            errorMessage = '디코드 오류';
+                            break;
+                        case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
+                            errorMessage = '지원되지 않는 형식';
+                            break;
+                    }
+                }
+                
+                updateStatus(errorMessage, 'disconnected');
+                isPlaying = false;
+                currentAudioId = null;
+            };
+
+            audioPlayer.oncanplay = () => {
+                const hasUserInteraction = localStorage.getItem('user_interacted') === 'true';
+                
+                if (hasUserInteraction) {
+                    audioPlayer.play().then(() => {
+                        isPlaying = true;
+                        updateStatus(`재생 중: ${displayName}`, 'connected');
+                    }).catch(error => {
+                        console.error('Auto-play error:', error);
+                        updateStatus('재생 버튼을 클릭하세요', 'waiting');
+                    });
+                } else {
+                    updateStatus('재생 버튼을 클릭하세요', 'waiting');
+                }
+            };
+
+            audioPlayer.onplay = () => {
+                isPlaying = true;
+                updateStatus(`재생 중: ${displayName}`, 'connected');
+            };
+
+            audioPlayer.onpause = () => {
+                updateStatus('일시정지', 'waiting');
+            };
+            
+            audioPlayer.load();
+        }
+
+        // 오디오 목록 업데이트
+        function updateAudioList(audioList) {
+            const listEl = document.getElementById('audioList');
+            
+            if (audioList.length === 0) {
+                listEl.innerHTML = '<div class="empty-state">재생 대기 오디오가 없습니다</div>';
+                return;
+            }
+            
+            listEl.innerHTML = audioList.map(audio => {
+                const isCurrent = audio.filename === currentAudioId;
+                const scheduleName = audio.schedule_name ? `<div class="audio-schedule-name">📅 ${audio.schedule_name}</div>` : '';
+                return `
+                    <div class="audio-item ${isCurrent ? 'playing' : ''}">
+                        <div class="audio-filename">${audio.filename}</div>
+                        ${scheduleName}
+                        <div class="audio-time">${audio.modified} (${formatSize(audio.size)})</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 오디오 목록 하이라이트
+        function updateAudioListHighlight(filename) {
+            const items = document.querySelectorAll('.audio-item');
+            items.forEach(item => {
+                if (item.querySelector('.audio-filename').textContent === filename) {
+                    item.classList.add('playing');
+                } else {
+                    item.classList.remove('playing');
+                }
+            });
+        }
+
+        // 파일 크기 포맷
+        function formatSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        // 폴링 토글
+        function togglePolling() {
+            isPolling = !isPolling;
+            const btn = document.getElementById('pollingBtn');
+            
+            if (isPolling) {
+                btn.textContent = '폴링 중지';
+                startPolling();
+            } else {
+                btn.textContent = '폴링 시작';
+                stopPolling();
+            }
+        }
+
+        // 폴링 간격 변경
+        function changePollingInterval() {
+            const select = document.getElementById('pollingIntervalSelect');
+            POLL_INTERVAL = parseInt(select.value);
+            if (isPolling) {
+                stopPolling();
+                startPolling();
+            }
+        }
+
+        // 폴링 시작
+        function startPolling() {
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+            }
+            pollingInterval = setInterval(checkAudio, POLL_INTERVAL);
+            checkAudio();
+        }
+
+        // 폴링 중지
+        function stopPolling() {
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+            }
+        }
+
+        // 테스트 재생 (PC 모드)
+        function testAudio() {
+            const audioPlayer = document.getElementById('audioPlayer');
+            const testUrl = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
+            
+            audioPlayer.src = testUrl;
+            audioPlayer.play().then(() => {
+                updateStatus('테스트 재생 중...', 'connected');
+            }).catch(error => {
+                updateStatus('테스트 재생 실패: ' + error.message, 'disconnected');
+            });
+        }
+
+        // 초기화
+        function init() {
+            // 저장된 모드 복원
+            const savedMode = localStorage.getItem('player_mode') || 'tablet';
+            switchMode(savedMode);
+            
+            updateInfo(null, '-');
+            
+            // 사용자 상호작용 감지
+            const markUserInteraction = () => {
+                localStorage.setItem('user_interacted', 'true');
+                const audioPlayer = document.getElementById('audioPlayer');
+                if (audioPlayer.src && audioPlayer.paused && !audioPlayer.ended) {
+                    audioPlayer.play().then(() => {
+                        isPlaying = true;
+                        updateStatus(`재생 중: ${currentAudioId || '오디오'}`, 'connected');
+                    }).catch(err => {
+                        console.error('Play error:', err);
+                    });
+                }
+            };
+            
+            document.addEventListener('click', markUserInteraction, { once: true });
+            document.addEventListener('touchstart', markUserInteraction, { once: true });
+            document.addEventListener('keydown', markUserInteraction, { once: true });
+            
+            if (localStorage.getItem('user_interacted') === 'true') {
+                updateStatus('초기화 완료 - 자동 재생 활성화', 'connected');
+            } else {
+                updateStatus('초기화 완료 - 화면을 한 번 터치하거나 클릭하세요', 'waiting');
+            }
+            
+            startPolling();
+        }
+
+        // 페이지 로드 시 초기화
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
+

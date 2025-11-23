@@ -74,15 +74,29 @@ export const isoToLocalDateTimeString = (iso?: string): string => {
 
 /**
  * datetime-local input 값을 UTC ISO 문자열로 변환
- * datetime-local input은 로컬 시간대를 의미하므로 이를 UTC로 변환합니다.
+ * datetime-local input은 KST(Asia/Seoul) 시간대로 해석하여 UTC로 변환합니다.
  */
 export const localDateTimeStringToISO = (localDateTime: string): string => {
   if (!localDateTime) return "";
   try {
-    // datetime-local input 값은 로컬 시간대를 의미
-    const localDate = new Date(localDateTime);
-    // UTC ISO 문자열로 변환
-    return localDate.toISOString();
+    // datetime-local input 값은 "YYYY-MM-DDTHH:mm" 형식
+    // 이를 KST(Asia/Seoul, UTC+9) 시간대로 해석
+    const dateTimeParts = localDateTime.split('T');
+    if (dateTimeParts.length !== 2) return "";
+    
+    const dateParts = dateTimeParts[0].split('-');
+    const timeParts = dateTimeParts[1].split(':');
+    
+    if (dateParts.length !== 3 || timeParts.length < 2) return "";
+    
+    const year = parseInt(dateParts[0], 10);
+    const month = parseInt(dateParts[1], 10) - 1; // 0-based
+    const day = parseInt(dateParts[2], 10);
+    const hours = parseInt(timeParts[0], 10);
+    const minutes = parseInt(timeParts[1], 10);
+    
+    // KST 시간을 UTC ISO 문자열로 변환 (localTimeToISOString 사용)
+    return localTimeToISOString(year, month, day, hours, minutes);
   } catch {
     return "";
   }

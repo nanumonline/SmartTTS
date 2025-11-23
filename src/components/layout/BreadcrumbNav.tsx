@@ -68,29 +68,25 @@ const routeMap: Record<string, BreadcrumbItem[]> = {
     { label: "전송·스케줄", href: "/send" },
     { label: "스케줄 관리" },
   ],
+  "/send/broadcast": [
+    { label: "전송·스케줄", href: "/send" },
+    { label: "즉시 송출" },
+  ],
   "/send/setup": [
     { label: "전송·스케줄", href: "/send" },
+    { label: "전송 설정" },
+  ],
+  "/settings/setup": [
+    { label: "설정", href: "/settings" },
     { label: "전송 설정" },
   ],
   "/send/audience": [
     { label: "전송·스케줄", href: "/send" },
     { label: "대상자 관리" },
   ],
-  "/manage/assets": [
-    { label: "관리", href: "/manage" },
-    { label: "자산 관리" },
-  ],
   "/manage/jobs": [
-    { label: "관리", href: "/manage" },
+    { label: "전송·스케줄", href: "/send" },
     { label: "작업 큐" },
-  ],
-  "/manage/compliance": [
-    { label: "관리", href: "/manage" },
-    { label: "승인·컴플라이언스" },
-  ],
-  "/manage/audit": [
-    { label: "관리", href: "/manage" },
-    { label: "감사로그" },
   ],
   "/reports": [{ label: "리포트" }],
   "/reports/sends": [
