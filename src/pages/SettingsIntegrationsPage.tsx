@@ -12,6 +12,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/components/ui/use-toast";
 import * as dbService from "@/services/dbService";
 import { formatDateTime } from "@/lib/pageUtils";
+import PageContainer from "@/components/layout/PageContainer";
+import PageHeader from "@/components/layout/PageHeader";
 
 interface IntegrationSettings {
   slack: { enabled: boolean; webhook: string };
@@ -162,18 +164,14 @@ export default function SettingsIntegrationsPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">통합 관리</h1>
-          <p className="text-muted-foreground mt-1">
-            전송 채널 및 외부 서비스 연동을 관리합니다.
-          </p>
-        </div>
-      </div>
+    <PageContainer maxWidth="wide">
+      <PageHeader
+        title="통합 관리"
+        description="전송 채널 및 외부 서비스 연동을 관리합니다."
+      />
 
       {/* 전송 채널 관리 */}
-      <Card>
+      <Card className="mt-6">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Radio className="w-5 h-5" />
@@ -404,6 +402,6 @@ export default function SettingsIntegrationsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </PageContainer>
   );
 }

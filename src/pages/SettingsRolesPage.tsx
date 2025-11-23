@@ -12,6 +12,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import * as dbService from "@/services/dbService";
+import PageContainer from "@/components/layout/PageContainer";
+import PageHeader from "@/components/layout/PageHeader";
 
 interface Role {
   id: string;
@@ -271,13 +273,11 @@ export default function SettingsRolesPage() {
 
   if (!user?.organization) {
     return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">권한 설정</h1>
-          <p className="text-muted-foreground mt-1">
-            사용자 역할 및 권한을 관리합니다.
-          </p>
-        </div>
+      <PageContainer maxWidth="wide">
+        <PageHeader
+          title="권한 설정"
+          description="사용자 역할 및 권한을 관리합니다."
+        />
         <Card>
           <CardContent className="pt-6">
             <div className="text-center py-8">
@@ -288,27 +288,25 @@ export default function SettingsRolesPage() {
             </div>
           </CardContent>
         </Card>
-      </div>
+      </PageContainer>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">권한 설정</h1>
-          <p className="text-muted-foreground mt-1">
-            {user.organization} 조직의 사용자 역할 및 권한을 관리합니다.
-          </p>
-        </div>
-        <Button onClick={() => setIsCreateDialogOpen(true)}>
-          <UserPlus className="w-4 h-4 mr-2" />
-          새 역할
-        </Button>
-      </div>
+    <PageContainer maxWidth="wide">
+      <PageHeader
+        title="권한 설정"
+        description={`${user.organization} 조직의 사용자 역할 및 권한을 관리합니다.`}
+        action={
+          <Button onClick={() => setIsCreateDialogOpen(true)}>
+            <UserPlus className="w-4 h-4 mr-2" />
+            새 역할
+          </Button>
+        }
+      />
 
       {/* 조직 정보 */}
-      <Card>
+      <Card className="mt-6">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Building2 className="w-5 h-5" />
@@ -414,7 +412,7 @@ export default function SettingsRolesPage() {
       </Card>
 
       {/* 역할 목록 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {roles.map((role) => (
           <Card key={role.id} className="hover:shadow-md transition-shadow">
             <CardHeader>
@@ -618,6 +616,6 @@ export default function SettingsRolesPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </PageContainer>
   );
 }

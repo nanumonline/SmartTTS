@@ -25,6 +25,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import * as dbService from "@/services/dbService";
 import { formatDateTime } from "@/lib/pageUtils";
 import { getVoiceDisplayNameKo } from "@/lib/voiceNames";
+import PageContainer from "@/components/layout/PageContainer";
 
 interface OverviewStats {
   totalBroadcasts: number;
@@ -350,7 +351,7 @@ const Analytics = () => {
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
       {/* Header */}
       <div className="border-b border-border bg-background/80 backdrop-blur-lg">
-        <div className="container mx-auto px-4 py-6">
+        <PageContainer maxWidth="wide">
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold gradient-text">통계 및 분석</h1>
@@ -385,10 +386,10 @@ const Analytics = () => {
               </Button>
             </div>
           </div>
-        </div>
+        </PageContainer>
       </div>
 
-      <div className="container mx-auto px-4 py-8">
+      <PageContainer maxWidth="wide" className="py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="overview">개요</TabsTrigger>
@@ -408,10 +409,10 @@ const Analytics = () => {
                       <p className="text-sm font-medium text-muted-foreground">총 방송 수</p>
                       <p className="text-2xl font-bold">{overviewStats.totalBroadcasts}</p>
                       {overviewStats.monthlyGrowth > 0 && (
-                        <div className="flex items-center gap-1 mt-1">
-                          <TrendingUp className="w-4 h-4 text-green-500" />
-                          <span className="text-sm text-green-500">+{overviewStats.monthlyGrowth}%</span>
-                        </div>
+                      <div className="flex items-center gap-1 mt-1">
+                        <TrendingUp className="w-4 h-4 text-green-500" />
+                        <span className="text-sm text-green-500">+{overviewStats.monthlyGrowth}%</span>
+                      </div>
                       )}
                     </div>
                     <div className="w-12 h-12 bg-blue-50 dark:bg-blue-500/10 rounded-lg flex items-center justify-center">
@@ -428,10 +429,10 @@ const Analytics = () => {
                       <p className="text-sm font-medium text-muted-foreground">총 방송 시간</p>
                       <p className="text-2xl font-bold">{overviewStats.totalDuration}분</p>
                       {overviewStats.weeklyGrowth > 0 && (
-                        <div className="flex items-center gap-1 mt-1">
-                          <TrendingUp className="w-4 h-4 text-green-500" />
-                          <span className="text-sm text-green-500">+{overviewStats.weeklyGrowth}%</span>
-                        </div>
+                      <div className="flex items-center gap-1 mt-1">
+                        <TrendingUp className="w-4 h-4 text-green-500" />
+                        <span className="text-sm text-green-500">+{overviewStats.weeklyGrowth}%</span>
+                      </div>
                       )}
                     </div>
                     <div className="w-12 h-12 bg-green-50 dark:bg-green-500/10 rounded-lg flex items-center justify-center">
@@ -484,24 +485,24 @@ const Analytics = () => {
                 </CardHeader>
                 <CardContent>
                   {hourlyStats.length > 0 ? (
-                    <div className="space-y-3">
+                  <div className="space-y-3">
                       {hourlyStats.map((stat) => {
                         const maxBroadcasts = Math.max(...hourlyStats.map(s => s.broadcasts));
                         return (
-                          <div key={stat.hour} className="flex items-center gap-3">
-                            <div className="w-16 text-sm text-muted-foreground">{stat.hour}</div>
-                            <div className="flex-1">
+                      <div key={stat.hour} className="flex items-center gap-3">
+                        <div className="w-16 text-sm text-muted-foreground">{stat.hour}</div>
+                        <div className="flex-1">
                               <Progress value={(stat.broadcasts / maxBroadcasts) * 100} className="h-2" />
-                            </div>
-                            <div className="w-8 text-sm font-medium">{stat.broadcasts}</div>
-                          </div>
+                        </div>
+                        <div className="w-8 text-sm font-medium">{stat.broadcasts}</div>
+                      </div>
                         );
                       })}
                     </div>
                   ) : (
                     <div className="text-center py-8 text-muted-foreground">
                       시간대별 데이터가 없습니다
-                    </div>
+                  </div>
                   )}
                 </CardContent>
               </Card>
@@ -518,24 +519,24 @@ const Analytics = () => {
                 </CardHeader>
                 <CardContent>
                   {weeklyStats.some(s => s.broadcasts > 0) ? (
-                    <div className="space-y-3">
+                  <div className="space-y-3">
                       {weeklyStats.map((stat) => {
                         const maxBroadcasts = Math.max(...weeklyStats.map(s => s.broadcasts));
                         return (
-                          <div key={stat.day} className="flex items-center gap-3">
-                            <div className="w-8 text-sm text-muted-foreground">{stat.day}</div>
-                            <div className="flex-1">
+                      <div key={stat.day} className="flex items-center gap-3">
+                        <div className="w-8 text-sm text-muted-foreground">{stat.day}</div>
+                        <div className="flex-1">
                               <Progress value={maxBroadcasts > 0 ? (stat.broadcasts / maxBroadcasts) * 100 : 0} className="h-2" />
-                            </div>
-                            <div className="w-8 text-sm font-medium">{stat.broadcasts}</div>
-                          </div>
+                        </div>
+                        <div className="w-8 text-sm font-medium">{stat.broadcasts}</div>
+                      </div>
                         );
                       })}
                     </div>
                   ) : (
                     <div className="text-center py-8 text-muted-foreground">
                       요일별 데이터가 없습니다
-                    </div>
+                  </div>
                   )}
                 </CardContent>
               </Card>
@@ -556,31 +557,31 @@ const Analytics = () => {
               </CardHeader>
               <CardContent>
                 {voiceStats.length > 0 ? (
-                  <div className="space-y-4">
-                    {voiceStats.map((stat) => (
-                      <div key={stat.voice} className="flex items-center gap-4 p-4 border rounded-lg">
-                        <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
-                          <Volume2 className="w-6 h-6 text-primary" />
-                        </div>
-                        <div className="flex-1">
-                          <h3 className="font-medium">{stat.voice}</h3>
-                          <div className="flex items-center gap-4 mt-1">
-                            <span className="text-sm text-muted-foreground">{stat.usage}회 사용</span>
-                            <span className="text-sm text-muted-foreground">{stat.percentage}%</span>
-                            <div className="flex items-center gap-1">
-                              {getTrendIcon(stat.trend)}
-                              <span className="text-sm text-muted-foreground">
-                                {stat.trend === 'up' ? '증가' : stat.trend === 'down' ? '감소' : '안정'}
-                              </span>
-                            </div>
+                <div className="space-y-4">
+                  {voiceStats.map((stat) => (
+                    <div key={stat.voice} className="flex items-center gap-4 p-4 border rounded-lg">
+                      <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
+                        <Volume2 className="w-6 h-6 text-primary" />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="font-medium">{stat.voice}</h3>
+                        <div className="flex items-center gap-4 mt-1">
+                          <span className="text-sm text-muted-foreground">{stat.usage}회 사용</span>
+                          <span className="text-sm text-muted-foreground">{stat.percentage}%</span>
+                          <div className="flex items-center gap-1">
+                            {getTrendIcon(stat.trend)}
+                            <span className="text-sm text-muted-foreground">
+                              {stat.trend === 'up' ? '증가' : stat.trend === 'down' ? '감소' : '안정'}
+                            </span>
                           </div>
                         </div>
-                        <div className="w-32">
-                          <Progress value={stat.percentage} className="h-2" />
-                        </div>
                       </div>
-                    ))}
-                  </div>
+                      <div className="w-32">
+                        <Progress value={stat.percentage} className="h-2" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
                 ) : (
                   <div className="text-center py-8 text-muted-foreground">
                     화자 사용 데이터가 없습니다
@@ -654,7 +655,7 @@ const Analytics = () => {
               <CardContent>
                 {recentActivities.length > 0 ? (
                   <div className="space-y-2">
-                    {recentActivities.map((activity) => (
+                  {recentActivities.map((activity) => (
                       <div key={activity.id} className="flex items-center gap-2 p-2 border rounded-lg hover:bg-muted/50 transition-colors">
                         <div className="w-6 h-6 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
                           <span className={cn(
@@ -715,10 +716,10 @@ const Analytics = () => {
                               </>
                             )}
                           </div>
-                        </div>
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  ))}
+                </div>
                 ) : (
                   <div className="text-center py-8 text-xs text-muted-foreground">
                     활동 로그가 없습니다
@@ -728,7 +729,7 @@ const Analytics = () => {
             </Card>
           </TabsContent>
         </Tabs>
-      </div>
+      </PageContainer>
     </div>
   );
 };

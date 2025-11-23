@@ -10,6 +10,8 @@ import * as dbService from "@/services/dbService";
 import { formatDateTime, purposeOptions } from "@/lib/pageUtils";
 import { getPurposeColor } from "@/lib/categoryColors";
 import { cn } from "@/lib/utils";
+import PageContainer from "@/components/layout/PageContainer";
+import PageHeader from "@/components/layout/PageHeader";
 
 interface EnhancedSchedule extends dbService.ScheduleRequestEntry {
   generationName?: string;
@@ -125,14 +127,11 @@ export default function ReportsSendsPage() {
   }, [timeRange]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">전송 리포트</h1>
-          <p className="text-muted-foreground mt-1">
-            전송 통계 및 내역을 확인합니다.
-          </p>
-        </div>
+    <PageContainer maxWidth="wide">
+      <PageHeader
+        title="전송 리포트"
+        description="전송 통계 및 내역을 확인합니다."
+        action={
         <div className="flex items-center gap-2">
           <Select value={String(itemsPerPage)} onValueChange={(v) => {
             setItemsPerPage(Number(v));
@@ -159,11 +158,12 @@ export default function ReportsSendsPage() {
               <SelectItem value="all">전체</SelectItem>
             </SelectContent>
           </Select>
-        </div>
-      </div>
+          </div>
+        }
+      />
 
       {/* 통계 카드 */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 xl:grid-cols-6 gap-4 mt-6">
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -367,6 +367,6 @@ export default function ReportsSendsPage() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </PageContainer>
   );
 }

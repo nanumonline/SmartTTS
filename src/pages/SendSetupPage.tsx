@@ -11,6 +11,8 @@ import { Radio, Settings, Save, TestTube } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import * as dbService from "@/services/dbService";
 import { useToast } from "@/components/ui/use-toast";
+import PageContainer from "@/components/layout/PageContainer";
+import PageHeader from "@/components/layout/PageHeader";
 
 export default function SendSetupPage() {
   const { user } = useAuth();
@@ -139,17 +141,13 @@ export default function SendSetupPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">전송 설정</h1>
-          <p className="text-muted-foreground mt-1">
-            전송 채널 및 설정을 관리합니다.
-          </p>
-        </div>
-      </div>
+    <PageContainer maxWidth="wide">
+      <PageHeader
+        title="전송 설정"
+        description="전송 채널 및 설정을 관리합니다."
+      />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 xl:grid-cols-4 gap-6 mt-6">
         {/* 채널 목록 */}
         <div className="lg:col-span-1">
           <Card>
@@ -325,6 +323,6 @@ export default function SendSetupPage() {
           </Card>
         </div>
       </div>
-    </div>
+    </PageContainer>
   );
 }
