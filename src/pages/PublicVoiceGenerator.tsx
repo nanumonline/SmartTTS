@@ -310,6 +310,34 @@ const PublicVoiceGenerator = () => {
       return next;
     });
   }, [generationHistory]);
+
+  // 음성 찾기 모달에서 샘플 미리듣기 재생
+  useEffect(() => {
+    if (playingSample && audioSampleRef.current && isVoiceFinderOpen) {
+      const audio = audioSampleRef.current;
+      
+      // 오디오 로드 후 재생
+      const handleCanPlay = () => {
+        audio.play().catch((error) => {
+          console.error("샘플 재생 실패:", error);
+          // 사용자 상호작용이 필요한 경우 무시 (모달 내부 클릭은 상호작용으로 간주)
+        });
+      };
+      
+      // 이미 로드된 경우 바로 재생
+      if (audio.readyState >= 2) {
+        audio.play().catch((error) => {
+          console.error("샘플 재생 실패:", error);
+        });
+      } else {
+        audio.addEventListener("canplay", handleCanPlay, { once: true });
+      }
+      
+      return () => {
+        audio.removeEventListener("canplay", handleCanPlay);
+      };
+    }
+  }, [playingSample, isVoiceFinderOpen]);
   
   useEffect(() => {
     return () => {
@@ -7013,7 +7041,7 @@ const PublicVoiceGenerator = () => {
                                 size="sm"
                                   variant="ghost"
                                   className="landio-button hover:bg-gray-800"
-                                  onClick={() => {
+                                  onClick={async () => {
                                     const sampleUrl = getPreferredSampleUrl(voice);
                                     if (sampleUrl) {
                                       // 같은 샘플이면 정지
@@ -7032,8 +7060,25 @@ const PublicVoiceGenerator = () => {
                                         audioSampleRef.current.currentTime = 0;
                                       }
                                       
-                                      // 새 샘플 설정 (useEffect에서 자동으로 재생됨)
+                                      // 새 샘플 설정
                                       setPlayingSample(sampleUrl);
+                                      
+                                      // 오디오 재생 (사용자 상호작용 컨텍스트 내에서)
+                                      setTimeout(() => {
+                                        if (audioSampleRef.current && audioSampleRef.current.src) {
+                                          audioSampleRef.current.play().catch((error) => {
+                                            console.error("[VoiceFinder] 샘플 재생 실패:", error);
+                                            // 재생 실패 시 src 재설정 후 재시도
+                                            if (audioSampleRef.current) {
+                                              audioSampleRef.current.src = sampleUrl;
+                                              audioSampleRef.current.load();
+                                              audioSampleRef.current.play().catch((err) => {
+                                                console.error("[VoiceFinder] 샘플 재생 재시도 실패:", err);
+                                              });
+                                            }
+                                          });
+                                        }
+                                      }, 100);
                                     } else {
                                       toast({ title: "샘플 없음", description: "이 음성은 샘플 오디오가 없습니다.", variant: "destructive" });
                                     }
@@ -7089,10 +7134,19 @@ const PublicVoiceGenerator = () => {
               <audio
                 ref={audioSampleRef}
                 src={playingSample || undefined}
+                autoPlay={!!playingSample}
                 onEnded={() => {
                   setPlayingSample(null);
                   if (audioSampleRef.current) {
                     audioSampleRef.current.currentTime = 0;
+                  }
+                }}
+                onLoadedData={() => {
+                  // 오디오가 로드되면 재생 시도
+                  if (audioSampleRef.current && playingSample) {
+                    audioSampleRef.current.play().catch((error) => {
+                      console.warn("[VoiceFinder] 자동 재생 실패 (사용자 상호작용 필요할 수 있음):", error);
+                    });
                   }
                 }}
                 onError={(event) => {

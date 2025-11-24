@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AppShell from "@/components/layout/AppShell";
+import GoogleAnalytics from "@/components/GoogleAnalytics";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -35,6 +36,8 @@ import ScriptsTemplatesPage from "./pages/ScriptsTemplatesPage";
 import MessageManagementPage from "./pages/MessageManagementPage";
 import MessageTemplatePage from "./pages/MessageTemplatePage";
 import EmergencyBroadcastPage from "./pages/EmergencyBroadcastPage";
+import HealthCheckPage from "./pages/HealthCheckPage";
+import GenerateSamplesPage from "./pages/GenerateSamplesPage";
 
 const queryClient = new QueryClient();
 
@@ -45,6 +48,7 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
+          <GoogleAnalytics />
           <Routes>
             {/* Public Routes */}
             <Route path="/" element={<Index />} />
@@ -232,6 +236,30 @@ const App = () => (
                 <ProtectedRoute>
                   <AppShell>
                     <ManageJobsPage />
+                  </AppShell>
+                </ProtectedRoute>
+              } 
+            />
+            
+            {/* 시스템 헬스체크 */}
+            <Route
+              path="/health" 
+              element={
+                <ProtectedRoute>
+                  <AppShell>
+                    <HealthCheckPage />
+                  </AppShell>
+                </ProtectedRoute>
+              } 
+            />
+            
+            {/* 샘플 생성 (개발용) */}
+            <Route
+              path="/generate-samples" 
+              element={
+                <ProtectedRoute>
+                  <AppShell>
+                    <GenerateSamplesPage />
                   </AppShell>
                 </ProtectedRoute>
               } 

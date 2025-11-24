@@ -5,6 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useToast } from "@/components/ui/use-toast";
 import HomeButton from "@/components/HomeButton";
 import { 
   Mic2, 
@@ -24,6 +26,9 @@ import {
 const Pricing = () => {
   const [isAnnual, setIsAnnual] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState("standard");
+  const [isEmailDialogOpen, setIsEmailDialogOpen] = useState(false);
+  const [emailInfo, setEmailInfo] = useState<{ email: string; subject: string; body: string } | null>(null);
+  const { toast } = useToast();
 
   const plans = [
     {
@@ -38,7 +43,6 @@ const Pricing = () => {
       tagline: "매일 공지사항 1개씩! 만들 수 있어요!",
       features: [
         "모든 음성 이용 가능",
-        "보이스 클로닝 무제한 사용",
         "무제한 다운로드",
         "상업적 이용 가능"
       ],
@@ -65,7 +69,6 @@ const Pricing = () => {
       tagline: "공지사항과 정책발표 모두 만드는 공공기관들에게 인기!",
       features: [
         "모든 음성 이용 가능",
-        "보이스 클로닝 무제한 사용",
         "무제한 다운로드",
         "단어 및 문장 간격 조절 가능",
         "상업적 이용 가능"
@@ -93,7 +96,6 @@ const Pricing = () => {
       tagline: "본격 전문 공공기관을 위한 추천",
       features: [
         "모든 음성 이용 가능",
-        "보이스 클로닝 무제한 사용",
         "무제한 다운로드",
         "단어 및 문장 간격 조절 가능",
         "상업적 이용 가능"
@@ -183,9 +185,8 @@ const Pricing = () => {
   const handleInquiry = (planId: string) => {
     const plan = plans.find(p => p.id === planId);
     if (plan) {
-      const subject = encodeURIComponent(`[Smart TTS] ${plan.name} 플랜 문의`);
-      const body = encodeURIComponent(`
-안녕하세요.
+      const subject = `[Smart TTS] ${plan.name} 플랜 문의`;
+      const body = `안녕하세요.
 
 ${plan.name} 플랜에 대해 문의드립니다.
 
@@ -200,12 +201,56 @@ ${plan.name} 플랜에 대해 문의드립니다.
 
 ※ 관공서 특성상 영업담당자와 상담 후 세금계산서 발행 후 입금 형태로 진행됩니다.
 
-감사합니다.
-      `);
-      
-      const mailtoLink = `mailto:june@nanumlab.com?subject=${subject}&body=${body}`;
-      window.open(mailtoLink);
+감사합니다.`;
+
+      // 이메일 정보 저장
+      setEmailInfo({
+        email: "june@nanumlab.com",
+        subject,
+        body,
+      });
+
+      // 다이얼로그 열기
+      setIsEmailDialogOpen(true);
     }
+  };
+
+  const handleCopyEmail = () => {
+    if (!emailInfo) return;
+
+    const emailText = `받는 사람: ${emailInfo.email}\n제목: ${emailInfo.subject}\n\n${emailInfo.body}`;
+    
+    navigator.clipboard.writeText(emailText).then(() => {
+      toast({
+        title: "복사 완료",
+        description: "이메일 내용이 클립보드에 복사되었습니다. 이메일 클라이언트에 붙여넣어 보내주세요.",
+      });
+    }).catch(() => {
+      toast({
+        title: "복사 실패",
+        description: "클립보드 복사에 실패했습니다. 아래 내용을 직접 복사해주세요.",
+        variant: "destructive",
+      });
+    });
+  };
+
+  const handleOpenMailto = () => {
+    if (!emailInfo) return;
+
+    const subject = encodeURIComponent(emailInfo.subject);
+    const body = encodeURIComponent(emailInfo.body);
+    const mailtoLink = `mailto:${emailInfo.email}?subject=${subject}&body=${body}`;
+    
+    // <a> 태그를 동적으로 생성하여 클릭
+    const link = document.createElement("a");
+    link.href = mailtoLink;
+    link.target = "_blank";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    // 다이얼로그 닫기
+    setIsEmailDialogOpen(false);
   };
 
   return (
@@ -484,6 +529,66 @@ ${plan.name} 플랜에 대해 문의드립니다.
           </div>
         </div>
       </div>
+
+      {/* 이메일 문의 다이얼로그 */}
+      <Dialog open={isEmailDialogOpen} onOpenChange={setIsEmailDialogOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>이메일로 문의하기</DialogTitle>
+            <DialogDescription>
+              아래 이메일 주소로 문의해주세요. 이메일 내용을 복사하거나 이메일 클라이언트를 열 수 있습니다.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {emailInfo && (
+            <div className="space-y-4">
+              <div>
+                <Label className="text-sm font-medium">받는 사람</Label>
+                <div className="mt-1 p-3 bg-muted rounded-lg font-mono text-sm">
+                  {emailInfo.email}
+                </div>
+              </div>
+              
+              <div>
+                <Label className="text-sm font-medium">제목</Label>
+                <div className="mt-1 p-3 bg-muted rounded-lg text-sm">
+                  {emailInfo.subject}
+                </div>
+              </div>
+              
+              <div>
+                <Label className="text-sm font-medium">본문</Label>
+                <div className="mt-1 p-3 bg-muted rounded-lg text-sm whitespace-pre-wrap max-h-60 overflow-y-auto">
+                  {emailInfo.body}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              variant="outline"
+              onClick={handleCopyEmail}
+              className="w-full sm:w-auto"
+            >
+              내용 복사
+            </Button>
+            <Button
+              onClick={handleOpenMailto}
+              className="w-full sm:w-auto"
+            >
+              이메일 클라이언트 열기
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => setIsEmailDialogOpen(false)}
+              className="w-full sm:w-auto"
+            >
+              닫기
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
