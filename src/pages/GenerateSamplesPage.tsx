@@ -135,7 +135,7 @@ export default function GenerateSamplesPage() {
         // 먼저 DB에서 로드 시도 (빠른 로드)
         let dbVoices: any[] = [];
         try {
-          const { loadVoiceCatalog } = await import("@/services/dbService");
+          const { loadVoiceCatalog, syncVoiceCatalog } = await import("@/services/dbService");
           dbVoices = await loadVoiceCatalog();
           console.log("[GenerateSamplesPage] DB에서 음성 로드 시도:", dbVoices.length);
         } catch (dbError) {
@@ -280,6 +280,7 @@ export default function GenerateSamplesPage() {
         // DB에 동기화 (에러가 발생해도 계속 진행)
         if (allVoicesData.length > 0) {
           try {
+            const { syncVoiceCatalog } = await import("@/services/dbService");
             await syncVoiceCatalog(allVoicesData, true);
             console.log("[GenerateSamplesPage] DB 동기화 완료");
           } catch (syncError) {
