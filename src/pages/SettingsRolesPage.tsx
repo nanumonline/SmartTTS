@@ -103,8 +103,9 @@ export default function SettingsRolesPage() {
             .eq("user_id", profile.id)
             .maybeSingle();
 
-          const role = settings?.preferences?.role || "viewer";
-          const permissions = settings?.preferences?.permissions || ["view"];
+          const preferences = settings?.preferences as { role?: string; permissions?: string[] } | null;
+          const role = preferences?.role || "viewer";
+          const permissions = preferences?.permissions || ["view"];
 
           // 현재 세션의 사용자 이메일은 auth.getUser()로 가져올 수 있지만,
           // 다른 사용자의 이메일은 RLS 정책 때문에 가져올 수 없습니다.
