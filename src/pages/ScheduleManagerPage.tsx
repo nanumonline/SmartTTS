@@ -412,8 +412,35 @@ export default function ScheduleManagerPage() {
       const selectedChannel = channels.find(
         (ch) => ch.id === newSchedule.targetChannel || ch.type === newSchedule.targetChannel
       );
-      const channelConfig = (selectedChannel as any)?.config || {};
-      const channelBroadcastType = channelConfig.broadcastType || "public";
+      
+      if (!selectedChannel) {
+        toast({
+          title: "채널을 찾을 수 없습니다",
+          description: "선택한 채널을 찾을 수 없습니다. 다시 선택해주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      // 채널 설정 가져오기 (여러 방법으로 시도)
+      const channelConfig = (selectedChannel as any)?.config || 
+                           (selectedChannel as any)?.settings || 
+                           {};
+      const channelBroadcastType = channelConfig.broadcastType || 
+                                  (selectedChannel as any)?.broadcastType || 
+                                  "public";
+      
+      // 디버깅: 채널 설정 정보 로그
+      console.log("[ScheduleManagerPage] 채널 설정 확인:", {
+        selectedChannel: {
+          id: selectedChannel.id,
+          name: selectedChannel.name,
+          type: selectedChannel.type,
+        },
+        channelConfig,
+        channelBroadcastType,
+        hasDevices: Array.isArray(channelConfig.devices) && channelConfig.devices.length > 0,
+      });
       
       // 송출 타입에 따른 정보 설정
       let isPlayerBroadcast = false;
@@ -428,6 +455,20 @@ export default function ScheduleManagerPage() {
         targetDevices = registeredDevices
           .filter((device: any) => device?.id && device?.token)
           .map((device: any) => device.id);
+        
+        if (targetDevices.length === 0) {
+          toast({
+            title: "디바이스가 등록되지 않았습니다",
+            description: "선택한 채널에 등록된 디바이스가 없습니다. 전송 설정 페이지에서 디바이스를 등록해주세요.",
+            variant: "destructive",
+          });
+          return;
+        }
+        
+        console.log("[ScheduleManagerPage] 디바이스ID/채널ID 송출 모드:", {
+          targetDevices,
+          deviceCount: targetDevices.length,
+        });
       } else {
         // Public 송출 모드
         isPlayerBroadcast = false;
@@ -438,6 +479,10 @@ export default function ScheduleManagerPage() {
           categoryCode: user?.department || user?.organization || "",
           memo: "",
         };
+        
+        console.log("[ScheduleManagerPage] Public 송출 모드:", {
+          customerInfo,
+        });
       }
       
       // 반복 옵션에 따라 스케줄 생성
@@ -458,7 +503,7 @@ export default function ScheduleManagerPage() {
           conflictTimes.push({ date: conflictDate, time: conflictTime });
           // 중복된 스케줄은 추가하지 않음 (continue 대신 조건문으로 처리)
         } else {
-          schedulesToCreate.push({
+          const scheduleEntry: any = {
             generationId: newSchedule.generationId,
             targetChannel: newSchedule.targetChannel,
             scheduledTime: scheduleISO,
@@ -467,9 +512,15 @@ export default function ScheduleManagerPage() {
             scheduleName: newSchedule.scheduleName,
             scheduleType: newSchedule.scheduleType,
             isPlayerBroadcast,
-            targetDevices,
-            customerInfo,
-          } as any);
+          };
+          
+          if (isPlayerBroadcast && targetDevices && targetDevices.length > 0) {
+            scheduleEntry.targetDevices = targetDevices;
+          } else if (!isPlayerBroadcast && customerInfo) {
+            scheduleEntry.customerInfo = customerInfo;
+          }
+          
+          schedulesToCreate.push(scheduleEntry);
         }
       } else {
         // 반복 옵션이 있는 경우: 시작일부터 종료일까지 반복
@@ -514,7 +565,7 @@ export default function ScheduleManagerPage() {
               continue; // 중복된 스케줄은 추가하지 않음
             }
             
-            schedulesToCreate.push({
+            const scheduleEntry: any = {
               generationId: newSchedule.generationId,
               targetChannel: newSchedule.targetChannel,
               scheduledTime: scheduleISO,
@@ -523,9 +574,26 @@ export default function ScheduleManagerPage() {
               scheduleName: newSchedule.scheduleName,
               scheduleType: newSchedule.scheduleType,
               isPlayerBroadcast,
-              targetDevices,
-              customerInfo,
-            } as any);
+            };
+            
+            // 디바이스ID/채널ID 송출 모드인 경우 targetDevices 추가
+            if (isPlayerBroadcast && targetDevices && targetDevices.length > 0) {
+              scheduleEntry.targetDevices = targetDevices;
+              console.log("[ScheduleManagerPage] 스케줄 생성 (디바이스ID/채널ID 송출):", {
+                scheduleName: newSchedule.scheduleName,
+                targetDevices,
+                deviceCount: targetDevices.length,
+              });
+            } else if (!isPlayerBroadcast && customerInfo) {
+              // Public 송출 모드인 경우 customerInfo 추가
+              scheduleEntry.customerInfo = customerInfo;
+              console.log("[ScheduleManagerPage] 스케줄 생성 (Public 송출):", {
+                scheduleName: newSchedule.scheduleName,
+                customerInfo,
+              });
+            }
+            
+            schedulesToCreate.push(scheduleEntry);
           } else {
             // 여러 번 전송: 하루를 균등하게 분할
             const intervalMinutes = Math.floor((24 * 60) / newSchedule.timesPerDay);
@@ -545,18 +613,24 @@ export default function ScheduleManagerPage() {
                 continue; // 중복된 스케줄은 추가하지 않음
               }
               
-              schedulesToCreate.push({
-                generationId: newSchedule.generationId,
-                targetChannel: newSchedule.targetChannel,
-                scheduledTime: scheduleISO,
-                repeatOption: newSchedule.repeatOption,
-                status: "scheduled",
-                scheduleName: newSchedule.scheduleName,
-                scheduleType: newSchedule.scheduleType,
-                isPlayerBroadcast,
-                targetDevices,
-                customerInfo,
-              } as any);
+            const scheduleEntry: any = {
+              generationId: newSchedule.generationId,
+              targetChannel: newSchedule.targetChannel,
+              scheduledTime: scheduleISO,
+              repeatOption: newSchedule.repeatOption,
+              status: "scheduled",
+              scheduleName: newSchedule.scheduleName,
+              scheduleType: newSchedule.scheduleType,
+              isPlayerBroadcast,
+            };
+            
+            if (isPlayerBroadcast && targetDevices && targetDevices.length > 0) {
+              scheduleEntry.targetDevices = targetDevices;
+            } else if (!isPlayerBroadcast && customerInfo) {
+              scheduleEntry.customerInfo = customerInfo;
+            }
+            
+            schedulesToCreate.push(scheduleEntry);
             }
           }
         }

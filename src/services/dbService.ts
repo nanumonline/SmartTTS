@@ -1183,9 +1183,10 @@ export async function saveScheduleRequest(userId: string, request: ScheduleReque
     if (request.isPlayerBroadcast !== undefined) {
       baseData.is_player_broadcast = request.isPlayerBroadcast;
     }
-    if (request.targetDevices && Array.isArray(request.targetDevices) && request.targetDevices.length > 0) {
-      baseData.target_devices = request.targetDevices;
-    }
+    // target_devices는 나중에 별도로 처리 (컬럼이 없을 수 있음)
+    // if (request.targetDevices && Array.isArray(request.targetDevices) && request.targetDevices.length > 0) {
+    //   baseData.target_devices = request.targetDevices;
+    // }
     if (request.customerInfo) {
       baseData.customer_id = request.customerInfo.customerId || null;
       baseData.customer_name = request.customerInfo.customerName || null;
@@ -1193,46 +1194,136 @@ export async function saveScheduleRequest(userId: string, request: ScheduleReque
       baseData.memo = request.customerInfo.memo || null;
     }
 
-    const { data, error } = await supabase
+    // 먼저 target_devices를 제외하고 insert 시도
+    let { data, error } = await supabase
       .from("tts_schedule_requests")
       .insert(baseData)
       .select("id")
       .single();
 
-    if (error) {
-      // 컬럼이 없는 경우 (42703) 또는 테이블이 없는 경우 (PGRST205)는 조용히 처리
-      if (error.code === "PGRST205" || error.code === "42703" || error.message?.includes("schema cache") || error.message?.includes("does not exist")) {
-        // schedule_name이나 schedule_type 컬럼이 없으면 기본 필드만으로 재시도
-        if (error.message?.includes("schedule_name") || error.message?.includes("schedule_type")) {
-          const fallbackData: any = {
-            user_id: userId,
-            generation_id: request.generationId,
-            target_channel: request.targetChannel,
-            scheduled_time: request.scheduledTime,
-            repeat_option: request.repeatOption || "once",
-            status: request.status || "scheduled",
-          };
-          if (request.targetName) fallbackData.target_name = request.targetName;
-          if (request.sentAt) fallbackData.sent_at = request.sentAt;
-          if (request.failReason) fallbackData.fail_reason = request.failReason;
-          if (request.mixingState) fallbackData.mixing_state = request.mixingState;
-
-          const { data: fallbackResult, error: fallbackError } = await supabase
+    // target_devices 컬럼이 있는 경우에만 업데이트 시도 (실패해도 무시)
+    // 주의: target_devices 컬럼이 없을 수 있으므로 에러를 무시하고 계속 진행
+    if (!error && data?.id && request.targetDevices && Array.isArray(request.targetDevices) && request.targetDevices.length > 0) {
+      // 비동기로 실행하되 에러는 완전히 무시
+      (async () => {
+        try {
+          const updateResult = await supabase
             .from("tts_schedule_requests")
-            .insert(fallbackData)
+            .update({ target_devices: request.targetDevices })
+            .eq("id", data.id)
             .select("id")
             .single();
-
-          if (fallbackError) {
-            if (fallbackError.code === "PGRST205" || fallbackError.code === "42703") {
-              return null;
+          
+          if (updateResult.error) {
+            // 모든 업데이트 에러는 조용히 무시 (스케줄 생성은 이미 성공)
+            const isSchemaError = updateResult.error.code === "PGRST204" || 
+                                 updateResult.error.code === "42703" ||
+                                 updateResult.error.code === "400" ||
+                                 updateResult.error.message?.includes("target_devices") ||
+                                 updateResult.error.message?.includes("column") ||
+                                 updateResult.error.message?.includes("does not exist");
+            
+            if (isSchemaError) {
+              // 스키마 오류는 조용히 무시 (정상적인 상황)
+              console.debug("[saveScheduleRequest] target_devices 컬럼이 없어 업데이트 건너뜀 (정상)");
+            } else {
+              // 기타 에러는 경고만 출력
+              console.warn("[saveScheduleRequest] target_devices 업데이트 실패 (무시):", updateResult.error.message);
             }
-            throw fallbackError;
           }
-          return fallbackResult?.id || null;
+        } catch (updateError: any) {
+          // 모든 예외는 조용히 무시
+          console.debug("[saveScheduleRequest] target_devices 업데이트 예외 발생 (무시):", updateError?.message || updateError);
         }
-        return null;
+      })().catch(() => {
+        // Promise rejection도 무시
+      });
+    }
+
+    // 스키마 오류 발생 시 점진적으로 필드 제거하며 재시도
+    if (error && (error.code === "PGRST204" || error.code === "PGRST205" || error.code === "42703" || error.message?.includes("schema cache") || error.message?.includes("does not exist") || error.message?.includes("column"))) {
+      console.warn("[saveScheduleRequest] 스키마 오류 발생, 선택적 필드를 제외하고 재시도:", error.message);
+      
+      // 1차 재시도: 고객 정보 필드 제외
+      let retryData: any = {
+        user_id: userId,
+        generation_id: request.generationId,
+        target_channel: request.targetChannel,
+        scheduled_time: request.scheduledTime,
+        repeat_option: request.repeatOption || "once",
+        status: request.status || "scheduled",
+      };
+      
+      if (request.targetName) retryData.target_name = request.targetName;
+      if (request.sentAt) retryData.sent_at = request.sentAt;
+      if (request.failReason) retryData.fail_reason = request.failReason;
+      if (request.mixingState) retryData.mixing_state = request.mixingState;
+      if ((request as any).scheduleName) retryData.schedule_name = (request as any).scheduleName;
+      if ((request as any).scheduleType) retryData.schedule_type = (request as any).scheduleType;
+      if (request.isPlayerBroadcast !== undefined) retryData.is_player_broadcast = request.isPlayerBroadcast;
+      
+      let retryResult = await supabase
+        .from("tts_schedule_requests")
+        .insert(retryData)
+        .select("id")
+        .single();
+      
+      if (retryResult.error && (retryResult.error.code === "PGRST204" || retryResult.error.message?.includes("column"))) {
+        console.warn("[saveScheduleRequest] 1차 재시도 실패, 필수 필드만으로 재시도:", retryResult.error.message);
+        
+        // 2차 재시도: 필수 필드만
+        retryData = {
+          user_id: userId,
+          generation_id: request.generationId,
+          target_channel: request.targetChannel,
+          scheduled_time: request.scheduledTime,
+          repeat_option: request.repeatOption || "once",
+          status: request.status || "scheduled",
+        };
+        
+        retryResult = await supabase
+          .from("tts_schedule_requests")
+          .insert(retryData)
+          .select("id")
+          .single();
       }
+      
+      if (retryResult.error) {
+        if (retryResult.error.code === "PGRST205" || retryResult.error.code === "42703") {
+          return null;
+        }
+        throw retryResult.error;
+      }
+      
+      // 재시도 성공 시 target_devices 업데이트 시도 (비동기로 실행, 실패해도 무시)
+      if (retryResult.data && retryResult.data.id && request.targetDevices && Array.isArray(request.targetDevices) && request.targetDevices.length > 0) {
+        // 비동기로 실행하되 에러는 완전히 무시
+        (async () => {
+          try {
+            const updateResult = await supabase
+              .from("tts_schedule_requests")
+              .update({ target_devices: request.targetDevices })
+              .eq("id", retryResult.data.id)
+              .select("id")
+              .single();
+            
+            if (updateResult.error) {
+              // 모든 업데이트 에러는 조용히 무시
+              console.debug("[saveScheduleRequest] target_devices 업데이트 실패 (무시)");
+            }
+          } catch (updateError: any) {
+            // 모든 예외는 조용히 무시
+            console.debug("[saveScheduleRequest] target_devices 업데이트 예외 발생 (무시)");
+          }
+        })().catch(() => {
+          // Promise rejection도 무시
+        });
+      }
+      
+      return retryResult.data?.id || null;
+    }
+
+    if (error) {
       throw error;
     }
     return data?.id || null;

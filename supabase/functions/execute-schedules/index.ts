@@ -97,7 +97,7 @@ serve(async (req) => {
     // 주의: 시간 범위는 넓게 잡되, 실제 실행 시에는 스케줄 시간을 정확히 확인함
     const { data: schedules, error: scheduleError } = await supabaseClient
       .from("tts_schedule_requests")
-      .select("*")
+      .select("*, is_player_broadcast, target_devices, customer_id, customer_name, category_code, memo")
       .eq("status", "scheduled")
       .gte("scheduled_time", timeWindowStart)
       .lte("scheduled_time", timeWindowEnd)
@@ -619,19 +619,54 @@ serve(async (req) => {
           const registeredDevices = normalizeDeviceList(config);
 
           // 스케줄에서 송출 타입 확인
-          const isPlayerBroadcast = (schedule as any).is_player_broadcast === true;
+          // is_player_broadcast가 true이고 target_devices가 있는 경우에만 디바이스 송출
+          const rawIsPlayerBroadcast = (schedule as any).is_player_broadcast;
+          const isPlayerBroadcast = rawIsPlayerBroadcast === true || rawIsPlayerBroadcast === "true" || rawIsPlayerBroadcast === 1;
           const targetDeviceIds = Array.isArray((schedule as any).target_devices) ? (schedule as any).target_devices : [];
+          
+          // 채널 설정의 broadcastType도 확인 (스케줄에 정보가 없을 경우 대비)
+          const channelBroadcastType = config.broadcastType || "public";
+          const shouldUseDeviceBroadcast = channelBroadcastType === "device-channel" && registeredDevices.length > 0;
+          
+          // 디버깅: 스케줄 정보 로그
+          console.log(`[execute-schedules] 스케줄 정보 확인:`, {
+            scheduleId: schedule.id,
+            scheduleName: (schedule as any).schedule_name,
+            rawIsPlayerBroadcast: rawIsPlayerBroadcast,
+            isPlayerBroadcast,
+            targetDeviceIds,
+            targetDeviceIdsLength: targetDeviceIds.length,
+            registeredDevicesCount: registeredDevices.length,
+            channelCode: sanitizedChannelCode,
+            channelBroadcastType: config.broadcastType,
+            shouldUseDeviceBroadcast,
+          });
           
           // 디바이스 송출인 경우 디바이스 목록 확인
           let resolvedDevices: Array<{ id: string; name: string; token: string }> = [];
-          if (isPlayerBroadcast && targetDeviceIds.length > 0) {
-            resolvedDevices = registeredDevices.filter((device) => targetDeviceIds.includes(device.id));
-            const missingDevices = targetDeviceIds.filter(
-              (deviceId) => !resolvedDevices.some((device) => device.id === deviceId)
-            );
-            if (missingDevices.length > 0) {
-              console.warn(`[execute-schedules] Some devices not found: ${missingDevices.join(", ")}`);
+          
+          // 스케줄에 is_player_broadcast가 명시적으로 설정되어 있으면 그것을 우선 사용
+          // 없거나 false인 경우 채널 설정을 확인
+          const useDeviceBroadcast = isPlayerBroadcast || (shouldUseDeviceBroadcast && !isPlayerBroadcast && targetDeviceIds.length === 0);
+          
+          if (useDeviceBroadcast) {
+            if (targetDeviceIds.length > 0) {
+              // 스케줄에 저장된 디바이스 ID 사용
+              resolvedDevices = registeredDevices.filter((device) => targetDeviceIds.includes(device.id));
+              const missingDevices = targetDeviceIds.filter(
+                (deviceId) => !resolvedDevices.some((device) => device.id === deviceId)
+              );
+              if (missingDevices.length > 0) {
+                console.warn(`[execute-schedules] Some devices not found: ${missingDevices.join(", ")}`);
+              }
+              console.log(`[execute-schedules] 디바이스 송출 모드 (스케줄에 저장된 디바이스): ${resolvedDevices.length}개 디바이스 발견`);
+            } else if (shouldUseDeviceBroadcast) {
+              // 스케줄에 디바이스 ID가 없지만 채널 설정이 device-channel이면 모든 디바이스 사용
+              resolvedDevices = registeredDevices;
+              console.log(`[execute-schedules] 디바이스 송출 모드 (채널 설정 기반): ${resolvedDevices.length}개 디바이스 발견`);
             }
+          } else {
+            console.log(`[execute-schedules] Public 송출 모드 (isPlayerBroadcast=${isPlayerBroadcast}, shouldUseDeviceBroadcast=${shouldUseDeviceBroadcast})`);
           }
 
           // 엔드포인트 구분: public 송출 vs 디바이스ID/채널ID 송출

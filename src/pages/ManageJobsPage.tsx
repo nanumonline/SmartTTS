@@ -484,10 +484,11 @@ export default function ManageJobsPage() {
                         )}
                       </div>
                       {job.type === "schedule" && (
-                        <div className="text-xs text-muted-foreground space-y-0.5">
+                        <div className="text-xs text-muted-foreground space-y-1">
                           {job.generationName && (
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span>음원: {job.generationName}</span>
+                              <span className="font-medium">음원:</span>
+                              <span>{job.generationName}</span>
                               {job.generationPurposeLabel && job.generationPurpose && (
                                 <Badge 
                                   variant="outline" 
@@ -499,7 +500,16 @@ export default function ManageJobsPage() {
                             </div>
                           )}
                           {job.channelName && (
-                            <div>채널: {job.channelName}</div>
+                            <div className="flex items-center gap-2">
+                              <Radio className="w-3 h-3 text-muted-foreground" />
+                              <span className="font-medium">채널:</span>
+                              <Badge 
+                                variant="outline" 
+                                className="text-[10px] px-2 py-0.5 bg-primary/5 text-primary border-primary/20 font-medium"
+                              >
+                                {job.channelName}
+                              </Badge>
+                            </div>
                           )}
                         </div>
                       )}
