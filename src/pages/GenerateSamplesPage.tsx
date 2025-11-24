@@ -19,7 +19,7 @@ import {
   SelectLabel,
   SelectSeparator,
 } from "@/components/ui/select";
-import { Download, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { Download, Loader2, CheckCircle2, XCircle, Star } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import PageContainer from "@/components/layout/PageContainer";
 import PageHeader from "@/components/layout/PageHeader";
@@ -77,6 +77,30 @@ export default function GenerateSamplesPage() {
   const [voiceNameMap, setVoiceNameMap] = useState<Record<string, string>>({});
   const [favoriteGenerations, setFavoriteGenerations] = useState<any[]>([]);
   const [isLoadingFavorites, setIsLoadingFavorites] = useState(false);
+  const [favoriteVoiceIds, setFavoriteVoiceIds] = useState<string[]>([]);
+
+  // 즐겨찾기 음성 ID 목록 로드
+  useEffect(() => {
+    const saved = localStorage.getItem("favoriteVoiceIds");
+    if (saved) {
+      try {
+        setFavoriteVoiceIds(JSON.parse(saved));
+      } catch (e) {
+        console.error("즐겨찾기 로드 실패:", e);
+      }
+    }
+  }, []);
+
+  // 즐겨찾기 추가/제거 함수
+  const toggleFavoriteVoiceId = (voiceId: string) => {
+    setFavoriteVoiceIds(prev => {
+      const newFavorites = prev.includes(voiceId)
+        ? prev.filter(id => id !== voiceId)
+        : [...prev, voiceId];
+      localStorage.setItem("favoriteVoiceIds", JSON.stringify(newFavorites));
+      return newFavorites;
+    });
+  };
 
   // 음성 ID로 한글 이름 가져오기
   const getVoiceNameKo = (voiceId: string): string => {
@@ -744,9 +768,65 @@ export default function GenerateSamplesPage() {
 
                   {/* 음성 ID 입력 */}
                   <div className="space-y-2">
-                    <Label htmlFor={`voice-${sample.id}`} className="text-sm font-medium">
-                      음성 ID 입력
-                    </Label>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor={`voice-${sample.id}`} className="text-sm font-medium">
+                        음성 ID 입력
+                      </Label>
+                      {sample.voiceId && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => toggleFavoriteVoiceId(sample.voiceId)}
+                          className="h-7 px-2"
+                          disabled={isGenerating}
+                        >
+                          <Star 
+                            className={`h-4 w-4 ${
+                              favoriteVoiceIds.includes(sample.voiceId) 
+                                ? "fill-yellow-400 text-yellow-400" 
+                                : "text-muted-foreground"
+                            }`} 
+                          />
+                        </Button>
+                      )}
+                    </div>
+                    
+                    {/* 즐겨찾기 목록 */}
+                    {favoriteVoiceIds.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-2">
+                        {favoriteVoiceIds.map(voiceId => (
+                          <Button
+                            key={voiceId}
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSamples((prev) =>
+                                prev.map((s) =>
+                                  s.id === sample.id
+                                    ? {
+                                        ...s,
+                                        voiceId: voiceId,
+                                        model: "sona_speech_1",
+                                        style: "neutral",
+                                        speed: 1.0,
+                                        pitchShift: 0,
+                                      }
+                                    : s
+                                )
+                              );
+                            }}
+                            disabled={isGenerating}
+                            className="h-7 px-2 text-xs"
+                          >
+                            <Star className="h-3 w-3 mr-1 fill-yellow-400 text-yellow-400" />
+                            {getVoiceNameKo(voiceId)}
+                          </Button>
+                        ))}
+                      </div>
+                    )}
+                    
                     <Input
                       id={`voice-${sample.id}`}
                       value={sample.voiceId}
