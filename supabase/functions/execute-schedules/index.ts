@@ -38,6 +38,18 @@ serve(async (req) => {
   }
 
   try {
+    // 헬스체크 모드: healthCheck 파라미터가 있으면 간단히 응답만 반환
+    const url = new URL(req.url);
+    if (url.searchParams.get("healthCheck") === "true") {
+      return new Response(
+        JSON.stringify({ status: "ok", message: "Edge Function is healthy" }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        }
+      );
+    }
+
     // Supabase 클라이언트 생성
     const supabaseClient = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
