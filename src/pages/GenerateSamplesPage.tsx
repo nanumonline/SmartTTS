@@ -552,11 +552,9 @@ export default function GenerateSamplesPage() {
       <PageHeader
         title="샘플 오디오 생성"
         description={
-          isLoadingFavorites 
-            ? "즐겨찾기 음원 스타일을 불러오는 중..." 
-            : favoriteGenerations.length > 0
+          favoriteGenerations.length > 0
             ? `즐겨찾기 음원 스타일 ${favoriteGenerations.length}개를 불러왔습니다. 각 샘플에 자동 할당됩니다.`
-            : "홈페이지용 샘플 오디오를 생성하고 다운로드합니다. 즐겨찾기 음원이 없으면 기본 설정을 사용합니다."
+            : "홈페이지용 샘플 오디오를 생성하고 다운로드합니다. 각 샘플에 자동 할당됩니다."
         }
       />
 
