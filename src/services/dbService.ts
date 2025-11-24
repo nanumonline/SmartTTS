@@ -2819,7 +2819,7 @@ export async function loadChannel(userId: string, channelId: string): Promise<Ch
       type: data.type,
       endpoint: data.endpoint || undefined,
       enabled: data.enabled !== false,
-      config: data.config || {},
+      config: (data.config as Record<string, any>) || {},
       createdAt: data.created_at,
       updatedAt: data.updated_at,
     };

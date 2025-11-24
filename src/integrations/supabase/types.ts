@@ -41,6 +41,42 @@ export type Database = {
         }
         Relationships: []
       }
+      tts_channels: {
+        Row: {
+          config: Json | null
+          created_at: string | null
+          enabled: boolean | null
+          endpoint: string | null
+          id: string
+          name: string
+          type: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          config?: Json | null
+          created_at?: string | null
+          enabled?: boolean | null
+          endpoint?: string | null
+          id?: string
+          name: string
+          type: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          config?: Json | null
+          created_at?: string | null
+          enabled?: boolean | null
+          endpoint?: string | null
+          id?: string
+          name?: string
+          type?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       tts_clone_requests: {
         Row: {
           base_voice_id: string
@@ -131,6 +167,7 @@ export type Database = {
           duration: number | null
           has_audio: boolean | null
           id: string
+          is_favorite: boolean | null
           language: string | null
           mime_type: string | null
           model: string | null
@@ -156,6 +193,7 @@ export type Database = {
           duration?: number | null
           has_audio?: boolean | null
           id?: string
+          is_favorite?: boolean | null
           language?: string | null
           mime_type?: string | null
           model?: string | null
@@ -181,6 +219,7 @@ export type Database = {
           duration?: number | null
           has_audio?: boolean | null
           id?: string
+          is_favorite?: boolean | null
           language?: string | null
           mime_type?: string | null
           model?: string | null
@@ -204,8 +243,10 @@ export type Database = {
         Row: {
           created_at: string | null
           id: string
+          is_favorite: boolean | null
           is_template: boolean | null
           purpose: string
+          tags: string | null
           template_category: string | null
           template_name: string | null
           text: string
@@ -215,8 +256,10 @@ export type Database = {
         Insert: {
           created_at?: string | null
           id?: string
+          is_favorite?: boolean | null
           is_template?: boolean | null
           purpose: string
+          tags?: string | null
           template_category?: string | null
           template_name?: string | null
           text: string
@@ -226,8 +269,10 @@ export type Database = {
         Update: {
           created_at?: string | null
           id?: string
+          is_favorite?: boolean | null
           is_template?: boolean | null
           purpose?: string
+          tags?: string | null
           template_category?: string | null
           template_name?: string | null
           text?: string
@@ -317,12 +362,19 @@ export type Database = {
       }
       tts_schedule_requests: {
         Row: {
+          category_code: string | null
           created_at: string | null
+          customer_id: string | null
+          customer_name: string | null
           fail_reason: string | null
           generation_id: string | null
           id: string
+          is_player_broadcast: boolean | null
+          memo: string | null
           mixing_state: Json | null
           repeat_option: string | null
+          schedule_name: string | null
+          schedule_type: string | null
           scheduled_time: string
           sent_at: string | null
           status: string | null
@@ -331,12 +383,19 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          category_code?: string | null
           created_at?: string | null
+          customer_id?: string | null
+          customer_name?: string | null
           fail_reason?: string | null
           generation_id?: string | null
           id?: string
+          is_player_broadcast?: boolean | null
+          memo?: string | null
           mixing_state?: Json | null
           repeat_option?: string | null
+          schedule_name?: string | null
+          schedule_type?: string | null
           scheduled_time: string
           sent_at?: string | null
           status?: string | null
@@ -345,12 +404,19 @@ export type Database = {
           user_id: string
         }
         Update: {
+          category_code?: string | null
           created_at?: string | null
+          customer_id?: string | null
+          customer_name?: string | null
           fail_reason?: string | null
           generation_id?: string | null
           id?: string
+          is_player_broadcast?: boolean | null
+          memo?: string | null
           mixing_state?: Json | null
           repeat_option?: string | null
+          schedule_name?: string | null
+          schedule_type?: string | null
           scheduled_time?: string
           sent_at?: string | null
           status?: string | null
@@ -405,6 +471,7 @@ export type Database = {
         Row: {
           created_at: string | null
           id: string
+          name_ko: string | null
           synced_at: string | null
           updated_at: string | null
           voice_data: Json
@@ -413,6 +480,7 @@ export type Database = {
         Insert: {
           created_at?: string | null
           id?: string
+          name_ko?: string | null
           synced_at?: string | null
           updated_at?: string | null
           voice_data: Json
@@ -421,6 +489,7 @@ export type Database = {
         Update: {
           created_at?: string | null
           id?: string
+          name_ko?: string | null
           synced_at?: string | null
           updated_at?: string | null
           voice_data?: Json
