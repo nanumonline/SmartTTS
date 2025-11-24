@@ -36,6 +36,7 @@ const AudioPlayer = ({
   const lastAudioUrlRef = useRef<string | null>(null); // 마지막 audioUrl 추적
   const recoveryTimeoutRef = useRef<number | null>(null); // 복원 타임아웃
   const blobLoadTimeoutRef = useRef<number | null>(null); // blob URL 로드 타임아웃
+  const playTimeoutRef = useRef<number | null>(null); // 재생 대기 타임아웃
   const guessedType = (() => {
     if (mimeType && typeof mimeType === 'string') return mimeType;
     const url = audioUrl || '';
@@ -221,6 +222,40 @@ const AudioPlayer = ({
         audioUrl: audioUrl?.substring(0, 80)
       });
       
+      // 파일이 없는 경우 감지 (networkState: 3 = NETWORK_NO_SOURCE)
+      // errorCode: 4는 MEDIA_ERR_SRC_NOT_SUPPORTED 또는 DEMUXER_ERROR
+      const src = audioUrl || audio?.src || '';
+      const isSampleFile = src.includes('/samples/');
+      const isFileNotFound = !isBlobUrl && !audioUrl.startsWith('data:') && 
+        (audio?.networkState === 3 || (error?.code === 4 && error?.message?.includes('DEMUXER_ERROR'))) && 
+        (audio?.readyState === 0 || audio?.readyState === 1);
+      
+      if (isFileNotFound) {
+        // 중복 호출 방지: 같은 오류가 이미 처리되었는지 확인
+        const errorKey = `file-not-found-${src}`;
+        if (lastErrorTimeRef.current && (now - lastErrorTimeRef.current) < 1000) {
+          // 1초 이내에 같은 오류가 발생하면 무시
+          console.log('[AudioPlayer] ⚠️ 파일 없음 오류 무시 (중복 방지)');
+          return;
+        }
+        
+        console.warn('[AudioPlayer] ⚠️ 파일이 없거나 소스를 찾을 수 없습니다:', {
+          audioUrl: src.substring(0, 100),
+          networkState: audio?.networkState,
+          readyState: audio?.readyState,
+          errorCode: error?.code,
+          isSampleFile
+        });
+        
+        // 샘플 파일 경로인 경우 더 명확한 메시지
+        if (isSampleFile) {
+          handlePlayError(new Error('샘플 오디오 파일을 찾을 수 없습니다. 샘플 생성 페이지에서 파일을 먼저 생성해주세요.'));
+        } else {
+          handlePlayError(new Error('오디오 파일을 찾을 수 없습니다.'));
+        }
+        return;
+      }
+      
       // ERR_REQUEST_RANGE_NOT_SATISFIABLE 또는 일반 blob URL 오류 감지
       const isBlobError = isBlobUrl && (error?.code === 4 || 
           error?.message?.includes('RANGE_NOT_SATISFIABLE') ||
@@ -345,24 +380,315 @@ const AudioPlayer = ({
       audio.pause();
       setIsPlaying(false);
     } else {
-      try {
-        await audio.play();
-        setIsPlaying(true);
-      } catch (error: any) {
-        console.warn('Audio play error:', error);
-        setIsPlaying(false);
-        // blob URL이 만료되었을 수 있음 - onError 콜백 호출
-    if (audioUrl && (audioUrl.startsWith('blob:') || audioUrl.startsWith('data:')) && onError && !isRecoveringRef.current) {
+      // 오디오 소스 유효성 확인
+      if (!audioUrl || audioUrl.trim() === '') {
+        console.warn('[AudioPlayer] 오디오 URL이 없습니다.');
+        if (cacheKey && onError && !isRecoveringRef.current) {
+          // URL이 없고 cacheKey가 있으면 복원 시도
           isRecoveringRef.current = true;
+          setIsRecovering(true);
           onError();
-          setTimeout(() => {
-            isRecoveringRef.current = false;
-          }, 1000);
-        } else {
-          // 일반 오류는 사용자에게 알림
-          console.error('Failed to play audio:', error);
         }
+        return;
       }
+
+      // audio.src가 설정되지 않았거나 다른 경우 재설정
+      // 브라우저는 상대 경로를 절대 URL로 변환하므로, 실제 URL 비교 시 이를 고려
+      const currentSrcNormalized = audio.src ? new URL(audio.src, window.location.origin).pathname : '';
+      const expectedUrlNormalized = audioUrl.startsWith('http') 
+        ? new URL(audioUrl, window.location.origin).pathname 
+        : audioUrl;
+      
+      if (!audio.src || currentSrcNormalized !== expectedUrlNormalized) {
+        console.log('[AudioPlayer] src 재설정 (재생 요청):', { 
+          currentSrc: audio.src?.substring(0, 50) || '없음', 
+          expectedUrl: audioUrl.substring(0, 50),
+          normalized: { current: currentSrcNormalized, expected: expectedUrlNormalized }
+        });
+        try {
+          // audioUrl이 유효한지 확인
+          // 허용되는 형식: blob:, data:, http:, https:, 상대 경로(/로 시작)
+          const isValidUrl = audioUrl.match(/^(blob:|data:|https?:|\/)/i);
+          if (!isValidUrl && !audioUrl.startsWith('./') && !audioUrl.startsWith('../')) {
+            // 상대 경로도 허용 (./ 또는 ../로 시작하거나 /로 시작)
+            throw new Error(`유효하지 않은 오디오 URL 형식: ${audioUrl.substring(0, 50)}`);
+          }
+          audio.src = audioUrl;
+          audio.setAttribute('type', guessedType);
+          audio.load();
+        } catch (error: any) {
+          console.error('[AudioPlayer] src 설정 실패:', error);
+          setIsLoading(false);
+          // blob URL이 만료되었을 수 있음
+          if ((audioUrl.startsWith('blob:') || audioUrl.startsWith('data:')) && onError && !isRecoveringRef.current) {
+            isRecoveringRef.current = true;
+            setIsRecovering(true);
+            onError();
+          } else {
+            handlePlayError(new Error(`오디오 소스를 설정할 수 없습니다: ${error?.message || '알 수 없는 오류'}`));
+          }
+          return;
+        }
+        // 로드 후 재생을 위해 아래 로직으로 진행
+      }
+
+      // 오디오 로드 상태 확인 및 재생
+      const attemptPlay = async () => {
+        try {
+          await audio.play();
+          setIsPlaying(true);
+          setIsLoading(false);
+        } catch (error: any) {
+          console.warn('[AudioPlayer] 재생 오류:', error);
+          setIsPlaying(false);
+          setIsLoading(false);
+          handlePlayError(error);
+        }
+      };
+
+      // readyState 확인
+      // 0: HAVE_NOTHING - 정보 없음
+      // 1: HAVE_METADATA - 메타데이터만 로드됨
+      // 2: HAVE_CURRENT_DATA - 현재 위치의 데이터 있음
+      // 3: HAVE_FUTURE_DATA - 현재 및 미래 데이터 있음
+      // 4: HAVE_ENOUGH_DATA - 재생 가능
+      
+      if (audio.readyState >= 2) {
+        // 이미 충분한 데이터가 로드된 경우 바로 재생
+        await attemptPlay();
+      } else if (audio.readyState === 1) {
+        // 메타데이터만 로드된 경우, canplay 이벤트 대기
+        setIsLoading(true);
+        const handleCanPlay = () => {
+          audio.removeEventListener('canplay', handleCanPlay);
+          audio.removeEventListener('canplaythrough', handleCanPlay);
+          audio.removeEventListener('error', handleLoadError);
+          attemptPlay();
+        };
+        
+        const handleLoadError = (e: any) => {
+          audio.removeEventListener('canplay', handleCanPlay);
+          audio.removeEventListener('canplaythrough', handleCanPlay);
+          audio.removeEventListener('error', handleLoadError);
+          setIsLoading(false);
+          const error = e.target?.error;
+          const src = audio.src || audioUrl || '';
+          const isSampleFile = src.includes('/samples/');
+          
+          console.error('[AudioPlayer] 오디오 로드 실패:', {
+            errorCode: error?.code,
+            errorMessage: error?.message,
+            networkState: audio.networkState,
+            readyState: audio.readyState,
+            src: src.substring(0, 100)
+          });
+          
+          // 샘플 파일이 없을 때 더 명확한 메시지
+          if (isSampleFile && (error?.code === 4 || error?.message?.includes('DEMUXER_ERROR'))) {
+            handlePlayError(new Error(`샘플 오디오 파일을 찾을 수 없습니다. 샘플 생성 페이지에서 파일을 먼저 생성해주세요.`));
+          } else {
+            handlePlayError(new Error(`오디오를 로드할 수 없습니다. (${error?.message || '알 수 없는 오류'})`));
+          }
+        };
+
+        audio.addEventListener('canplay', handleCanPlay, { once: true });
+        audio.addEventListener('canplaythrough', handleCanPlay, { once: true });
+        audio.addEventListener('error', handleLoadError, { once: true });
+        
+        // 파일이 없는 경우 빠르게 감지하기 위한 짧은 체크 (2초)
+        const quickCheckTimeout = window.setTimeout(() => {
+          // networkState: 3 (NETWORK_NO_SOURCE)이면 파일이 없음
+          if (audio.networkState === 3 && (audio.readyState === 0 || audio.readyState === 1)) {
+            // 파일이 없는 것으로 판단
+            const src = audio.src || audioUrl || '';
+            const isSampleFile = src.includes('/samples/');
+            
+            console.warn('[AudioPlayer] 파일이 없는 것으로 감지 (빠른 체크, readyState=1):', {
+              networkState: audio.networkState,
+              readyState: audio.readyState,
+              src: src.substring(0, 100)
+            });
+            
+            // 이벤트 리스너 제거
+            audio.removeEventListener('canplay', handleCanPlay);
+            audio.removeEventListener('canplaythrough', handleCanPlay);
+            audio.removeEventListener('error', handleLoadError);
+            
+            if (playTimeoutRef.current) {
+              clearTimeout(playTimeoutRef.current);
+              playTimeoutRef.current = null;
+            }
+            
+            setIsLoading(false);
+            
+            // 샘플 파일인 경우 더 명확한 메시지
+            if (isSampleFile) {
+              handlePlayError(new Error('샘플 오디오 파일을 찾을 수 없습니다. 샘플 생성 페이지에서 파일을 먼저 생성해주세요.'));
+            } else {
+              handlePlayError(new Error('오디오 파일을 찾을 수 없습니다.'));
+            }
+          }
+        }, 2000); // 2초 후 빠른 체크
+        
+        // 타임아웃 설정 (10초)
+        if (playTimeoutRef.current) {
+          clearTimeout(playTimeoutRef.current);
+        }
+        playTimeoutRef.current = window.setTimeout(() => {
+          clearTimeout(quickCheckTimeout); // 빠른 체크 타임아웃도 클리어
+          audio.removeEventListener('canplay', handleCanPlay);
+          audio.removeEventListener('canplaythrough', handleCanPlay);
+          audio.removeEventListener('error', handleLoadError);
+          setIsLoading(false);
+          playTimeoutRef.current = null;
+          if (audio.readyState < 2) {
+            const src = audio.src || audioUrl || '';
+            const isSampleFile = src.includes('/samples/');
+            
+            console.error('[AudioPlayer] 오디오 로드 타임아웃:', {
+              readyState: audio.readyState,
+              networkState: audio.networkState,
+              src: src.substring(0, 100)
+            });
+            
+            // 샘플 파일인 경우 더 명확한 메시지
+            if (isSampleFile && audio.networkState === 3) {
+              handlePlayError(new Error('샘플 오디오 파일을 찾을 수 없습니다. 샘플 생성 페이지에서 파일을 먼저 생성해주세요.'));
+            } else {
+              handlePlayError(new Error('오디오 로드 시간 초과'));
+            }
+          }
+        }, 10000);
+      } else {
+        // HAVE_NOTHING (0) - 아직 로드되지 않음
+        setIsLoading(true);
+        const handleLoadedData = () => {
+          audio.removeEventListener('loadeddata', handleLoadedData);
+          audio.removeEventListener('canplay', handleCanPlay);
+          audio.removeEventListener('canplaythrough', handleCanPlay);
+          audio.removeEventListener('error', handleLoadError);
+          attemptPlay();
+        };
+        
+        const handleCanPlay = () => {
+          audio.removeEventListener('loadeddata', handleLoadedData);
+          audio.removeEventListener('canplay', handleCanPlay);
+          audio.removeEventListener('canplaythrough', handleCanPlay);
+          audio.removeEventListener('error', handleLoadError);
+          attemptPlay();
+        };
+        
+        const handleLoadError = (e: any) => {
+          audio.removeEventListener('loadeddata', handleLoadedData);
+          audio.removeEventListener('canplay', handleCanPlay);
+          audio.removeEventListener('canplaythrough', handleCanPlay);
+          audio.removeEventListener('error', handleLoadError);
+          setIsLoading(false);
+          const error = e.target?.error;
+          const src = audio.src || audioUrl || '';
+          const isSampleFile = src.includes('/samples/');
+          
+          console.error('[AudioPlayer] 오디오 로드 실패:', {
+            errorCode: error?.code,
+            errorMessage: error?.message,
+            networkState: audio.networkState,
+            readyState: audio.readyState,
+            src: src.substring(0, 100)
+          });
+          
+          // 샘플 파일이 없을 때 더 명확한 메시지
+          if (isSampleFile && (error?.code === 4 || error?.message?.includes('DEMUXER_ERROR'))) {
+            handlePlayError(new Error(`샘플 오디오 파일을 찾을 수 없습니다. 샘플 생성 페이지에서 파일을 먼저 생성해주세요.`));
+          } else {
+            handlePlayError(new Error(`오디오를 로드할 수 없습니다. (${error?.message || '알 수 없는 오류'})`));
+          }
+        };
+
+        audio.addEventListener('loadeddata', handleLoadedData, { once: true });
+        audio.addEventListener('canplay', handleCanPlay, { once: true });
+        audio.addEventListener('canplaythrough', handleCanPlay, { once: true });
+        audio.addEventListener('error', handleLoadError, { once: true });
+        
+        // 파일이 없는 경우 빠르게 감지하기 위한 짧은 체크 (2초)
+        const quickCheckTimeout = window.setTimeout(() => {
+          if (audio.networkState === 3 && audio.readyState === 0) {
+            // 파일이 없는 것으로 판단
+            const src = audio.src || audioUrl || '';
+            const isSampleFile = src.includes('/samples/');
+            
+            console.warn('[AudioPlayer] 파일이 없는 것으로 감지 (빠른 체크):', {
+              networkState: audio.networkState,
+              readyState: audio.readyState,
+              src: src.substring(0, 100)
+            });
+            
+            // 이벤트 리스너 제거
+            audio.removeEventListener('loadeddata', handleLoadedData);
+            audio.removeEventListener('canplay', handleCanPlay);
+            audio.removeEventListener('canplaythrough', handleCanPlay);
+            audio.removeEventListener('error', handleLoadError);
+            
+            if (playTimeoutRef.current) {
+              clearTimeout(playTimeoutRef.current);
+              playTimeoutRef.current = null;
+            }
+            
+            setIsLoading(false);
+            
+            // 샘플 파일인 경우 더 명확한 메시지
+            if (isSampleFile) {
+              handlePlayError(new Error('샘플 오디오 파일을 찾을 수 없습니다. 샘플 생성 페이지에서 파일을 먼저 생성해주세요.'));
+            } else {
+              handlePlayError(new Error('오디오 파일을 찾을 수 없습니다.'));
+            }
+          }
+        }, 2000); // 2초 후 빠른 체크
+        
+        // 타임아웃 설정 (10초)
+        if (playTimeoutRef.current) {
+          clearTimeout(playTimeoutRef.current);
+        }
+        playTimeoutRef.current = window.setTimeout(() => {
+          clearTimeout(quickCheckTimeout); // 빠른 체크 타임아웃도 클리어
+          audio.removeEventListener('loadeddata', handleLoadedData);
+          audio.removeEventListener('canplay', handleCanPlay);
+          audio.removeEventListener('canplaythrough', handleCanPlay);
+          audio.removeEventListener('error', handleLoadError);
+          setIsLoading(false);
+          playTimeoutRef.current = null;
+          if (audio.readyState < 2) {
+            const src = audio.src || audioUrl || '';
+            const isSampleFile = src.includes('/samples/');
+            
+            console.error('[AudioPlayer] 오디오 로드 타임아웃:', {
+              readyState: audio.readyState,
+              networkState: audio.networkState,
+              src: src.substring(0, 100)
+            });
+            
+            // 샘플 파일인 경우 더 명확한 메시지
+            if (isSampleFile && audio.networkState === 3) {
+              handlePlayError(new Error('샘플 오디오 파일을 찾을 수 없습니다. 샘플 생성 페이지에서 파일을 먼저 생성해주세요.'));
+            } else {
+              handlePlayError(new Error('오디오 로드 시간 초과'));
+            }
+          }
+        }, 10000);
+      }
+    }
+  };
+
+  const handlePlayError = (error: any) => {
+    // blob URL이 만료되었을 수 있음 - onError 콜백 호출
+    if (audioUrl && (audioUrl.startsWith('blob:') || audioUrl.startsWith('data:')) && onError && !isRecoveringRef.current) {
+      isRecoveringRef.current = true;
+      onError();
+      setTimeout(() => {
+        isRecoveringRef.current = false;
+      }, 1000);
+    } else {
+      // 일반 오류는 사용자에게 알림
+      console.error('[AudioPlayer] 오디오 재생 실패:', error);
     }
   };
 

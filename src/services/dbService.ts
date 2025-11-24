@@ -2567,9 +2567,13 @@ export async function loadVoiceCatalog(): Promise<any[]> {
       }
       throw error;
     }
-    // voice_data에 name_ko 추가
+    // voice_data에 name_ko와 voice_id 추가
     return (data || []).map((row: any) => {
       const voiceData = row.voice_data || {};
+      // voice_id 추가 (DB에서 가져온 voice_id)
+      if (row.voice_id) {
+        voiceData.voice_id = row.voice_id;
+      }
       // DB에 저장된 한글 이름이 있으면 추가
       if ((row as any).name_ko) {
         voiceData.name_ko = (row as any).name_ko;

@@ -22,6 +22,8 @@ import {
   ChevronRight,
   Radio,
   Zap,
+  Activity,
+  Download,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { loadBrandSettings, getLogoUrl } from "@/lib/brandSettings";
@@ -66,6 +68,7 @@ export const navItems: NavItem[] = [
       // 클로닝 기능은 현재 제공하지 않습니다
       // { title: "클로닝", href: "/audio/cloning", icon: Mic2 },
       { title: "생성 내역", href: "/audio/history", icon: FileSearch },
+      { title: "샘플 생성", href: "/generate-samples", icon: Download },
     ],
   },
   {
@@ -107,6 +110,11 @@ export const navItems: NavItem[] = [
       { title: "전송 설정", href: "/settings/setup", icon: Radio },
       { title: "브랜드 정책", href: "/settings/brand", icon: FileText },
     ],
+  },
+  {
+    title: "시스템 헬스체크",
+    href: "/health",
+    icon: Activity,
   },
 ];
 
