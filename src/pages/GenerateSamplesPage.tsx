@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -741,203 +742,38 @@ export default function GenerateSamplesPage() {
                     <p className="line-clamp-3">{sample.text}</p>
                   </div>
 
-                  {/* 음성 스타일 선택 */}
+                  {/* 음성 ID 입력 */}
                   <div className="space-y-2">
                     <Label htmlFor={`voice-${sample.id}`} className="text-sm font-medium">
-                      음성 스타일 선택
+                      음성 ID 입력
                     </Label>
-                    <Select
+                    <Input
+                      id={`voice-${sample.id}`}
                       value={sample.voiceId}
-                      onValueChange={(value) => {
-                        // 선택한 즐겨찾기 음원 찾기
-                        const selectedFavorite = favoriteGenerations.find(
-                          (fav: any) => fav.voiceId === value
-                        );
-                        
-                        // 선택한 일반 음원 찾기
-                        const selectedVoice = availableVoices.find((v: any) => {
-                          const id = v.voice_id || v.voice_data?.voice_id;
-                          return id === value;
-                        });
-                        
-                        // 음성 데이터 정규화
-                        const voiceData = selectedVoice?.voice_data || selectedVoice || {};
-                        const styles = Array.isArray(voiceData.styles) 
-                          ? voiceData.styles 
-                          : (voiceData.styles ? [voiceData.styles] : []);
-                        const firstStyle = styles.length > 0 ? styles[0] : (voiceData.style || "");
-                        
-                        // 샘플 업데이트
+                      onChange={(e) => {
+                        const newVoiceId = e.target.value;
                         setSamples((prev) =>
                           prev.map((s) =>
                             s.id === sample.id
                               ? {
                                   ...s,
-                                  voiceId: selectedFavorite?.voiceId || value,
-                                  model: selectedFavorite?.model || voiceData.model || "",
-                                  style: selectedFavorite?.style || firstStyle || "",
-                                  speed: selectedFavorite?.speed ?? 1.0,
-                                  pitchShift: selectedFavorite?.pitchShift ?? 0,
+                                  voiceId: newVoiceId,
+                                  model: "sona_speech_1",
+                                  style: "neutral",
+                                  speed: 1.0,
+                                  pitchShift: 0,
                                 }
                               : s
                           )
                         );
                       }}
-                      disabled={isGenerating || isLoadingFavorites || isLoadingVoices || (availableVoices.length === 0 && favoriteGenerations.length === 0)}
-                    >
-                      <SelectTrigger id={`voice-${sample.id}`}>
-                        <SelectValue placeholder="음성 스타일을 선택하세요" />
-                      </SelectTrigger>
-                      <SelectContent className="max-h-[300px]">
-                        {/* 즐겨찾기 음원 */}
-                        {favoriteGenerations.length > 0 && (
-                          <>
-                            <SelectGroup>
-                              <SelectLabel>⭐ 즐겨찾기</SelectLabel>
-                              {favoriteGenerations.map((fav: any, index: number) => {
-                                const voice = availableVoices.find((v: any) => {
-                                  const id = v.voice_id || v.voice_data?.voice_id;
-                                  return id === fav.voiceId;
-                                });
-                                const voiceData = voice?.voice_data || voice || {};
-                                const gender = voiceData.gender || fav.gender || "";
-                                const genderLabel = gender === "female" ? "여성" : gender === "male" ? "남성" : "";
-                                
-                                return (
-                                  <SelectItem key={`fav-${fav.id || index}`} value={fav.voiceId}>
-                                    {getVoiceNameKo(fav.voiceId)}
-                                    {genderLabel && <span className="ml-2 text-xs text-muted-foreground">({genderLabel})</span>}
-                                    {fav.model && (
-                                      <span className="ml-2 text-xs text-muted-foreground">
-                                        - {fav.model}
-                                        {fav.style && `, ${fav.style}`}
-                                      </span>
-                                    )}
-                                  </SelectItem>
-                                );
-                              })}
-                            </SelectGroup>
-                            <SelectSeparator />
-                          </>
-                        )}
-                        
-                        {/* 모든 음원 (남녀 구분) */}
-                        {availableVoices.length > 0 && (() => {
-                          // 음성 데이터 정규화 및 필터링
-                          const normalizedVoices = availableVoices.map((v: any) => {
-                            // voice_data 구조 처리
-                            const voiceData = v.voice_data || v;
-                            return {
-                              voice_id: v.voice_id || voiceData.voice_id,
-                              name: voiceData.name || v.name,
-                              name_ko: voiceData.name_ko || v.name_ko,
-                              gender: (voiceData.gender || v.gender || "").toLowerCase(),
-                              styles: Array.isArray(voiceData.styles) ? voiceData.styles : (voiceData.styles ? [voiceData.styles] : []),
-                              model: voiceData.model || v.model || "",
-                              style: voiceData.style || v.style || "",
-                              language: voiceData.language || v.language || [],
-                              use_case: voiceData.use_case || v.use_case || "",
-                              voice_data: voiceData,
-                            };
-                          }).filter((v: any) => v.voice_id); // voice_id가 있는 것만 필터링
-                          
-                          // 남성 음성 필터링
-                          const maleVoices = normalizedVoices.filter((v: any) => v.gender === "male");
-                          // 여성 음성 필터링
-                          const femaleVoices = normalizedVoices.filter((v: any) => v.gender === "female");
-                          // 기타 음성 필터링
-                          const otherVoices = normalizedVoices.filter((v: any) => 
-                            !v.gender || (v.gender !== "male" && v.gender !== "female")
-                          );
-                          
-                          return (
-                            <>
-                              {/* 남성 음성 */}
-                              {maleVoices.length > 0 && (
-                                <>
-                                  <SelectGroup>
-                                    <SelectLabel>👨 남성 음성 ({maleVoices.length})</SelectLabel>
-                                    {maleVoices.map((v: any, index: number) => {
-                                      const stylesText = v.styles && v.styles.length > 0 
-                                        ? `, 스타일: ${v.styles.join(", ")}`
-                                        : (v.style ? `, 스타일: ${v.style}` : "");
-                                      return (
-                                        <SelectItem key={`male-${v.voice_id || index}`} value={v.voice_id}>
-                                          {getVoiceNameKo(v.voice_id)}
-                                          {(v.model || stylesText) && (
-                                            <span className="ml-2 text-xs text-muted-foreground">
-                                              ({v.model || ""}{stylesText})
-                                            </span>
-                                          )}
-                                        </SelectItem>
-                                      );
-                                    })}
-                                  </SelectGroup>
-                                  <SelectSeparator />
-                                </>
-                              )}
-                              
-                              {/* 여성 음성 */}
-                              {femaleVoices.length > 0 && (
-                                <>
-                                  <SelectGroup>
-                                    <SelectLabel>👩 여성 음성 ({femaleVoices.length})</SelectLabel>
-                                    {femaleVoices.map((v: any, index: number) => {
-                                      const stylesText = v.styles && v.styles.length > 0 
-                                        ? `, 스타일: ${v.styles.join(", ")}`
-                                        : (v.style ? `, 스타일: ${v.style}` : "");
-                                      return (
-                                        <SelectItem key={`female-${v.voice_id || index}`} value={v.voice_id}>
-                                          {getVoiceNameKo(v.voice_id)}
-                                          {(v.model || stylesText) && (
-                                            <span className="ml-2 text-xs text-muted-foreground">
-                                              ({v.model || ""}{stylesText})
-                                            </span>
-                                          )}
-                                        </SelectItem>
-                                      );
-                                    })}
-                                  </SelectGroup>
-                                  {otherVoices.length > 0 && <SelectSeparator />}
-                                </>
-                              )}
-                              
-                              {/* 기타 음성 */}
-                              {otherVoices.length > 0 && (
-                                <SelectGroup>
-                                  <SelectLabel>🔊 기타 음성 ({otherVoices.length})</SelectLabel>
-                                  {otherVoices.map((v: any, index: number) => {
-                                    const stylesText = v.styles && v.styles.length > 0 
-                                      ? `, 스타일: ${v.styles.join(", ")}`
-                                      : (v.style ? `, 스타일: ${v.style}` : "");
-                                    return (
-                                      <SelectItem key={`other-${v.voice_id || index}`} value={v.voice_id}>
-                                        {getVoiceNameKo(v.voice_id)}
-                                        {(v.model || stylesText) && (
-                                          <span className="ml-2 text-xs text-muted-foreground">
-                                            ({v.model || ""}{stylesText})
-                                          </span>
-                                        )}
-                                      </SelectItem>
-                                    );
-                                  })}
-                                </SelectGroup>
-                              )}
-                            </>
-                          );
-                        })()}
-                        
-                        {/* 로딩 중이거나 음원이 없을 때는 아무것도 렌더링하지 않음 (placeholder가 표시됨) */}
-                      </SelectContent>
-                    </Select>
-                    {isLoadingVoices && (
+                      placeholder="음성 ID를 입력하세요 (예: 2cd6c38c7087106be21888)"
+                      disabled={isGenerating}
+                      className="font-mono text-sm"
+                    />
+                    {sample.voiceId && (
                       <p className="text-xs text-muted-foreground">
-                        음성 목록을 불러오는 중...
-                      </p>
-                    )}
-                    {!isLoadingVoices && availableVoices.length === 0 && favoriteGenerations.length === 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        사용 가능한 음성이 없습니다. 상단의 "모든 음성 가져오기" 버튼을 클릭하세요.
+                        음성: <span className="font-medium">{getVoiceNameKo(sample.voiceId)}</span>
                       </p>
                     )}
                   </div>
