@@ -710,23 +710,12 @@ export default function GenerateSamplesPage() {
             <p className="text-sm text-muted-foreground">
               각 샘플을 개별 생성하거나 모두 한 번에 생성할 수 있습니다.
             </p>
-            {isLoadingVoices && (
-              <p className="text-xs text-blue-500 flex items-center gap-2">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                음성 목록을 불러오는 중...
-              </p>
-            )}
           </div>
           <Button 
             onClick={generateAll} 
             disabled={generating.size > 0 || isLoadingVoices}
           >
-            {isLoadingVoices ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                음성 로딩 중...
-              </>
-            ) : generating.size > 0 ? (
+            {generating.size > 0 ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 생성 중...
