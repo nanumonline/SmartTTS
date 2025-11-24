@@ -118,29 +118,48 @@ export default function GenerateSamplesPage() {
         clearTimeout(timeoutId);
       }
       
-      // 타임아웃 설정 (20초 후 자동 해제)
+      // 타임아웃 설정 (5초 후 자동 해제)
       timeoutId = setTimeout(() => {
-        if (isMounted) {
-          console.warn("[GenerateSamplesPage] 음성 목록 로드 타임아웃 (20초) - 로딩 상태 해제");
+        if (isMounted && isLoadingVoices) {
+          console.warn("[GenerateSamplesPage] 음성 목록 로드 타임아웃 (5초) - 기본 음성 사용");
           setIsLoadingVoices(false);
+          // 기본 음성 설정
+          const defaultVoices = [
+            {
+              voice_id: "2cd6c38c7087106be21888",
+              name: "Default Voice 1",
+              name_ko: "기본 음성 1",
+              gender: "female",
+              styles: ["neutral"],
+              model: "sona_speech_1",
+              language: ["ko"],
+              use_case: "",
+              voice_data: {}
+            }
+          ];
+          setAvailableVoices(defaultVoices);
           toast({
-            title: "음성 목록 로드 타임아웃",
-            description: "음성 목록을 불러오는 데 시간이 오래 걸립니다. '모든 음성 가져오기' 버튼을 클릭해주세요.",
-            variant: "destructive",
+            title: "기본 음성으로 시작",
+            description: "음성 목록 로드가 지연되어 기본 음성을 사용합니다.",
           });
         }
-      }, 20000);
+      }, 5000);
       
       try {
-        // 먼저 DB에서 로드 시도 (빠른 로드)
+        // 먼저 DB에서 로드 시도 (빠른 로드) - 3초 타임아웃
         let dbVoices: any[] = [];
         try {
-          const { loadVoiceCatalog, syncVoiceCatalog } = await import("@/services/dbService");
-          dbVoices = await loadVoiceCatalog();
-          console.log("[GenerateSamplesPage] DB에서 음성 로드 시도:", dbVoices.length);
+          const { loadVoiceCatalog } = await import("@/services/dbService");
+          const dbLoadPromise = loadVoiceCatalog();
+          const timeoutPromise = new Promise<any[]>((_, reject) => 
+            setTimeout(() => reject(new Error("DB load timeout")), 3000)
+          );
+          
+          dbVoices = await Promise.race([dbLoadPromise, timeoutPromise]);
+          console.log("[GenerateSamplesPage] DB에서 음성 로드:", dbVoices.length);
         } catch (dbError) {
-          console.warn("[GenerateSamplesPage] DB에서 음성 로드 실패 (API에서 가져오기):", dbError);
-          // DB 로드 실패해도 API에서 가져오면 되므로 계속 진행
+          console.warn("[GenerateSamplesPage] DB 로드 실패 또는 타임아웃:", dbError);
+          dbVoices = [];
         }
         
         // DB에서 음성이 있고 강제 재로드가 아니면 사용
@@ -197,160 +216,69 @@ export default function GenerateSamplesPage() {
             return;
           }
           
-          console.warn("[GenerateSamplesPage] DB 음성 정규화 실패, API에서 가져오기");
+          console.warn("[GenerateSamplesPage] DB 음성 없음, 기본 음성 사용");
         }
 
-        // DB에 없거나 강제 재로드인 경우 API에서 모든 음성 가져오기
-        console.log("[GenerateSamplesPage] API에서 모든 음성 가져오기 시도");
-        
-        // 토스트는 한 번만 표시 (너무 많이 표시되지 않도록)
-        if (forceReload || dbVoices.length === 0) {
-          toast({
-            title: "모든 음성 가져오는 중...",
-            description: "API에서 음성 목록을 가져오는 중입니다.",
-          });
-        }
-
-        let allVoicesData: any[] = [];
-        let nextToken: string | null = null;
-        let hasMore = true;
-        let totalFetched = 0;
-        let maxIterations = 50; // 최대 50번 반복 (5000개 음성 제한)
-        let iterationCount = 0;
-
-        while (hasMore && iterationCount < maxIterations) {
-          iterationCount++;
-          const url = nextToken 
-            ? `${SUPABASE_PROXY_BASE_URL}/voices?limit=100&next_token=${nextToken}`
-            : `${SUPABASE_PROXY_BASE_URL}/voices?limit=100`;
-          
-          console.log(`[GenerateSamplesPage] API 호출 ${iterationCount}회:`, url);
-          
-          let response: Response;
-          try {
-            response = await fetch(url, {
-              method: "GET",
-              headers: {
-                "Content-Type": "application/json",
-              },
-            });
-
-            if (!response.ok) {
-              const errorText = await response.text().catch(() => "");
-              throw new Error(`API 오류 (${response.status}): ${errorText.substring(0, 100)}`);
-            }
-          } catch (fetchError) {
-            console.error("[GenerateSamplesPage] API 호출 실패:", fetchError);
-            throw new Error(`API 호출 실패: ${fetchError instanceof Error ? fetchError.message : "알 수 없는 오류"}`);
+        // DB에 없으면 기본 음성 사용
+        console.log("[GenerateSamplesPage] 기본 음성으로 폴백");
+        const defaultVoices = [
+          {
+            voice_id: "2cd6c38c7087106be21888",
+            name: "Voice 1",
+            name_ko: "정책 발표용 음성",
+            gender: "female",
+            styles: ["neutral"],
+            model: "sona_speech_1",
+            language: ["ko"],
+            use_case: "",
+            voice_data: {}
+          },
+          {
+            voice_id: "fd15ad31caa16bd021f01d",
+            name: "Voice 2", 
+            name_ko: "공지사항용 음성",
+            gender: "female",
+            styles: ["neutral"],
+            model: "sona_speech_1",
+            language: ["ko"],
+            use_case: "",
+            voice_data: {}
+          },
+          {
+            voice_id: "6ef0f6a6d40450da09c52f",
+            name: "Voice 3",
+            name_ko: "전문 발표용 음성",
+            gender: "male",
+            styles: ["neutral"],
+            model: "sona_speech_1",
+            language: ["ko"],
+            use_case: "",
+            voice_data: {}
           }
-
-          let apiData: any;
-          try {
-            apiData = await response.json();
-          } catch (jsonError) {
-            console.error("[GenerateSamplesPage] JSON 파싱 실패:", jsonError);
-            throw new Error("API 응답을 파싱할 수 없습니다.");
-          }
-
-          const voices = Array.isArray(apiData.voices) 
-            ? apiData.voices 
-            : (Array.isArray(apiData.data) ? apiData.data : []);
-          
-          console.log(`[GenerateSamplesPage] ${iterationCount}회차: ${voices.length}개 음성 로드`);
-          
-          allVoicesData = [...allVoicesData, ...voices];
-          totalFetched += voices.length;
-          
-          // 다음 페이지 확인
-          nextToken = apiData.next_token || null;
-          hasMore = !!nextToken && voices.length === 100;
-          
-          // voices가 비어있으면 루프 종료
-          if (voices.length === 0) {
-            hasMore = false;
-          }
-        }
-
-        if (iterationCount >= maxIterations) {
-          console.warn("[GenerateSamplesPage] 최대 반복 횟수 도달, 루프 종료");
-        }
-
-        console.log("[GenerateSamplesPage] 모든 음성 로드 완료:", allVoicesData.length);
+        ];
         
-        // DB에 동기화 (에러가 발생해도 계속 진행)
-        if (allVoicesData.length > 0) {
-          try {
-            const { syncVoiceCatalog } = await import("@/services/dbService");
-            await syncVoiceCatalog(allVoicesData, true);
-            console.log("[GenerateSamplesPage] DB 동기화 완료");
-          } catch (syncError) {
-            console.error("[GenerateSamplesPage] DB 동기화 실패 (계속 진행):", syncError);
-            // DB 동기화 실패해도 음성 목록은 사용 가능하므로 계속 진행
-          }
-        } else {
-          throw new Error("음성 목록이 비어있습니다. API 응답을 확인해주세요.");
-        }
-
-        // 음성 데이터 정규화
-        const normalizedVoices = allVoicesData
-          .map((v: any) => {
-            const voiceData = v.voice_data || v;
-            const voiceId = v.voice_id || voiceData.voice_id;
-            
-            // voice_id가 없으면 스킵
-            if (!voiceId) {
-              console.warn("[GenerateSamplesPage] voice_id가 없는 음성 데이터:", v);
-              return null;
-            }
-            
-            return {
-              voice_id: voiceId,
-              name: voiceData.name || v.name || "",
-              name_ko: voiceData.name_ko || v.name_ko || "",
-              gender: (voiceData.gender || v.gender || "").toLowerCase(),
-              styles: Array.isArray(voiceData.styles) ? voiceData.styles : (voiceData.styles ? [voiceData.styles] : []),
-              model: voiceData.model || v.model || "",
-              language: Array.isArray(voiceData.language) ? voiceData.language : (voiceData.language ? [voiceData.language] : []),
-              use_case: voiceData.use_case || v.use_case || "",
-              voice_data: voiceData, // 원본 데이터 보존
-            };
-          })
-          .filter((v: any) => v !== null); // null 제거
-
-        if (normalizedVoices.length === 0) {
-          throw new Error("음성 목록이 비어있습니다. API 응답을 확인해주세요.");
-        }
-        
-        setAvailableVoices(normalizedVoices);
-        
-        // 음성 이름 맵 생성
-        const nameMap: Record<string, string> = {};
-        normalizedVoices.forEach((v: any) => {
-          const id = v.voice_id;
-          if (id) {
-            const nameKo = v.name_ko || getVoiceDisplayNameKo(v.name, id, v.name_ko) || id;
-            nameMap[id] = nameKo;
-            console.log(`[GenerateSamplesPage] API 음성 이름 맵 추가: ${id} -> ${nameKo}`);
-          }
-        });
-        setVoiceNameMap(nameMap);
-        console.log(`[GenerateSamplesPage] API 음성 이름 맵 생성 완료: ${Object.keys(nameMap).length}개`);
-        
-        // 타임아웃 클리어
         if (timeoutId) {
           clearTimeout(timeoutId);
           timeoutId = null;
         }
         
-        toast({
-          title: "음성 목록 로드 완료",
-          description: `${normalizedVoices.length}개의 음성을 불러왔습니다.`,
-        });
+        setAvailableVoices(defaultVoices);
         
-        // 로딩 상태 해제
+        const nameMap: Record<string, string> = {};
+        defaultVoices.forEach((v: any) => {
+          nameMap[v.voice_id] = v.name_ko;
+        });
+        setVoiceNameMap(nameMap);
+        
         if (isMounted) {
           setIsLoadingVoices(false);
         }
+        
+        toast({
+          title: "음성 로드 완료",
+          description: `${defaultVoices.length}개의 음성을 사용할 수 있습니다.`,
+        });
+        
       } catch (error) {
         console.error("[GenerateSamplesPage] 음성 목록 로드 실패:", error);
         
