@@ -1312,6 +1312,7 @@ export interface BroadcastOptions {
   channelId: string;
   scheduleName?: string;
   customerInfo?: CustomerInfo; // 플레이어 송출 옵션 선택 시
+  deviceIds?: string[]; // 멀티 출력 대상 디바이스
 }
 
 // Edge Function 호출 래퍼
@@ -2567,13 +2568,9 @@ export async function loadVoiceCatalog(): Promise<any[]> {
       }
       throw error;
     }
-    // voice_data에 name_ko와 voice_id 추가
+    // voice_data에 name_ko 추가
     return (data || []).map((row: any) => {
       const voiceData = row.voice_data || {};
-      // voice_id 추가 (DB에서 가져온 voice_id)
-      if (row.voice_id) {
-        voiceData.voice_id = row.voice_id;
-      }
       // DB에 저장된 한글 이름이 있으면 추가
       if ((row as any).name_ko) {
         voiceData.name_ko = (row as any).name_ko;
@@ -2854,4 +2851,3 @@ export async function deleteChannel(userId: string, channelId: string): Promise<
     return false;
   }
 }
-

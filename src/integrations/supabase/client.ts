@@ -4,6 +4,27 @@ import type { Database } from './types';
 
 const SUPABASE_URL = "https://gxxralruivyhdxyftsrg.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4eHJhbHJ1aXZ5aGR4eWZ0c3JnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE2NDM0MzQsImV4cCI6MjA3NzIxOTQzNH0.6lJjJq15spXWrktl-8d5qXI3L5FHkyaEArWiH2R5AjA";
+const SUPABASE_PROXY_PREFIX = "/supabase-proxy";
+const isDev = import.meta.env.DEV;
+
+// In dev we rewrite Supabase requests through the Vite proxy to avoid CORS issues.
+const supabaseFetch: typeof fetch = (input, init) => {
+  if (isDev) {
+    const targetUrl =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : null;
+
+    if (targetUrl && targetUrl.startsWith(SUPABASE_URL)) {
+      const proxiedUrl = `${SUPABASE_PROXY_PREFIX}${targetUrl.slice(SUPABASE_URL.length)}`;
+      return fetch(proxiedUrl, init);
+    }
+  }
+
+  return fetch(input as RequestInfo, init);
+};
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
@@ -13,5 +34,13 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     storage: localStorage,
     persistSession: true,
     autoRefreshToken: true,
-  }
+    detectSessionInUrl: true,
+    flowType: 'pkce', // PKCE 플로우 사용 (더 안전하고 CORS 문제가 적음)
+  },
+  global: {
+    headers: {
+      'X-Client-Info': 'voicecraft-designer',
+    },
+    fetch: supabaseFetch,
+  },
 });

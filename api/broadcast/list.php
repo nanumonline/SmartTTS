@@ -12,6 +12,18 @@ header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization, X-API-Key');
 
+function sanitize_channel_id($value) {
+    if ($value === null) {
+        return 'public';
+    }
+    $value = strtolower(trim((string)$value));
+    if ($value === '') {
+        return 'public';
+    }
+    $value = preg_replace('/[^a-z0-9_\-]/', '_', $value);
+    return $value !== '' ? $value : 'public';
+}
+
 // OPTIONS 요청 처리
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
@@ -25,9 +37,22 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     exit();
 }
 
+// 채널 ID 필수
+$rawChannelId = $_GET['channel_id'] ?? null;
+if ($rawChannelId === null) {
+    http_response_code(400);
+    echo json_encode([
+        'success' => false,
+        'error' => 'channel_id is required'
+    ]);
+    exit();
+}
+$channelId = sanitize_channel_id($rawChannelId);
+
 // 디렉토리 설정
 $baseDir = __DIR__;
 $audioDir = $baseDir . '/audio';
+$metadataDir = $baseDir . '/metadata';
 
 // 오디오 디렉토리 확인
 if (!is_dir($audioDir)) {
@@ -49,6 +74,32 @@ $files = array_filter($files, function($file) {
 
 foreach ($files as $file) {
     $filePath = $audioDir . '/' . $file;
+    $metadataFile = $metadataDir . '/' . $file . '.json';
+    $fileChannelId = 'public';
+    $customerName = null;
+    $categoryCode = null;
+    $customerMemo = null;
+    
+    if (file_exists($metadataFile)) {
+        $metadataContent = file_get_contents($metadataFile);
+        if ($metadataContent !== false) {
+            $metadata = json_decode($metadataContent, true);
+            if (is_array($metadata)) {
+                if (!empty($metadata['channel_id'])) {
+                    $fileChannelId = sanitize_channel_id($metadata['channel_id']);
+                } elseif (!empty($metadata['customer_id'])) {
+                    $fileChannelId = sanitize_channel_id($metadata['customer_id']);
+                }
+                $customerName = $metadata['customer_name'] ?? null;
+                $categoryCode = $metadata['category_code'] ?? null;
+                $customerMemo = $metadata['memo'] ?? null;
+            }
+        }
+    }
+    
+    if ($fileChannelId !== $channelId) {
+        continue;
+    }
     
     // 파일명에서 스케줄 이름 추출
     // 형식 1: "스케줄이름_2025-11-20_10-11-11.mp3" (새 형식)
@@ -162,10 +213,14 @@ foreach ($files as $file) {
         'filename' => $file,
         'schedule_name' => $scheduleName, // 스케줄 이름 (있으면)
         'display_name' => $displayName, // 표시 이름 (스케줄 이름 또는 파일명)
-        'url' => 'https://nanum.online/tts/api/broadcast/audio.php?file=' . urlencode($file),
+        'url' => 'https://nanum.online/tts/api/broadcast/audio.php?file=' . urlencode($file) . '&channel_id=' . urlencode($fileChannelId),
         'size' => filesize($filePath),
         'modified' => date('Y-m-d H:i:s', filemtime($filePath)),
         'modified_timestamp' => filemtime($filePath),
+        'channel_id' => $fileChannelId,
+        'customer_name' => $customerName,
+        'category_code' => $categoryCode,
+        'customer_memo' => $customerMemo,
     ];
     $audioFiles[] = $fileInfo;
 }
@@ -184,6 +239,7 @@ http_response_code(200);
 header('Content-Type: application/json; charset=utf-8');
 $response = [
     'success' => true,
+    'channel_id' => $channelId,
     'audio_list' => $audioFiles,
     'count' => count($audioFiles),
     'timestamp' => date('Y-m-d H:i:s')
@@ -205,4 +261,3 @@ if ($jsonOutput === false) {
 echo $jsonOutput;
 exit();
 ?>
-

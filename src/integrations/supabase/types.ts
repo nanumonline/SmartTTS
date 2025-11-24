@@ -380,6 +380,7 @@ export type Database = {
           status: string | null
           target_channel: string
           target_name: string | null
+          target_devices: string[] | null
           user_id: string
         }
         Insert: {
@@ -401,6 +402,7 @@ export type Database = {
           status?: string | null
           target_channel: string
           target_name?: string | null
+          target_devices?: string[] | null
           user_id: string
         }
         Update: {
@@ -422,6 +424,7 @@ export type Database = {
           status?: string | null
           target_channel?: string
           target_name?: string | null
+          target_devices?: string[] | null
           user_id?: string
         }
         Relationships: [

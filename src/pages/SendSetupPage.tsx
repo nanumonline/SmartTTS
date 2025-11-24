@@ -7,12 +7,31 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Radio, Settings, Save, TestTube } from "lucide-react";
+import { Radio, Settings, Save, TestTube, Plus, Trash2, RefreshCw, Copy } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import * as dbService from "@/services/dbService";
 import { useToast } from "@/components/ui/use-toast";
 import PageContainer from "@/components/layout/PageContainer";
 import PageHeader from "@/components/layout/PageHeader";
+
+interface RegisteredDeviceConfig {
+  id: string;
+  name: string;
+  token: string;
+}
+
+const generateRandomString = (length = 12) => {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let result = "";
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+};
+
+const generateChannelCode = () => `ch-${generateRandomString(10)}`;
+const generateDeviceId = () => `dev-${generateRandomString(10)}`;
+const generateDeviceToken = () => generateRandomString(24);
 
 export default function SendSetupPage() {
   const { user } = useAuth();
@@ -26,6 +45,8 @@ export default function SendSetupPage() {
     endpoint: "",
     enabled: true,
     testMode: false,
+    channelCode: generateChannelCode(),
+    devices: [] as RegisteredDeviceConfig[],
   });
 
   useEffect(() => {
@@ -40,6 +61,8 @@ export default function SendSetupPage() {
     if (channelId && channels.length > 0) {
       const channel = channels.find((ch) => ch.id === channelId);
       if (channel) {
+        const channelConfig = channel.config || {};
+        const devices = Array.isArray(channelConfig.devices) ? channelConfig.devices : [];
         setSelectedChannel(channel.id || "");
         setChannelSettings({
           name: channel.name,
@@ -47,6 +70,12 @@ export default function SendSetupPage() {
           endpoint: channel.endpoint || "",
           enabled: channel.enabled,
           testMode: false,
+          channelCode: channelConfig.channelCode || generateChannelCode(),
+          devices: devices.map((device: any) => ({
+            id: device.id,
+            name: device.name,
+            token: device.token || generateDeviceToken(),
+          })),
         });
       }
     }
@@ -96,6 +125,24 @@ export default function SendSetupPage() {
       return;
     }
 
+    if (!channelSettings.channelCode) {
+      toast({
+        title: "채널 코드 필요",
+        description: "보안을 위해 채널 코드를 생성해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (channelSettings.devices.some((device) => !device.id || !device.token)) {
+      toast({
+        title: "디바이스 정보 누락",
+        description: "모든 디바이스에 ID 및 토큰이 있어야 합니다. 다시 생성해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       const channelData: dbService.ChannelEntry = {
         id: selectedChannel || undefined,
@@ -103,7 +150,10 @@ export default function SendSetupPage() {
         type: channelSettings.type,
         endpoint: channelSettings.endpoint || undefined,
         enabled: channelSettings.enabled,
-        config: {},
+        config: {
+          channelCode: channelSettings.channelCode,
+          devices: channelSettings.devices,
+        },
       };
 
       const savedId = await dbService.saveChannel(user.id, channelData);
@@ -140,6 +190,64 @@ export default function SendSetupPage() {
     });
   };
 
+  const handleRegenerateChannelCode = () => {
+    setChannelSettings((prev) => ({
+      ...prev,
+      channelCode: generateChannelCode(),
+    }));
+  };
+
+  const handleAddDevice = () => {
+    const newDevice: RegisteredDeviceConfig = {
+      id: generateDeviceId(),
+      name: `출력 장치 ${channelSettings.devices.length + 1}`,
+      token: generateDeviceToken(),
+    };
+    setChannelSettings((prev) => ({
+      ...prev,
+      devices: [...prev.devices, newDevice],
+    }));
+  };
+
+  const handleDeviceChange = (index: number, updates: Partial<RegisteredDeviceConfig>) => {
+    setChannelSettings((prev) => {
+      const nextDevices = [...prev.devices];
+      nextDevices[index] = { ...nextDevices[index], ...updates };
+      return { ...prev, devices: nextDevices };
+    });
+  };
+
+  const handleRemoveDevice = (index: number) => {
+    setChannelSettings((prev) => {
+      const nextDevices = [...prev.devices];
+      nextDevices.splice(index, 1);
+      return { ...prev, devices: nextDevices };
+    });
+  };
+
+  const shareLinkBase = "https://nanum.online/tts/api/broadcast/player-unified.html";
+
+  const buildShareLink = (device: RegisteredDeviceConfig) => {
+    return `${shareLinkBase}?channel_id=${encodeURIComponent(channelSettings.channelCode)}&device_id=${encodeURIComponent(device.id)}&device_token=${encodeURIComponent(device.token)}`;
+  };
+
+  const copyShareLink = async (device: RegisteredDeviceConfig) => {
+    try {
+      await navigator.clipboard.writeText(buildShareLink(device));
+      toast({
+        title: "공유 링크 복사",
+        description: `${device.name} 링크가 복사되었습니다.`,
+      });
+    } catch (error) {
+      console.error("링크 복사 실패:", error);
+      toast({
+        title: "복사 실패",
+        description: "클립보드 권한을 확인해주세요.",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <PageContainer maxWidth="wide">
       <PageHeader
@@ -171,12 +279,20 @@ export default function SendSetupPage() {
                     }`}
                     onClick={() => {
                       setSelectedChannel(channel.id || "");
+                      const channelConfig = channel.config || {};
+                      const devices = Array.isArray(channelConfig.devices) ? channelConfig.devices : [];
                       setChannelSettings({
                         name: channel.name,
                         type: channel.type,
                         endpoint: channel.endpoint || "",
                         enabled: channel.enabled,
                         testMode: false,
+                        channelCode: channelConfig.channelCode || generateChannelCode(),
+                        devices: devices.map((device: any) => ({
+                          id: device.id,
+                          name: device.name,
+                          token: device.token || generateDeviceToken(),
+                        })),
                       });
                     }}
                   >
@@ -213,6 +329,8 @@ export default function SendSetupPage() {
                     endpoint: "",
                     enabled: true,
                     testMode: false,
+                    channelCode: generateChannelCode(),
+                    devices: [],
                   });
                 }}
               >
@@ -307,6 +425,126 @@ export default function SendSetupPage() {
                     setChannelSettings({ ...channelSettings, testMode: checked })
                   }
                 />
+              </div>
+
+              <div className="space-y-2 border rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label>채널 ID (channel_id)</Label>
+                    <p className="text-sm text-muted-foreground">
+                      플레이어 URL에 사용할 고유 식별자입니다.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={handleRegenerateChannelCode}
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                  </Button>
+                </div>
+                <Input
+                  value={channelSettings.channelCode}
+                  onChange={(e) =>
+                    setChannelSettings({ ...channelSettings, channelCode: e.target.value })
+                  }
+                  placeholder="예: ch-municipal-office"
+                />
+                <p className="text-xs text-muted-foreground">
+                  <span className="font-medium">예시:</span> https://nanum.online/tts/api/broadcast/player-unified.html?channel_id=
+                  <span className="text-primary font-mono">{channelSettings.channelCode || "your-code"}</span>
+                </p>
+              </div>
+
+              <div className="space-y-3 border rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label>등록된 디바이스</Label>
+                    <p className="text-sm text-muted-foreground">
+                      채널에 연결된 물리 장비/브라우저를 등록하면 멀티 출력이 가능합니다.
+                    </p>
+                  </div>
+                  <Button type="button" variant="secondary" size="sm" onClick={handleAddDevice}>
+                    <Plus className="w-4 h-4 mr-1" />
+                    디바이스 추가
+                  </Button>
+                </div>
+
+                {channelSettings.devices.length === 0 ? (
+                  <p className="text-sm text-muted-foreground border border-dashed rounded-lg p-4">
+                    등록된 디바이스가 없습니다. <strong>디바이스 추가</strong> 버튼을 눌러 플레이어 출력 지점을 등록하세요.
+                  </p>
+                ) : (
+                  <div className="space-y-4">
+                    {channelSettings.devices.map((device, index) => (
+                      <div key={device.id} className="border rounded-lg p-3 space-y-3">
+                        <div className="flex items-center gap-2">
+                          <Input
+                            value={device.name}
+                            onChange={(e) => handleDeviceChange(index, { name: e.target.value })}
+                            placeholder="디바이스 이름"
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleRemoveDevice(index)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <Label>디바이스 ID</Label>
+                            <Input value={device.id} readOnly className="font-mono text-sm" />
+                            <p className="text-xs text-muted-foreground">
+                              플레이어 URL의 `device_id` 파라미터로 사용됩니다.
+                            </p>
+                          </div>
+                          <div className="space-y-1">
+                            <Label>디바이스 토큰</Label>
+                            <div className="flex items-center gap-2">
+                              <Input value={device.token} readOnly className="font-mono text-sm" />
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                onClick={() =>
+                                  handleDeviceChange(index, { token: generateDeviceToken() })
+                                }
+                              >
+                                <RefreshCw className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                onClick={() => copyShareLink(device)}
+                              >
+                                <Copy className="w-4 h-4" />
+                              </Button>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              토큰은 플레이어 URL의 `device_token` 파라미터로 사용됩니다.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label>플레이어 공유 링크</Label>
+                          <div className="flex flex-col md:flex-row md:items-center gap-2">
+                            <Input value={buildShareLink(device)} readOnly className="font-mono text-xs" />
+                            <Button type="button" variant="secondary" size="sm" onClick={() => copyShareLink(device)}>
+                              링크 복사
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center gap-4 pt-4">

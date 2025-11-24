@@ -108,6 +108,18 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           setIsLoading(false);
           isLoggingInRef.current = false;
           localStorage.removeItem("user");
+        } else if (event === 'TOKEN_REFRESHED') {
+          // 토큰 갱신 성공
+          console.log("[Auth] 토큰이 성공적으로 갱신되었습니다.");
+        } else if (event === 'USER_UPDATED') {
+          // 사용자 정보 업데이트
+          if (session?.user) {
+            setTimeout(() => {
+              loadUserProfile(session.user, true).catch(err => {
+                console.warn("Profile update load failed:", err);
+              });
+            }, 0);
+          }
         }
       }
     );

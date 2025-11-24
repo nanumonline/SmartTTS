@@ -230,7 +230,10 @@
 
     <script>
         const API_BASE = 'https://nanum.online/tts/api/broadcast';
-        const CHANNEL_ID = new URLSearchParams(window.location.search).get('channel_id') || 'pc';
+        const urlParams = new URLSearchParams(window.location.search);
+        const CHANNEL_PARAM_PRESENT = urlParams.has('channel_id');
+        const CHANNEL_ID = (CHANNEL_PARAM_PRESENT ? urlParams.get('channel_id') : null) || 'public';
+        const CHANNEL_QUERY = `channel_id=${encodeURIComponent(CHANNEL_ID)}`;
         
         // 폴링 간격 (동적으로 변경 가능)
         let POLL_INTERVAL = 10000; // 기본 10초
@@ -244,6 +247,13 @@
         let lastCheckedFile = null;
         let isFastPolling = false; // 즉시 송출 모드 여부
 
+        function appendChannelId(url) {
+            if (!url || !CHANNEL_ID) return url;
+            if (url.includes('channel_id=')) return url;
+            const separator = url.includes('?') ? '&' : '?';
+            return `${url}${separator}${CHANNEL_QUERY}`;
+        }
+
         // 상태 업데이트
         function updateStatus(message, className) {
             const statusEl = document.getElementById('status');
@@ -256,7 +266,7 @@
             const infoEl = document.getElementById('info');
             document.getElementById('currentFile').textContent = currentFile || '없음';
             document.getElementById('nextCheck').textContent = nextCheck || '-';
-            document.getElementById('deviceId').textContent = getDeviceId();
+            document.getElementById('deviceId').textContent = `${getDeviceId()} / 채널: ${CHANNEL_ID}`;
             
             // 스케줄 이름 표시
             const scheduleNameItem = document.getElementById('currentScheduleNameItem');
@@ -299,12 +309,16 @@
 
         // 오디오 목록 확인
         async function checkAudio() {
+            if (!CHANNEL_PARAM_PRESENT && CHANNEL_ID === 'public') {
+                updateStatus('채널 ID가 필요합니다. URL에 ?channel_id=값 을 추가하세요.', 'disconnected');
+                return;
+            }
             try {
                 if (!lastCheckedFile) {
                     updateStatus('오디오 확인 중...', 'waiting');
                 }
                 
-                const response = await fetch(`${API_BASE}/list.php?limit=5`);
+                const response = await fetch(`${API_BASE}/list.php?${CHANNEL_QUERY}&limit=5`);
                 
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -329,9 +343,16 @@
                     throw new Error(data?.error || 'Invalid response');
                 }
                 
-                if (data.audio_list && data.audio_list.length > 0) {
+                const audioList = Array.isArray(data.audio_list)
+                    ? data.audio_list.map(item => ({
+                        ...item,
+                        url: appendChannelId(item.url)
+                    }))
+                    : [];
+                
+                if (audioList.length > 0) {
                     // 유효한 오디오만 필터링 (크기 100 bytes 이상)
-                    const validAudios = data.audio_list.filter(audio => {
+                    const validAudios = audioList.filter(audio => {
                         const size = audio.size || 0;
                         if (size < 100) {
                             console.warn(`Skipping invalid audio (too small): ${audio.filename} (${size} bytes)`);
@@ -342,7 +363,7 @@
                     
                     if (validAudios.length === 0) {
                         updateStatus('대기 중... (유효한 오디오 없음 - 파일이 너무 작습니다)', 'waiting');
-                        updateAudioList(data.audio_list);
+                        updateAudioList(audioList);
                         return;
                     }
                     
@@ -351,7 +372,7 @@
                     if (!latestAudio.url || !latestAudio.filename) {
                         console.warn('Invalid audio data:', latestAudio);
                         updateStatus('오디오 정보 오류', 'disconnected');
-                        updateAudioList(data.audio_list);
+                        updateAudioList(audioList);
                         return;
                     }
                     
@@ -359,7 +380,7 @@
                     if (latestAudio.size && latestAudio.size < 100) {
                         console.warn(`Audio file too small: ${latestAudio.filename} (${latestAudio.size} bytes)`);
                         updateStatus(`오디오 파일이 너무 작습니다: ${latestAudio.filename} (${latestAudio.size} bytes)`, 'disconnected');
-                        updateAudioList(data.audio_list);
+                        updateAudioList(audioList);
                         return;
                     }
                     
@@ -394,7 +415,7 @@
                         updateStatus('대기 중... (재생할 새 오디오 없음)', 'waiting');
                     }
                     
-                    updateAudioList(data.audio_list);
+                    updateAudioList(audioList);
                 } else {
                     updateStatus('대기 중... (재생할 오디오 없음)', 'waiting');
                     updateAudioList([]);
@@ -405,8 +426,8 @@
                 // 현재 재생 중인 오디오의 스케줄 이름 및 표시 이름 찾기
                 let currentScheduleName = null;
                 let currentDisplayName = null;
-                if (currentAudioId && data.audio_list) {
-                    const currentAudio = data.audio_list.find(a => a.filename === currentAudioId);
+                if (currentAudioId && audioList.length > 0) {
+                    const currentAudio = audioList.find(a => a.filename === currentAudioId);
                     if (currentAudio) {
                         currentScheduleName = currentAudio.schedule_name || null;
                         currentDisplayName = currentAudio.display_name || currentAudio.schedule_name || null;
@@ -438,9 +459,11 @@
                 return;
             }
             
+            const resolvedUrl = appendChannelId(audio.url);
+            
             // 오디오 파일 유효성 사전 확인 (HEAD 요청)
             try {
-                const headResponse = await fetch(audio.url, { method: 'HEAD' });
+                const headResponse = await fetch(resolvedUrl, { method: 'HEAD' });
                 if (!headResponse.ok) {
                     throw new Error(`HTTP ${headResponse.status}: ${headResponse.statusText}`);
                 }
@@ -457,7 +480,7 @@
                 console.warn('HEAD request failed, proceeding anyway:', headError);
             }
             
-            if (audioPlayer.src === audio.url && !audioPlayer.ended && !audioPlayer.paused) {
+            if (audioPlayer.src === resolvedUrl && !audioPlayer.ended && !audioPlayer.paused) {
                 return;
             }
             
@@ -466,7 +489,7 @@
             audioPlayer.onerror = null;
             audioPlayer.oncanplay = null;
             
-            audioPlayer.src = audio.url;
+            audioPlayer.src = resolvedUrl;
             currentAudioId = audio.filename;
             
             // 표시 이름 우선순위: display_name > schedule_name > filename
@@ -487,7 +510,7 @@
 
             audioPlayer.onerror = async (error) => {
                 console.error('Audio playback error:', error);
-                console.error('Audio URL:', audio.url);
+                console.error('Audio URL:', resolvedUrl);
                 console.error('Audio element error:', audioPlayer.error);
                 console.error('Audio size:', audio.size);
                 console.error('Network state:', audioPlayer.networkState);
@@ -517,7 +540,7 @@
                 // 추가 디버깅: 오디오 파일 직접 확인
                 try {
                     // HEAD 요청으로 파일 정보 확인
-                    const headResponse = await fetch(audio.url, { method: 'HEAD' });
+                    const headResponse = await fetch(resolvedUrl, { method: 'HEAD' });
                     console.log('Audio file HEAD response:', {
                         status: headResponse.status,
                         statusText: headResponse.statusText,
@@ -536,7 +559,7 @@
                     
                     // 실제 파일 내용 확인 (처음 몇 바이트)
                     try {
-                        const rangeResponse = await fetch(audio.url, {
+                        const rangeResponse = await fetch(resolvedUrl, {
                             method: 'GET',
                             headers: {
                                 'Range': 'bytes=0-15'
@@ -621,7 +644,7 @@
                     if (filename) {
                         const testAudio = {
                             filename: filename,
-                            url: `${API_BASE}/audio.php?file=${encodeURIComponent(filename)}`,
+                            url: appendChannelId(`${API_BASE}/audio.php?file=${encodeURIComponent(filename)}`),
                             size: 0,
                             modified: new Date().toISOString()
                         };
@@ -665,7 +688,7 @@
                 // HTML 이스케이프 처리
                 const safeDisplayName = displayName.replace(/'/g, "\\'").replace(/"/g, '&quot;');
                 const safeFilename = audio.filename.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-                const safeUrl = audio.url.replace(/'/g, "\\'");
+                const safeUrl = resolvedUrl.replace(/'/g, "\\'");
                 
                 return `
                     <div class="audio-item ${isCurrent ? 'playing' : ''}" 
@@ -835,4 +858,3 @@
     </script>
 </body>
 </html>
-

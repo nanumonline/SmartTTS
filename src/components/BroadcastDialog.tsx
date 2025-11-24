@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -25,6 +25,12 @@ interface BroadcastDialogProps {
   onSuccess?: () => void;
 }
 
+interface ChannelDeviceConfig {
+  id: string;
+  name: string;
+  token: string;
+}
+
 export default function BroadcastDialog({
   open,
   onOpenChange,
@@ -40,6 +46,7 @@ export default function BroadcastDialog({
   const [delayMinutes, setDelayMinutes] = useState<number>(10);
   const [scheduleName, setScheduleName] = useState<string>("");
   const [isPlayerBroadcast, setIsPlayerBroadcast] = useState<boolean>(false);
+  const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>([]);
   const [customerInfo, setCustomerInfo] = useState<dbService.CustomerInfo>({
     customerId: "",
     customerName: "",
@@ -47,6 +54,27 @@ export default function BroadcastDialog({
     memo: "",
   });
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const currentChannel = channels.find((channel) => channel.id === selectedChannelId || channel.type === selectedChannelId);
+  const registeredDevices = useMemo<ChannelDeviceConfig[]>(() => {
+    if (!currentChannel?.config) return [];
+    const rawDevices = Array.isArray((currentChannel as any).config?.devices)
+      ? (currentChannel as any).config.devices
+      : [];
+    return rawDevices
+      .map((device: any) => ({
+        id: device?.id,
+        name: device?.name || "출력 장치",
+        token: device?.token,
+      }))
+      .filter(
+        (device: ChannelDeviceConfig) =>
+          typeof device.id === "string" && device.id.length > 0 && typeof device.token === "string" && device.token.length > 0
+      );
+  }, [currentChannel]);
+  const channelCode =
+    typeof (currentChannel as any)?.config?.channelCode === "string"
+      ? ((currentChannel as any).config.channelCode as string)
+      : "";
 
   // 채널 목록 로드 및 사용자 정보로 기본값 설정
   useEffect(() => {
@@ -91,6 +119,26 @@ export default function BroadcastDialog({
     }
   }, [open, generationName, user?.id, user?.email, user?.name, user?.department, user?.organization, isPlayerBroadcast]);
 
+  useEffect(() => {
+    if (!isPlayerBroadcast) {
+      setSelectedDeviceIds([]);
+      return;
+    }
+    if (registeredDevices.length === 0) {
+      setSelectedDeviceIds([]);
+      return;
+    }
+
+    setSelectedDeviceIds((prev) => {
+      const availableIds = registeredDevices.map((device) => device.id);
+      const intersection = prev.filter((id) => availableIds.includes(id));
+      if (intersection.length > 0) {
+        return intersection;
+      }
+      return availableIds;
+    });
+  }, [isPlayerBroadcast, registeredDevices]);
+
   const handleSubmit = async () => {
     // 전송 전 유효성 검사 (더 엄격하게)
     if (!generationId || generationId.trim() === "") {
@@ -130,10 +178,37 @@ export default function BroadcastDialog({
     }
 
     if (isPlayerBroadcast) {
+      if (!channelCode) {
+        toast({
+          title: "채널 ID 필요",
+          description: "전송 설정 페이지에서 채널 ID를 먼저 설정해주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (registeredDevices.length === 0) {
+        toast({
+          title: "등록된 디바이스 없음",
+          description: "전송 설정 페이지에서 디바이스를 등록한 뒤 다시 시도하세요.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (selectedDeviceIds.length === 0) {
+        toast({
+          title: "디바이스 선택 필요",
+          description: "송출할 디바이스를 최소 1개 이상 선택해주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
+    } else {
       if (!customerInfo.customerId?.trim() || !customerInfo.customerName?.trim() || !customerInfo.categoryCode?.trim()) {
         toast({
           title: "고객 정보 입력 필요",
-          description: "플레이어 송출 시 고객 정보를 모두 입력해주세요.",
+          description: "플레이어 송출 비활성화 시 고객 정보를 모두 입력해주세요.",
           variant: "destructive",
         });
         return;
@@ -149,6 +224,7 @@ export default function BroadcastDialog({
       delayMinutes,
       isPlayerBroadcast,
       customerInfo,
+      selectedDeviceIds,
     });
 
     setIsSubmitting(true);
@@ -163,6 +239,8 @@ export default function BroadcastDialog({
       console.log("[BroadcastDialog] Sending options:", options);
 
       if (isPlayerBroadcast) {
+        options.deviceIds = selectedDeviceIds;
+      } else {
         options.customerInfo = customerInfo;
       }
 
@@ -230,6 +308,15 @@ export default function BroadcastDialog({
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleToggleDevice = (deviceId: string) => {
+    setSelectedDeviceIds((prev) => {
+      if (prev.includes(deviceId)) {
+        return prev.filter((id) => id !== deviceId);
+      }
+      return [...prev, deviceId];
+    });
   };
 
   return (
@@ -338,15 +425,10 @@ export default function BroadcastDialog({
                 id="player-broadcast"
                 checked={isPlayerBroadcast}
                 onCheckedChange={(checked) => {
-                  setIsPlayerBroadcast(checked === true);
-                  // 플레이어 송출 체크 시, 사용자 정보로 기본값 자동 설정
-                  if (checked && user) {
-                    setCustomerInfo({
-                      customerId: user.email?.split("@")[0] || user.id.substring(0, 8) || "", // 이메일의 @ 앞부분 (로그인 ID)
-                      customerName: user.name || user.email?.split("@")[0] || "",
-                      categoryCode: user.department || user.organization || "",
-                      memo: customerInfo.memo || "",
-                    });
+                  const enabled = checked === true;
+                  setIsPlayerBroadcast(enabled);
+                  if (enabled) {
+                    setSelectedDeviceIds(registeredDevices.map((device) => device.id));
                   }
                 }}
               />
@@ -355,12 +437,46 @@ export default function BroadcastDialog({
               </Label>
             </div>
             <p className="text-xs text-muted-foreground pl-6">
-              체크 시 현재 로그인 정보가 자동으로 입력됩니다 (수정 가능)
+              체크 시 등록된 디바이스에 멀티 송출이 가능합니다.
             </p>
           </div>
 
-          {/* 고객 구분 정보 (플레이어 송출 선택 시) */}
-          {isPlayerBroadcast && (
+          {/* 플레이어 송출 선택 시 디바이스 목록 */}
+          {isPlayerBroadcast ? (
+            <div className="space-y-3 pl-6 border-l-2 border-primary/20">
+              <div className="space-y-1">
+                <p className="text-sm font-medium">채널 ID: <span className="font-mono text-primary">{channelCode || "미설정"}</span></p>
+                {currentChannel && (
+                  <p className="text-xs text-muted-foreground">
+                    /send/setup 페이지에서 채널별 디바이스를 관리할 수 있습니다.
+                  </p>
+                )}
+              </div>
+              {registeredDevices.length === 0 ? (
+                <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                  등록된 디바이스가 없습니다. <a href={`/send/setup?channel=${currentChannel?.id || ""}`} className="text-primary underline">전송 설정 페이지</a>에서 디바이스를 추가해주세요.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {registeredDevices.map((device) => (
+                    <label
+                      key={device.id}
+                      className="flex items-center justify-between rounded-lg border p-3 text-sm"
+                    >
+                      <div className="flex flex-col">
+                        <span className="font-medium">{device.name}</span>
+                        <span className="text-xs text-muted-foreground">ID: {device.id}</span>
+                      </div>
+                      <Checkbox
+                        checked={selectedDeviceIds.includes(device.id)}
+                        onCheckedChange={() => handleToggleDevice(device.id)}
+                      />
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
             <div className="space-y-3 pl-6 border-l-2 border-primary/20">
               <div className="space-y-2">
                 <Label htmlFor="customer-id">고객 ID *</Label>
@@ -434,4 +550,3 @@ export default function BroadcastDialog({
     </Dialog>
   );
 }
-

@@ -11,6 +11,18 @@ header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization, X-API-Key');
 
+function sanitize_channel_id($value) {
+    if ($value === null) {
+        return 'public';
+    }
+    $value = strtolower(trim((string)$value));
+    if ($value === '') {
+        return 'public';
+    }
+    $value = preg_replace('/[^a-z0-9_\-]/', '_', $value);
+    return $value !== '' ? $value : 'public';
+}
+
 // OPTIONS 요청 처리
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
@@ -25,23 +37,54 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 }
 
 $filename = $_GET['file'] ?? null;
+$rawChannelId = $_GET['channel_id'] ?? null;
 if (!$filename) {
     http_response_code(400);
     echo json_encode(['error' => 'file parameter is required']);
     exit();
 }
+if ($rawChannelId === null) {
+    http_response_code(400);
+    echo json_encode(['error' => 'channel_id is required']);
+    exit();
+}
+$requestedChannelId = sanitize_channel_id($rawChannelId);
 
 // 보안: 파일명에 경로 문자 포함 방지
 $filename = basename($filename);
 
 // 오디오 디렉토리
 $audioDir = __DIR__ . '/audio';
+$metadataDir = __DIR__ . '/metadata';
 $audioFile = $audioDir . '/' . $filename;
+$metadataFile = $metadataDir . '/' . $filename . '.json';
 
 // 파일 존재 확인
 if (!file_exists($audioFile)) {
     http_response_code(404);
     echo json_encode(['error' => 'Audio file not found', 'file' => $filename]);
+    exit();
+}
+
+// 채널 권한 확인 (메타데이터 기반)
+$fileChannelId = 'public';
+if (file_exists($metadataFile)) {
+    $metadataContent = file_get_contents($metadataFile);
+    if ($metadataContent !== false) {
+        $metadata = json_decode($metadataContent, true);
+        if (is_array($metadata)) {
+            if (!empty($metadata['channel_id'])) {
+                $fileChannelId = sanitize_channel_id($metadata['channel_id']);
+            } elseif (!empty($metadata['customer_id'])) {
+                $fileChannelId = sanitize_channel_id($metadata['customer_id']);
+            }
+        }
+    }
+}
+
+if ($fileChannelId !== $requestedChannelId) {
+    http_response_code(403);
+    echo json_encode(['error' => 'Access denied for this channel', 'channel_id' => $requestedChannelId]);
     exit();
 }
 
@@ -244,4 +287,3 @@ if ($audioData !== null) {
 
 exit();
 ?>
-

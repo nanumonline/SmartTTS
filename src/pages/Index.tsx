@@ -112,29 +112,11 @@ const Index = () => {
     const sample = sampleVoices.find(s => s.id === sampleId);
     if (sample) {
       try {
-        const response = await fetch(sample.audioUrl, { cache: 'no-cache' });
+        const response = await fetch(sample.audioUrl);
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
-        
         const blob = await response.blob();
-        const blobSize = blob.size;
-        
-        // 파일 크기 검증 (최소 1KB 이상이어야 유효한 오디오 파일)
-        if (blobSize < 1024) {
-          console.error(`[Index] 다운로드된 파일이 너무 작습니다: ${blobSize} bytes`);
-          alert(`다운로드된 파일이 유효하지 않습니다 (${blobSize} bytes). 파일이 제대로 생성되지 않았거나 손상되었을 수 있습니다.`);
-          return;
-        }
-        
-        // Content-Type 확인
-        const contentType = response.headers.get('content-type') || '';
-        if (!contentType.includes('audio') && !contentType.includes('octet-stream')) {
-          console.warn(`[Index] 예상치 못한 Content-Type: ${contentType}`);
-        }
-        
-        console.log(`[Index] 샘플 파일 다운로드: ${sample.title}, 크기: ${(blobSize / 1024).toFixed(2)} KB, 타입: ${contentType}`);
-        
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -146,8 +128,8 @@ const Index = () => {
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
       } catch (error) {
-        console.error("[Index] 다운로드 오류:", error);
-        alert(`샘플 오디오를 다운로드할 수 없습니다.\n\n파일이 존재하는지 확인해주세요.\n또는 로그인 후 "샘플 생성" 페이지에서 파일을 다시 생성해주세요.`);
+        console.error("다운로드 오류:", error);
+        alert("샘플 오디오를 다운로드할 수 없습니다. 파일이 존재하는지 확인해주세요.");
       }
     }
   };

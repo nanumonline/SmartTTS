@@ -1,8 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import PageContainer from "@/components/layout/PageContainer";
 import PageHeader from "@/components/layout/PageHeader";
@@ -10,6 +9,7 @@ import {
   performHealthCheck,
   startHealthCheckScheduler,
   type HealthCheckResult,
+  DAILY_HEALTH_CHECK_INTERVAL,
 } from "@/services/healthCheckService";
 import {
   CheckCircle2,
@@ -24,6 +24,116 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDateTime } from "@/lib/pageUtils";
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+} from "recharts";
+import type { TooltipProps } from "recharts";
+
+const HISTORY_STORAGE_KEY = "voicecraft:health-history";
+const LAST_RUN_STORAGE_KEY = "voicecraft:health-last-run";
+const HISTORY_LIMIT = 30;
+
+interface HealthChartPoint {
+  label: string;
+  supabase: number;
+  database: number;
+  edgeFunctions: number;
+  statusScore: number;
+  fullTimestamp: string;
+}
+
+const statusScoreMap: Record<HealthCheckResult["status"], number> = {
+  healthy: 100,
+  degraded: 50,
+  unhealthy: 0,
+};
+
+const getStoredHistory = (): HealthCheckResult[] => {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(HISTORY_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed;
+    }
+    return [];
+  } catch (error) {
+    console.warn("[HealthCheck] 저장된 이력을 불러오지 못했습니다:", error);
+    return [];
+  }
+};
+
+const persistLastRunTimestamp = (timestamp: string) => {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(LAST_RUN_STORAGE_KEY, timestamp);
+  } catch (error) {
+    console.warn("[HealthCheck] 마지막 실행 시간을 저장하지 못했습니다:", error);
+  }
+};
+
+const persistHistory = (history: HealthCheckResult[]) => {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
+    if (history[0]) {
+      persistLastRunTimestamp(history[0].timestamp);
+    }
+  } catch (error) {
+    console.warn("[HealthCheck] 이력을 저장하지 못했습니다:", error);
+  }
+};
+
+const getLastRunTimestamp = () => {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(LAST_RUN_STORAGE_KEY);
+};
+
+const isDailyCheckDue = () => {
+  const lastRun = getLastRunTimestamp();
+  if (!lastRun) return true;
+  const lastRunTime = new Date(lastRun).getTime();
+  if (Number.isNaN(lastRunTime)) return true;
+  return Date.now() - lastRunTime >= DAILY_HEALTH_CHECK_INTERVAL;
+};
+
+const statusToScore = (status: HealthCheckResult["status"]) => statusScoreMap[status];
+
+const formatChartLabel = (timestamp: string) => {
+  const date = new Date(timestamp);
+  const month = (date.getMonth() + 1).toString().padStart(2, "0");
+  const day = date.getDate().toString().padStart(2, "0");
+  const hours = date.getHours().toString().padStart(2, "0");
+  return `${month}/${day} ${hours}h`;
+};
+
+const HealthChartTooltip = ({ active, payload }: TooltipProps<number, string>) => {
+  if (!active || !payload || payload.length === 0) return null;
+  const data = payload[0]?.payload as HealthChartPoint | undefined;
+  if (!data) return null;
+
+  return (
+    <div className="rounded-md border bg-background p-3 text-xs shadow-md">
+      <p className="font-medium">{data.fullTimestamp}</p>
+      <div className="mt-2 space-y-1">
+        <p className="text-blue-500">Supabase: {data.supabase}ms</p>
+        <p className="text-purple-500">Database: {data.database}ms</p>
+        <p className="text-orange-500">Edge Functions: {data.edgeFunctions}ms</p>
+        <p className="text-muted-foreground">
+          상태 지표: {data.statusScore === 100 ? "정상" : data.statusScore === 50 ? "주의" : "오류"}
+        </p>
+      </div>
+    </div>
+  );
+};
 
 export default function HealthCheckPage() {
   const [healthResult, setHealthResult] = useState<HealthCheckResult | null>(null);
@@ -31,34 +141,71 @@ export default function HealthCheckPage() {
   const [autoCheckEnabled, setAutoCheckEnabled] = useState(true);
   const [checkHistory, setCheckHistory] = useState<HealthCheckResult[]>([]);
 
+  // 저장된 이력 복원
+  useEffect(() => {
+    const storedHistory = getStoredHistory();
+    if (storedHistory.length > 0) {
+      setCheckHistory(storedHistory);
+      setHealthResult(storedHistory[0]);
+      persistLastRunTimestamp(storedHistory[0].timestamp);
+    }
+  }, []);
+
+  const recordHealthResult = useCallback((result: HealthCheckResult) => {
+    setHealthResult(result);
+    setCheckHistory((prev) => {
+      const deduped = prev.filter((item) => item.timestamp !== result.timestamp);
+      const nextHistory = [result, ...deduped].slice(0, HISTORY_LIMIT);
+      persistHistory(nextHistory);
+      return nextHistory;
+    });
+  }, []);
+
   // 헬스체크 실행
   const runHealthCheck = useCallback(async () => {
     setIsChecking(true);
     try {
       const result = await performHealthCheck();
-      setHealthResult(result);
-      setCheckHistory((prev) => [result, ...prev].slice(0, 20)); // 최근 20개만 유지
+      recordHealthResult(result);
     } catch (error) {
       console.error("헬스체크 실패:", error);
     } finally {
       setIsChecking(false);
     }
-  }, []);
+  }, [recordHealthResult]);
 
   // 자동 헬스체크 설정
   useEffect(() => {
     if (!autoCheckEnabled) return;
 
-    const cleanup = startHealthCheckScheduler(5 * 60 * 1000, (result) => {
-      setHealthResult(result);
-      setCheckHistory((prev) => [result, ...prev].slice(0, 20));
-    });
+    const cleanup = startHealthCheckScheduler(
+      DAILY_HEALTH_CHECK_INTERVAL,
+      (result) => {
+        recordHealthResult(result);
+      },
+      { runOnStart: false }
+    );
 
-    // 초기 체크
-    runHealthCheck();
+    if (isDailyCheckDue()) {
+      runHealthCheck();
+    }
 
     return cleanup;
-  }, [autoCheckEnabled, runHealthCheck]);
+  }, [autoCheckEnabled, recordHealthResult, runHealthCheck]);
+
+  const chartData = useMemo<HealthChartPoint[]>(() => {
+    if (checkHistory.length === 0) return [];
+    return [...checkHistory]
+      .reverse()
+      .map((item) => ({
+        label: formatChartLabel(item.timestamp),
+        supabase: item.responseTime.supabase,
+        database: item.responseTime.database,
+        edgeFunctions: item.responseTime.edgeFunctions,
+        statusScore: statusToScore(item.status),
+        fullTimestamp: formatDateTime(item.timestamp),
+      }));
+  }, [checkHistory]);
 
   const getStatusIcon = (status: HealthCheckResult["status"]) => {
     switch (status) {
@@ -116,7 +263,7 @@ export default function HealthCheckPage() {
               size="sm"
               onClick={() => setAutoCheckEnabled(!autoCheckEnabled)}
             >
-              {autoCheckEnabled ? "자동 체크 중지" : "자동 체크 시작"}
+              {autoCheckEnabled ? "하루 1회 자동 체크 중지" : "하루 1회 자동 체크 시작"}
             </Button>
             <Button onClick={runHealthCheck} disabled={isChecking}>
               <RefreshCw className={cn("w-4 h-4 mr-2", isChecking && "animate-spin")} />
@@ -239,12 +386,88 @@ export default function HealthCheckPage() {
         </Card>
       )}
 
+      {/* 히스토리 그래프 */}
+      {chartData.length > 0 && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>헬스체크 추이</CardTitle>
+            <CardDescription>최대 {HISTORY_LIMIT}개의 최근 이력을 기반으로 하루 1회의 응답 변동을 확인하세요.</CardDescription>
+          </CardHeader>
+          <CardContent className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+                <YAxis
+                  yAxisId="time"
+                  tickFormatter={(value) => `${value}ms`}
+                  tick={{ fontSize: 12 }}
+                  width={70}
+                />
+                <YAxis
+                  yAxisId="status"
+                  orientation="right"
+                  domain={[0, 100]}
+                  tickFormatter={(value) =>
+                    value === 100 ? "정상" : value === 50 ? "주의" : value === 0 ? "오류" : ""
+                  }
+                  ticks={[0, 50, 100]}
+                  width={60}
+                />
+                <Tooltip content={<HealthChartTooltip />} />
+                <Legend />
+                <Line
+                  yAxisId="time"
+                  type="monotone"
+                  dataKey="supabase"
+                  name="Supabase"
+                  stroke="#3b82f6"
+                  strokeWidth={2}
+                  dot={{ r: 3 }}
+                  activeDot={{ r: 5 }}
+                />
+                <Line
+                  yAxisId="time"
+                  type="monotone"
+                  dataKey="database"
+                  name="Database"
+                  stroke="#a855f7"
+                  strokeWidth={2}
+                  dot={{ r: 3 }}
+                  activeDot={{ r: 5 }}
+                />
+                <Line
+                  yAxisId="time"
+                  type="monotone"
+                  dataKey="edgeFunctions"
+                  name="Edge Functions"
+                  stroke="#fb923c"
+                  strokeWidth={2}
+                  dot={{ r: 3 }}
+                  activeDot={{ r: 5 }}
+                />
+                <Line
+                  yAxisId="status"
+                  type="stepAfter"
+                  dataKey="statusScore"
+                  name="상태 지표"
+                  stroke="#22c55e"
+                  strokeWidth={2}
+                  strokeDasharray="5 3"
+                  dot={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
       {/* 체크 이력 */}
       {checkHistory.length > 0 && (
         <Card className="mt-6">
           <CardHeader>
             <CardTitle>체크 이력</CardTitle>
-            <CardDescription>최근 헬스체크 결과 (최대 20개)</CardDescription>
+            <CardDescription>최근 헬스체크 결과 (최대 {HISTORY_LIMIT}개)</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
@@ -288,4 +511,3 @@ export default function HealthCheckPage() {
     </PageContainer>
   );
 }
-

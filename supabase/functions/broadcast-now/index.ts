@@ -15,6 +15,7 @@ interface BroadcastRequest {
   delayMinutes?: number;
   scheduledTime?: string; // ISO string
   scheduleName?: string;
+  deviceIds?: string[];
   customerInfo?: {
     customerId: string;
     customerName: string;
@@ -37,6 +38,30 @@ interface Channel {
   enabled: boolean;
   config?: Record<string, any>;
 }
+
+interface RegisteredDevice {
+  id: string;
+  name: string;
+  token: string;
+}
+
+const normalizeChannelCode = (value: any, fallback: string) => {
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value.trim();
+  }
+  return fallback;
+};
+
+const normalizeDeviceList = (config: any): RegisteredDevice[] => {
+  if (!Array.isArray(config?.devices)) return [];
+  return config.devices
+    .map((device: any) => ({
+      id: typeof device?.id === "string" ? device.id : "",
+      name: typeof device?.name === "string" ? device.name : "출력 장치",
+      token: typeof device?.token === "string" ? device.token : "",
+    }))
+    .filter((device: RegisteredDevice) => device.id.length > 0 && device.token.length > 0);
+};
 
 serve(async (req) => {
   // CORS preflight 처리
@@ -202,6 +227,7 @@ serve(async (req) => {
       }
 
       // 스케줄 생성
+      const hasDeviceTargets = Array.isArray(requestData.deviceIds) && requestData.deviceIds.length > 0;
       const scheduleData: any = {
         user_id: userId,
         generation_id: generationId,
@@ -210,7 +236,8 @@ serve(async (req) => {
         status: "scheduled",
         schedule_name: scheduleName || "Broadcast",
         schedule_type: scheduleType,
-        is_player_broadcast: customerInfo ? true : false,
+        is_player_broadcast: hasDeviceTargets,
+        target_devices: hasDeviceTargets ? requestData.deviceIds : null,
       };
 
       // 고객 정보가 있으면 컬럼에 저장
@@ -270,6 +297,7 @@ serve(async (req) => {
     
     // 즉시 송출도 작업 큐에 기록 생성 (상태 추적을 위해)
     const now = new Date();
+    const hasDeviceTargets = Array.isArray(requestData.deviceIds) && requestData.deviceIds.length > 0;
     const scheduleData: any = {
       user_id: userId,
       generation_id: generationId,
@@ -278,7 +306,8 @@ serve(async (req) => {
       status: "processing", // 처리 중 상태
       schedule_name: scheduleName || "즉시 송출",
       schedule_type: "immediate",
-      is_player_broadcast: customerInfo ? true : false,
+      is_player_broadcast: hasDeviceTargets,
+      target_devices: hasDeviceTargets ? requestData.deviceIds : null,
     };
 
     // 고객 정보가 있으면 컬럼에 저장
@@ -361,6 +390,30 @@ serve(async (req) => {
       );
     }
 
+    const channelConfig = (channel.config as Record<string, any>) || {};
+    const registeredDevices = normalizeDeviceList(channelConfig);
+    const requestedDeviceIds = Array.isArray(requestData.deviceIds) ? requestData.deviceIds : [];
+    let resolvedDevices: RegisteredDevice[] = [];
+    if (requestedDeviceIds.length > 0) {
+      resolvedDevices = registeredDevices.filter((device) => requestedDeviceIds.includes(device.id));
+      const missingDevices = requestedDeviceIds.filter(
+        (deviceId) => !resolvedDevices.some((device) => device.id === deviceId)
+      );
+      if (missingDevices.length > 0) {
+        return new Response(
+          JSON.stringify({
+            error: "Device not registered for this channel",
+            details: missingDevices,
+          }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 400,
+          }
+        );
+      }
+    }
+    const sanitizedChannelCode = normalizeChannelCode(channelConfig.channelCode, channel.id);
+
     // 음원 데이터 로드 (execute-schedules와 동일한 로직)
     let audioData: ArrayBuffer | null = null;
     // MIME 타입 결정: 믹싱 음원은 WAV 형식이므로 우선순위 확인
@@ -382,7 +435,24 @@ serve(async (req) => {
       }
     }
 
-    // 1. audio_url이 data URL인 경우
+    // 1. cache_key가 있으면 Supabase Storage에서 다운로드
+    if (!audioData && generation.cache_key) {
+      try {
+        const { data: blobData, error: blobError } = await supabaseServiceClient.storage
+          .from("tts-audio")
+          .download(generation.cache_key);
+
+        if (!blobError && blobData) {
+          audioData = await blobData.arrayBuffer();
+          mimeType = blobData.type || mimeType;
+          console.log(`[broadcast-now] Loaded audio from storage cache_key: ${generation.cache_key}`);
+        }
+      } catch (err) {
+        console.warn(`[broadcast-now] Failed to load from storage cache_key:`, err);
+      }
+    }
+
+    // 2. audio_url이 data URL인 경우
     if (generation.audio_url && generation.audio_url.startsWith("data:")) {
       const [mimePart, base64Data] = generation.audio_url.split(",");
       mimeType = mimePart.match(/data:([^;]+)/)?.[1] || mimeType;
@@ -400,8 +470,39 @@ serve(async (req) => {
       }
     }
 
-    // 2. audio_url이 HTTP/HTTPS URL인 경우 다운로드
-    if (!audioData && generation.audio_url && !generation.audio_url.startsWith("data:")) {
+    // 3. audio_url이 Supabase Storage 경로인 경우 service role로 다운로드
+    if (!audioData && generation.audio_url) {
+      const storagePath = parseStoragePathFromUrl(generation.audio_url);
+      if (storagePath) {
+        try {
+          const { data: blobData, error: blobError } = await supabaseServiceClient.storage
+            .from(storagePath.bucket)
+            .download(storagePath.path);
+
+          if (!blobError && blobData) {
+            audioData = await blobData.arrayBuffer();
+            mimeType = blobData.type || mimeType;
+            console.log(
+              `[broadcast-now] Loaded audio from storage path: ${storagePath.bucket}/${storagePath.path}`
+            );
+          } else if (blobError) {
+            console.warn(
+              `[broadcast-now] Failed to download storage path ${storagePath.bucket}/${storagePath.path}:`,
+              blobError
+            );
+          }
+        } catch (err) {
+          console.warn(`[broadcast-now] Storage download error:`, err);
+        }
+      }
+    }
+
+    // 4. audio_url이 HTTP/HTTPS URL인 경우 다운로드
+    if (
+      !audioData &&
+      generation.audio_url &&
+      !generation.audio_url.startsWith("data:")
+    ) {
       try {
         const audioResponse = await fetch(generation.audio_url);
         if (audioResponse.ok) {
@@ -414,23 +515,7 @@ serve(async (req) => {
       }
     }
 
-    // 3. 캐시 키가 있으면 Supabase Storage에서 조회
-    if (!audioData && generation.cache_key) {
-      try {
-        const { data: blobData, error: blobError } = await supabaseServiceClient.storage
-          .from("tts-audio")
-          .download(generation.cache_key);
-
-        if (!blobError && blobData) {
-          audioData = await blobData.arrayBuffer();
-          mimeType = blobData.type || mimeType;
-        }
-      } catch (err) {
-        console.warn(`[broadcast-now] Failed to load from storage:`, err);
-      }
-    }
-
-    // 4. DB에서 직접 blob 로드 시도 (bytea 컬럼)
+    // 5. DB에서 직접 blob 로드 시도 (bytea 컬럼)
     if (!audioData) {
       try {
         const { data: blobRow, error: blobError } = await supabaseServiceClient
@@ -493,76 +578,73 @@ serve(async (req) => {
     }
 
     // 채널 endpoint로 오디오 전송
-    const config = (channel.config as Record<string, any>) || {};
-    const headers: Record<string, string> = {
-      "Content-Type": mimeType,
-      "Content-Length": String(audioData.byteLength),
-    };
-
-    // 헤더 값 검증 및 인코딩 함수 (한글/특수 문자를 안전한 형식으로 변환)
     const sanitizeHeaderValue = (value: any): string => {
       if (value === null || value === undefined) {
         return "";
       }
-      // 항상 문자열로 변환
       let str = String(value);
-      
-      // 빈 문자열이면 그대로 반환
       if (str.length === 0) {
         return str;
       }
-      
-      // Deno의 fetch는 헤더 값이 유효한 ByteString이어야 함
-      // 한글이나 특수 문자가 있으면 안전하게 처리
       try {
-        // ASCII 문자만 포함되어 있는지 확인
         const isASCII = /^[\x00-\x7F]*$/.test(str);
         if (isASCII) {
-          // ASCII 문자만 포함된 경우 그대로 사용
           return str;
         } else {
-          // 한글/특수 문자가 포함된 경우 URL 인코딩
           return encodeURIComponent(str);
         }
       } catch (e) {
-        // 인코딩 실패 시 빈 문자열 반환
         console.warn(`[broadcast-now] Failed to sanitize header value: ${e}`);
         return "";
       }
     };
 
-    // 스케줄 이름 헤더
-    if (scheduleName) {
-      headers["X-Schedule-Name"] = sanitizeHeaderValue(scheduleName);
-    }
-
-    // 고객 정보 헤더 (플레이어 송출 옵션)
-    if (customerInfo) {
-      headers["X-Customer-Id"] = sanitizeHeaderValue(customerInfo.customerId);
-      headers["X-Customer-Name"] = sanitizeHeaderValue(customerInfo.customerName);
-      headers["X-Category-Code"] = sanitizeHeaderValue(customerInfo.categoryCode);
-      if (customerInfo.memo) {
-        headers["X-Customer-Memo"] = sanitizeHeaderValue(customerInfo.memo);
+    const createBaseHeaders = (): Record<string, string> => {
+      const headers: Record<string, string> = {
+        "Content-Type": mimeType,
+        "Content-Length": String(audioData.byteLength),
+      };
+      if (scheduleName) {
+        headers["X-Schedule-Name"] = sanitizeHeaderValue(scheduleName);
       }
-    }
-
-    // config에서 추가 헤더 (값도 검증)
-    if (config.authHeader) {
-      headers["Authorization"] = sanitizeHeaderValue(config.authHeader);
-    }
-    if (config.apiKey) {
-      headers["X-API-Key"] = sanitizeHeaderValue(config.apiKey);
-    }
-    if (config.customHeaders && typeof config.customHeaders === "object") {
-      for (const [key, value] of Object.entries(config.customHeaders)) {
-        headers[key] = sanitizeHeaderValue(value);
+      if (resolvedDevices.length === 0 && customerInfo) {
+        headers["X-Customer-Id"] = sanitizeHeaderValue(customerInfo.customerId);
+        headers["X-Customer-Name"] = sanitizeHeaderValue(customerInfo.customerName);
+        headers["X-Category-Code"] = sanitizeHeaderValue(customerInfo.categoryCode);
+        if (customerInfo.memo) {
+          headers["X-Customer-Memo"] = sanitizeHeaderValue(customerInfo.memo);
+        }
       }
-    }
+      if (channelConfig.authHeader) {
+        headers["Authorization"] = sanitizeHeaderValue(channelConfig.authHeader);
+      }
+      if (channelConfig.apiKey) {
+        headers["X-API-Key"] = sanitizeHeaderValue(channelConfig.apiKey);
+      }
+      if (channelConfig.customHeaders && typeof channelConfig.customHeaders === "object") {
+        for (const [key, value] of Object.entries(channelConfig.customHeaders)) {
+          headers[key] = sanitizeHeaderValue(value);
+        }
+      }
+      return headers;
+    };
 
-    console.log(`[broadcast-now] Sending audio to endpoint: ${channel.endpoint}`);
-    console.log(`[broadcast-now] Headers:`, JSON.stringify(headers, null, 2));
+    const sendToDevice = async (device?: RegisteredDevice) => {
+      const headers = createBaseHeaders();
+      if (device) {
+        headers["X-Customer-Id"] = sanitizeHeaderValue(sanitizedChannelCode);
+        headers["X-Channel-Code"] = sanitizeHeaderValue(sanitizedChannelCode);
+        headers["X-Device-Id"] = sanitizeHeaderValue(device.id);
+        headers["X-Device-Name"] = sanitizeHeaderValue(device.name);
+        headers["X-Device-Token"] = sanitizeHeaderValue(device.token);
+      }
 
-    try {
+      console.log(
+        `[broadcast-now] Sending audio to endpoint: ${channel.endpoint}`,
+        device ? ` (device ${device.name})` : ""
+      );
+      console.log(`[broadcast-now] Headers:`, JSON.stringify(headers, null, 2));
+
       const response = await fetch(channel.endpoint, {
         method: "POST",
         headers,
@@ -574,7 +656,20 @@ serve(async (req) => {
         throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
 
-      console.log(`[broadcast-now] Successfully sent to ${channel.endpoint}`);
+      console.log(
+        `[broadcast-now] Successfully sent to ${channel.endpoint}`,
+        device ? ` (device ${device.name})` : ""
+      );
+    };
+
+    try {
+      if (resolvedDevices.length > 0) {
+        for (const device of resolvedDevices) {
+          await sendToDevice(device);
+        }
+      } else {
+        await sendToDevice();
+      }
 
       // 작업 큐 상태 업데이트: 송출 성공
       if (scheduleId) {
@@ -651,4 +746,27 @@ serve(async (req) => {
     );
   }
 });
-
+const parseStoragePathFromUrl = (url: string):
+  | { bucket: string; path: string }
+  | null => {
+  try {
+    const parsed = new URL(url);
+    const segments = parsed.pathname.split("/");
+    const storageIndex = segments.findIndex((segment) => segment === "object");
+    if (storageIndex === -1 || storageIndex + 2 >= segments.length) {
+      return null;
+    }
+    const bucket = segments[storageIndex + 2];
+    const pathSegments = segments.slice(storageIndex + 3);
+    if (!bucket || pathSegments.length === 0) {
+      return null;
+    }
+    const path = pathSegments.join("/");
+    return {
+      bucket,
+      path: decodeURIComponent(path),
+    };
+  } catch (_error) {
+    return null;
+  }
+};

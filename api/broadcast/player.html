@@ -186,7 +186,10 @@
 
     <script>
         const API_BASE = 'https://nanum.online/tts/api/broadcast';
-        const CHANNEL_ID = new URLSearchParams(window.location.search).get('channel_id') || 'default';
+        const urlParams = new URLSearchParams(window.location.search);
+        const CHANNEL_PARAM_PRESENT = urlParams.has('channel_id');
+        const CHANNEL_ID = (CHANNEL_PARAM_PRESENT ? urlParams.get('channel_id') : null) || 'public';
+        const CHANNEL_QUERY = `channel_id=${encodeURIComponent(CHANNEL_ID)}`;
         const POLL_INTERVAL = 10000; // 10초마다 확인
         
         let currentAudioId = null;
@@ -194,6 +197,13 @@
         let pollingInterval = null;
         let isPolling = true;
         let lastCheckedFile = null;
+
+        function appendChannelId(url) {
+            if (!url || !CHANNEL_ID) return url;
+            if (url.includes('channel_id=')) return url;
+            const separator = url.includes('?') ? '&' : '?';
+            return `${url}${separator}${CHANNEL_QUERY}`;
+        }
 
         // 상태 업데이트
         function updateStatus(message, className) {
@@ -207,7 +217,7 @@
             const infoEl = document.getElementById('info');
             document.getElementById('currentFile').textContent = currentFile || '없음';
             document.getElementById('nextCheck').textContent = nextCheck || '-';
-            document.getElementById('deviceId').textContent = getDeviceId();
+            document.getElementById('deviceId').textContent = `${getDeviceId()} / 채널: ${CHANNEL_ID}`;
             infoEl.style.display = 'block';
         }
 
@@ -223,14 +233,26 @@
 
         // 오디오 목록 확인
         async function checkAudio() {
+            if (!CHANNEL_PARAM_PRESENT && CHANNEL_ID === 'public') {
+                updateStatus('채널 ID가 필요합니다. URL에 ?channel_id=값 을 추가하세요.', 'disconnected');
+                return;
+            }
+
             try {
                 updateStatus('오디오 확인 중...', 'waiting');
                 
-                const response = await fetch(`${API_BASE}/list.php?limit=5`);
+                const response = await fetch(`${API_BASE}/list.php?${CHANNEL_QUERY}&limit=5`);
                 const data = await response.json();
                 
-                if (data.success && data.audio_list && data.audio_list.length > 0) {
-                    const latestAudio = data.audio_list[0]; // 최신 파일
+                const audioList = Array.isArray(data.audio_list)
+                    ? data.audio_list.map(item => ({
+                        ...item,
+                        url: appendChannelId(item.url)
+                    }))
+                    : [];
+                
+                if (data.success && audioList.length > 0) {
+                    const latestAudio = audioList[0]; // 최신 파일
                     
                     // 새로운 오디오인지 확인
                     if (latestAudio.filename !== lastCheckedFile && !isPlaying) {
@@ -242,7 +264,7 @@
                         updateStatus('대기 중... (재생할 새 오디오 없음)', 'waiting');
                     }
                     
-                    updateAudioList(data.audio_list);
+                    updateAudioList(audioList);
                 } else {
                     updateStatus('대기 중... (재생할 오디오 없음)', 'waiting');
                     updateAudioList([]);
@@ -269,13 +291,14 @@
                 return;
             }
             
-            if (audioPlayer.src === audio.url && !audioPlayer.ended && !audioPlayer.paused) {
+            const resolvedUrl = appendChannelId(audio.url);
+            if (audioPlayer.src === resolvedUrl && !audioPlayer.ended && !audioPlayer.paused) {
                 // 이미 같은 오디오가 재생 중
                 return;
             }
             
             // 오디오 소스 설정
-            audioPlayer.src = audio.url;
+            audioPlayer.src = resolvedUrl;
             currentAudioId = audio.filename;
             
             updateStatus(`재생 준비: ${audio.filename}`, 'waiting');
@@ -295,7 +318,7 @@
 
             audioPlayer.onerror = (error) => {
                 console.error('Audio playback error:', error);
-                console.error('Audio URL:', audio.url);
+                console.error('Audio URL:', resolvedUrl);
                 console.error('Audio element error:', audioPlayer.error);
                 
                 let errorMessage = '재생 오류: 오디오 파일을 확인할 수 없습니다';
@@ -325,7 +348,7 @@
                 currentAudioId = null;
                 
                 // 오디오 URL 직접 확인 (디버깅용)
-                fetch(audio.url, { method: 'HEAD' })
+                fetch(resolvedUrl, { method: 'HEAD' })
                     .then(response => {
                         if (!response.ok) {
                             console.error('Audio file not found:', response.status, response.statusText);
@@ -483,4 +506,3 @@
     </script>
 </body>
 </html>
-

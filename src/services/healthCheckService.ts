@@ -27,6 +27,16 @@ export interface ServiceHealth {
   responseTime?: number;
 }
 
+export const DAILY_HEALTH_CHECK_INTERVAL = 24 * 60 * 60 * 1000; // 24시간
+
+interface HealthCheckSchedulerOptions {
+  /**
+   * Whether the scheduler should trigger an immediate run.
+   * Useful when the caller wants to control when the first run happens.
+   */
+  runOnStart?: boolean;
+}
+
 /**
  * Supabase 연결 상태 확인
  */
@@ -260,13 +270,14 @@ export async function performHealthCheck(): Promise<HealthCheckResult> {
 
 /**
  * 주기적인 헬스체크 실행 (Supabase를 깨어있게 유지)
- * @param intervalMs 체크 간격 (밀리초, 기본값: 5분)
+ * @param intervalMs 체크 간격 (밀리초, 기본값: 24시간)
  * @param onResult 헬스체크 결과 콜백
  * @returns 정리 함수
  */
 export function startHealthCheckScheduler(
-  intervalMs: number = 5 * 60 * 1000, // 5분
-  onResult?: (result: HealthCheckResult) => void
+  intervalMs: number = DAILY_HEALTH_CHECK_INTERVAL,
+  onResult?: (result: HealthCheckResult) => void,
+  options: HealthCheckSchedulerOptions = {}
 ): () => void {
   let intervalId: number | null = null;
   let isRunning = false;
@@ -287,8 +298,9 @@ export function startHealthCheckScheduler(
     }
   };
 
-  // 즉시 한 번 실행
-  runCheck();
+  if (options.runOnStart ?? true) {
+    runCheck();
+  }
 
   // 주기적으로 실행
   intervalId = window.setInterval(runCheck, intervalMs);
@@ -301,4 +313,3 @@ export function startHealthCheckScheduler(
     }
   };
 }
-

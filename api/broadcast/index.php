@@ -16,7 +16,35 @@
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Content-Length, Authorization, X-API-Key');
+header('Access-Control-Allow-Headers: Content-Type, Content-Length, Authorization, X-API-Key, X-Customer-Id, X-Customer-Name, X-Category-Code, X-Customer-Memo');
+
+function sanitize_channel_id($value) {
+    if ($value === null) {
+        return 'public';
+    }
+    $value = strtolower(trim((string)$value));
+    if ($value === '') {
+        return 'public';
+    }
+    $value = preg_replace('/[^a-z0-9_\-]/', '_', $value);
+    return $value !== '' ? $value : 'public';
+}
+
+function sanitize_metadata_value($value, $maxLength = 120) {
+    if ($value === null) {
+        return null;
+    }
+    $value = trim((string)$value);
+    if ($value === '') {
+        return null;
+    }
+    if (function_exists('mb_substr')) {
+        $value = mb_substr($value, 0, $maxLength);
+    } else {
+        $value = substr($value, 0, $maxLength);
+    }
+    return $value;
+}
 
 // CORS preflight 요청 처리
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -104,13 +132,21 @@ if (strlen($audioData) > 0) {
     }
 }
 
+// 고객/기관 식별 정보
+$rawCustomerId = $_SERVER['HTTP_X_CUSTOMER_ID'] ?? null;
+$customerId = sanitize_channel_id($rawCustomerId);
+$customerName = sanitize_metadata_value($_SERVER['HTTP_X_CUSTOMER_NAME'] ?? null);
+$categoryCode = sanitize_metadata_value($_SERVER['HTTP_X_CATEGORY_CODE'] ?? null);
+$customerMemo = sanitize_metadata_value($_SERVER['HTTP_X_CUSTOMER_MEMO'] ?? null);
+
 // 디렉토리 설정 (먼저 설정하여 로그에 사용)
 $baseDir = __DIR__;
 $logDir = $baseDir . '/logs';
 $audioDir = $baseDir . '/audio';
+$metadataDir = $baseDir . '/metadata';
 
 // 디렉토리 생성
-foreach ([$logDir, $audioDir] as $dir) {
+foreach ([$logDir, $audioDir, $metadataDir] as $dir) {
     if (!is_dir($dir)) {
         mkdir($dir, 0755, true);
     }
@@ -147,11 +183,12 @@ if (strlen($audioData) < 100) {
 // 로그 기록
 $logFile = $logDir . '/broadcast_' . date('Y-m-d') . '.log';
 $logEntry = sprintf(
-    "[%s] Received broadcast: %d bytes, Type: %s, IP: %s\n",
+    "[%s] Received broadcast: %d bytes, Type: %s, IP: %s, Channel: %s\n",
     date('Y-m-d H:i:s'),
     $contentLength,
     $contentType,
-    $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+    $_SERVER['REMOTE_ADDR'] ?? 'unknown',
+    $customerId
 );
 file_put_contents($logFile, $logEntry, FILE_APPEND);
 
@@ -219,6 +256,19 @@ if (file_put_contents($audioFile, $audioData) === false) {
 
 file_put_contents($logFile, date('Y-m-d H:i:s') . " - Saved: " . basename($audioFile) . "\n", FILE_APPEND);
 
+// 메타데이터 저장 (기관 식별을 위해)
+$metadataFile = $metadataDir . '/' . basename($audioFile) . '.json';
+$metadata = [
+    'channel_id' => $customerId,
+    'customer_id' => $customerId,
+    'customer_name' => $customerName,
+    'category_code' => $categoryCode,
+    'memo' => $customerMemo,
+    'filename' => basename($audioFile),
+    'created_at' => date('c'),
+];
+file_put_contents($metadataFile, json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+
 // ============================================
 // 여기서 실제 방송 송출 로직을 구현하세요
 // ============================================
@@ -270,7 +320,13 @@ echo json_encode([
     'file_size' => $contentLength,
     'content_type' => $contentType,
     'saved_file' => basename($audioFile),
-    'server_time' => time()
+    'server_time' => time(),
+    'channel_id' => $customerId,
+    'customer' => [
+        'id' => $customerId,
+        'name' => $customerName,
+        'category' => $categoryCode,
+        'memo' => $customerMemo,
+    ],
 ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
 ?>
-

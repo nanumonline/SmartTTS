@@ -434,13 +434,13 @@ const AudioPlayer = ({
 
       // 오디오 로드 상태 확인 및 재생
       const attemptPlay = async () => {
-        try {
-          await audio.play();
-          setIsPlaying(true);
+      try {
+        await audio.play();
+        setIsPlaying(true);
           setIsLoading(false);
-        } catch (error: any) {
+      } catch (error: any) {
           console.warn('[AudioPlayer] 재생 오류:', error);
-          setIsPlaying(false);
+        setIsPlaying(false);
           setIsLoading(false);
           handlePlayError(error);
         }
@@ -679,15 +679,15 @@ const AudioPlayer = ({
   };
 
   const handlePlayError = (error: any) => {
-    // blob URL이 만료되었을 수 있음 - onError 콜백 호출
+        // blob URL이 만료되었을 수 있음 - onError 콜백 호출
     if (audioUrl && (audioUrl.startsWith('blob:') || audioUrl.startsWith('data:')) && onError && !isRecoveringRef.current) {
-      isRecoveringRef.current = true;
-      onError();
-      setTimeout(() => {
-        isRecoveringRef.current = false;
-      }, 1000);
-    } else {
-      // 일반 오류는 사용자에게 알림
+          isRecoveringRef.current = true;
+          onError();
+          setTimeout(() => {
+            isRecoveringRef.current = false;
+          }, 1000);
+        } else {
+          // 일반 오류는 사용자에게 알림
       console.error('[AudioPlayer] 오디오 재생 실패:', error);
     }
   };

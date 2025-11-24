@@ -604,7 +604,10 @@
 
     <script>
         const API_BASE = 'https://nanum.online/tts/api/broadcast';
-        const CHANNEL_ID = new URLSearchParams(window.location.search).get('channel_id') || 'default';
+        const urlParams = new URLSearchParams(window.location.search);
+        const CHANNEL_PARAM_PRESENT = urlParams.has('channel_id');
+        const CHANNEL_ID = (CHANNEL_PARAM_PRESENT ? urlParams.get('channel_id') : null) || 'public';
+        const CHANNEL_QUERY = `channel_id=${encodeURIComponent(CHANNEL_ID)}`;
         
         // 폴링 간격
         let POLL_INTERVAL = 10000; // 기본 10초
@@ -616,6 +619,13 @@
         let isPolling = true;
         let lastCheckedFile = null;
         let lastAudioCheckTime = 0;
+
+        function appendChannelId(url) {
+            if (!url || !CHANNEL_ID) return url;
+            if (url.includes('channel_id=')) return url;
+            const separator = url.includes('?') ? '&' : '?';
+            return `${url}${separator}${CHANNEL_QUERY}`;
+        }
 
         // 모드 전환
         function switchMode(mode) {
@@ -666,7 +676,7 @@
             const infoEl = document.getElementById('info');
             document.getElementById('currentFile').textContent = currentFile || '없음';
             document.getElementById('nextCheck').textContent = nextCheck || '-';
-            document.getElementById('deviceId').textContent = getDeviceId();
+            document.getElementById('deviceId').textContent = `${getDeviceId()} / 채널: ${CHANNEL_ID}`;
             
             // 스케줄 이름 표시
             const scheduleNameItem = document.getElementById('currentScheduleNameItem');
@@ -711,14 +721,26 @@
 
         // 오디오 목록 확인
         async function checkAudio() {
+            if (!CHANNEL_PARAM_PRESENT && CHANNEL_ID === 'public') {
+                updateStatus('채널 ID가 필요합니다. URL에 ?channel_id=값 을 추가하세요.', 'disconnected');
+                return;
+            }
+
             try {
                 updateStatus('오디오 확인 중...', 'waiting');
                 
-                const response = await fetch(`${API_BASE}/list.php?limit=5`);
+                const response = await fetch(`${API_BASE}/list.php?${CHANNEL_QUERY}&limit=5`);
                 const data = await response.json();
                 
-                if (data.success && data.audio_list && data.audio_list.length > 0) {
-                    const latestAudio = data.audio_list[0];
+                const audioList = Array.isArray(data.audio_list)
+                    ? data.audio_list.map(item => ({
+                        ...item,
+                        url: appendChannelId(item.url)
+                    }))
+                    : [];
+                
+                if (data.success && audioList.length > 0) {
+                    const latestAudio = audioList[0];
                     
                     // 새로운 오디오인지 확인
                     if (latestAudio.filename !== lastCheckedFile && !isPlaying) {
@@ -729,8 +751,7 @@
                     } else {
                         updateStatus('대기 중... (재생할 새 오디오 없음)', 'waiting');
                     }
-                    
-                    updateAudioList(data.audio_list);
+                    updateAudioList(audioList);
                 } else {
                     updateStatus('대기 중... (재생할 오디오 없음)', 'waiting');
                     updateAudioList([]);
@@ -738,7 +759,7 @@
                 
                 // 다음 확인 시간 업데이트
                 const nextCheck = new Date(Date.now() + POLL_INTERVAL);
-                const latestAudio = data?.audio_list?.[0];
+                const latestAudio = audioList[0];
                 updateInfo(
                     lastCheckedFile || null, 
                     nextCheck.toLocaleTimeString('ko-KR'),
@@ -769,7 +790,7 @@
             audioPlayer.onerror = null;
             audioPlayer.oncanplay = null;
             
-            audioPlayer.src = audio.url;
+            audioPlayer.src = appendChannelId(audio.url);
             currentAudioId = audio.filename;
             
             const scheduleName = audio.schedule_name || null;
@@ -976,4 +997,3 @@
     </script>
 </body>
 </html>
-
