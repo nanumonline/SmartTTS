@@ -544,11 +544,51 @@ export default function EmergencyBroadcastPage() {
     
     setIsSubmitting(true);
     try {
+      // 채널 설정 확인하여 송출 타입 정보 가져오기
+      const selectedChannel = channels.find(
+        (ch) => ch.id === selectedChannelId || ch.type === selectedChannelId
+      );
+      const channelConfig = (selectedChannel as any)?.config || {};
+      const channelBroadcastType = channelConfig.broadcastType || "public";
+      
       const options: dbService.BroadcastOptions = {
         generationId: selectedGenerationId,
         channelId: selectedChannelId,
         scheduleName: scheduleName || "긴급 방송",
       };
+      
+      // 채널 설정의 송출 타입에 따라 옵션 설정
+      if (channelBroadcastType === "device-channel") {
+        // 디바이스ID/채널ID 송출 모드
+        const registeredDevices = Array.isArray(channelConfig.devices) ? channelConfig.devices : [];
+        // 등록된 모든 디바이스 ID 추출
+        const deviceIds = registeredDevices
+          .filter((device: any) => device?.id && device?.token)
+          .map((device: any) => device.id);
+        
+        if (deviceIds.length === 0) {
+          toast({
+            title: "디바이스 없음",
+            description: "전송 설정 페이지에서 디바이스를 등록한 뒤 다시 시도하세요.",
+            variant: "destructive",
+          });
+          setIsSubmitting(false);
+          return;
+        }
+        
+        options.deviceIds = deviceIds;
+      } else {
+        // Public 송출 모드
+        // 사용자 정보로 기본 고객 정보 설정
+        options.customerInfo = {
+          customerId: user?.email?.split("@")[0] || user?.id?.substring(0, 8) || "",
+          customerName: user?.name || user?.email?.split("@")[0] || "",
+          categoryCode: user?.department || user?.organization || "",
+          memo: "긴급 방송",
+        };
+      }
+      
+      console.log("[EmergencyBroadcastPage] Sending options:", options);
       
       let result;
       if (scheduleType === "immediate") {

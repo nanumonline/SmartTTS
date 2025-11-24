@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 import * as dbService from "@/services/dbService";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -55,6 +56,11 @@ export default function BroadcastDialog({
   });
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const currentChannel = channels.find((channel) => channel.id === selectedChannelId || channel.type === selectedChannelId);
+  const channelConfig = (currentChannel as any)?.config || {};
+  const channelBroadcastType = useMemo(() => {
+    return channelConfig.broadcastType || "public";
+  }, [currentChannel, channelConfig.broadcastType]);
+  
   const registeredDevices = useMemo<ChannelDeviceConfig[]>(() => {
     if (!currentChannel?.config) return [];
     const rawDevices = Array.isArray((currentChannel as any).config?.devices)
@@ -72,8 +78,8 @@ export default function BroadcastDialog({
       );
   }, [currentChannel]);
   const channelCode =
-    typeof (currentChannel as any)?.config?.channelCode === "string"
-      ? ((currentChannel as any).config.channelCode as string)
+    typeof channelConfig.channelCode === "string"
+      ? (channelConfig.channelCode as string)
       : "";
 
   // 채널 목록 로드 및 사용자 정보로 기본값 설정
@@ -102,42 +108,42 @@ export default function BroadcastDialog({
     if (open && user?.id) {
       loadChannels();
       setScheduleName(generationName || "Broadcast");
+    }
+  }, [open, generationName, user?.id, selectedChannelId]);
+
+  // 채널 변경 시 송출 타입 자동 설정
+  useEffect(() => {
+    if (!open || !currentChannel) return;
+    
+    const config = (currentChannel as any)?.config || {};
+    const broadcastType = config.broadcastType || "public";
+    
+    // 채널 설정에서 송출 타입 확인하여 자동 설정
+    if (broadcastType === "device-channel") {
+      setIsPlayerBroadcast(true);
+      // 디바이스ID/채널ID 송출 모드일 때는 모든 디바이스 자동 선택
+      if (registeredDevices.length > 0) {
+        setSelectedDeviceIds(registeredDevices.map((device) => device.id));
+      }
+    } else {
+      setIsPlayerBroadcast(false);
+      setSelectedDeviceIds([]);
       
-      // 플레이어 송출 체크 시, 사용자 정보로 기본값 설정
-      if (isPlayerBroadcast && (!customerInfo.customerId || !customerInfo.customerName || !customerInfo.categoryCode)) {
-        const loginId = user.email?.split("@")[0] || user.id.substring(0, 8) || "";
-        const userName = user.name || user.email?.split("@")[0] || "";
-        const userDept = user.department || user.organization || "";
+      // Public 송출 모드일 때 사용자 정보로 기본값 설정
+      if (!customerInfo.customerId || !customerInfo.customerName || !customerInfo.categoryCode) {
+        const loginId = user?.email?.split("@")[0] || user?.id?.substring(0, 8) || "";
+        const userName = user?.name || user?.email?.split("@")[0] || "";
+        const userDept = user?.department || user?.organization || "";
         
         setCustomerInfo({
-          customerId: loginId, // 이메일의 @ 앞부분 (로그인 ID)
+          customerId: loginId,
           customerName: userName,
           categoryCode: userDept,
           memo: customerInfo.memo || "",
         });
       }
     }
-  }, [open, generationName, user?.id, user?.email, user?.name, user?.department, user?.organization, isPlayerBroadcast]);
-
-  useEffect(() => {
-    if (!isPlayerBroadcast) {
-      setSelectedDeviceIds([]);
-      return;
-    }
-    if (registeredDevices.length === 0) {
-      setSelectedDeviceIds([]);
-      return;
-    }
-
-    setSelectedDeviceIds((prev) => {
-      const availableIds = registeredDevices.map((device) => device.id);
-      const intersection = prev.filter((id) => availableIds.includes(id));
-      if (intersection.length > 0) {
-        return intersection;
-      }
-      return availableIds;
-    });
-  }, [isPlayerBroadcast, registeredDevices]);
+  }, [open, currentChannel, registeredDevices, user?.id, user?.email, user?.name, user?.department, user?.organization]);
 
   const handleSubmit = async () => {
     // 전송 전 유효성 검사 (더 엄격하게)
@@ -177,7 +183,8 @@ export default function BroadcastDialog({
       return;
     }
 
-    if (isPlayerBroadcast) {
+    // 채널 설정의 송출 타입에 따라 검증
+    if (channelBroadcastType === "device-channel") {
       if (!channelCode) {
         toast({
           title: "채널 ID 필요",
@@ -205,10 +212,11 @@ export default function BroadcastDialog({
         return;
       }
     } else {
+      // Public 송출 모드
       if (!customerInfo.customerId?.trim() || !customerInfo.customerName?.trim() || !customerInfo.categoryCode?.trim()) {
         toast({
           title: "고객 정보 입력 필요",
-          description: "플레이어 송출 비활성화 시 고객 정보를 모두 입력해주세요.",
+          description: "Public 송출 모드에서는 고객 정보를 모두 입력해주세요.",
           variant: "destructive",
         });
         return;
@@ -222,9 +230,11 @@ export default function BroadcastDialog({
       scheduleName,
       scheduleType,
       delayMinutes,
+      channelBroadcastType,
       isPlayerBroadcast,
       customerInfo,
       selectedDeviceIds,
+      registeredDevicesCount: registeredDevices.length,
     });
 
     setIsSubmitting(true);
@@ -238,7 +248,8 @@ export default function BroadcastDialog({
       
       console.log("[BroadcastDialog] Sending options:", options);
 
-      if (isPlayerBroadcast) {
+      // 채널 설정의 송출 타입에 따라 옵션 설정
+      if (channelBroadcastType === "device-channel") {
         options.deviceIds = selectedDeviceIds;
       } else {
         options.customerInfo = customerInfo;
@@ -321,7 +332,7 @@ export default function BroadcastDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>음원 송출</DialogTitle>
           <DialogDescription>
@@ -329,7 +340,7 @@ export default function BroadcastDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
+        <div className="space-y-5 py-4">
           {/* 스케줄 이름 */}
           <div className="space-y-2">
             <Label htmlFor="schedule-name">스케줄 이름</Label>
@@ -379,14 +390,14 @@ export default function BroadcastDialog({
 
           {/* 지연 시간 입력 (지연 송출 선택 시) */}
           {scheduleType === "delayed" && (
-            <div className="space-y-2">
-              <Label htmlFor="delay-minutes">지연 시간 (분)</Label>
-              <div className="flex gap-2">
+            <div className="space-y-3 rounded-lg border p-4 bg-muted/20">
+              <Label htmlFor="delay-minutes" className="text-sm font-semibold">지연 시간 (분)</Label>
+              <div className="flex gap-2 flex-wrap">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => setDelayMinutes(10)}
-                  className={delayMinutes === 10 ? "bg-primary text-primary-foreground" : ""}
+                  className={delayMinutes === 10 ? "bg-primary text-primary-foreground border-primary" : ""}
                 >
                   10분
                 </Button>
@@ -394,7 +405,7 @@ export default function BroadcastDialog({
                   variant="outline"
                   size="sm"
                   onClick={() => setDelayMinutes(30)}
-                  className={delayMinutes === 30 ? "bg-primary text-primary-foreground" : ""}
+                  className={delayMinutes === 30 ? "bg-primary text-primary-foreground border-primary" : ""}
                 >
                   30분
                 </Button>
@@ -402,70 +413,120 @@ export default function BroadcastDialog({
                   variant="outline"
                   size="sm"
                   onClick={() => setDelayMinutes(60)}
-                  className={delayMinutes === 60 ? "bg-primary text-primary-foreground" : ""}
+                  className={delayMinutes === 60 ? "bg-primary text-primary-foreground border-primary" : ""}
                 >
                   60분
                 </Button>
               </div>
-              <Input
-                id="delay-minutes"
-                type="number"
-                min="1"
-                value={delayMinutes}
-                onChange={(e) => setDelayMinutes(parseInt(e.target.value) || 0)}
-                placeholder="직접 입력"
-              />
+              <div className="space-y-1">
+                <Label htmlFor="delay-minutes-custom" className="text-xs text-muted-foreground">직접 입력</Label>
+                <Input
+                  id="delay-minutes-custom"
+                  type="number"
+                  min="1"
+                  value={delayMinutes}
+                  onChange={(e) => setDelayMinutes(parseInt(e.target.value) || 0)}
+                  placeholder="분 단위로 입력하세요"
+                />
+              </div>
             </div>
           )}
 
-          {/* 플레이어 송출 옵션 */}
-          <div className="space-y-2">
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="player-broadcast"
-                checked={isPlayerBroadcast}
-                onCheckedChange={(checked) => {
-                  const enabled = checked === true;
-                  setIsPlayerBroadcast(enabled);
-                  if (enabled) {
-                    setSelectedDeviceIds(registeredDevices.map((device) => device.id));
-                  }
-                }}
-              />
-              <Label htmlFor="player-broadcast" className="cursor-pointer">
-                플레이어 송출
-              </Label>
+          {/* 송출 타입 정보 (설정 페이지에서 관리) */}
+          <div className="space-y-3 rounded-lg border p-4 bg-muted/30">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-semibold">송출 타입</Label>
+              <Badge variant={channelBroadcastType === "device-channel" ? "default" : "secondary"} className="text-xs">
+                {channelBroadcastType === "device-channel" ? "디바이스ID/채널ID 송출" : "Public 송출"}
+              </Badge>
             </div>
-            <p className="text-xs text-muted-foreground pl-6">
-              체크 시 등록된 디바이스에 멀티 송출이 가능합니다.
-            </p>
+            <div className="space-y-2 text-sm">
+              {channelBroadcastType === "device-channel" ? (
+                <>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-primary">디바이스ID/채널ID 송출 모드</span>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs text-muted-foreground">
+                      <span className="font-medium">엔드포인트:</span>
+                    </div>
+                    <code className="block text-xs bg-background px-2 py-1 rounded border break-all">
+                      {currentChannel?.endpoint || "미설정"}/device/&#123;deviceId&#125;/channel/&#123;channelId&#125;
+                    </code>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    각 디바이스별로 고유한 엔드포인트 경로로 송출됩니다.
+                  </p>
+                  <p className="text-xs text-muted-foreground italic">
+                    ※ 송출 타입은 전송 설정 페이지에서 변경할 수 있습니다.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">Public 송출 모드</span>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs text-muted-foreground">
+                      <span className="font-medium">엔드포인트:</span>
+                    </div>
+                    <code className="block text-xs bg-background px-2 py-1 rounded border break-all">
+                      {currentChannel?.endpoint || "미설정"}
+                    </code>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    일반 엔드포인트로 송출됩니다. 고객 정보가 헤더에 포함됩니다.
+                  </p>
+                  <p className="text-xs text-muted-foreground italic">
+                    ※ 송출 타입은 전송 설정 페이지에서 변경할 수 있습니다.
+                  </p>
+                </>
+              )}
+            </div>
           </div>
 
-          {/* 플레이어 송출 선택 시 디바이스 목록 */}
-          {isPlayerBroadcast ? (
-            <div className="space-y-3 pl-6 border-l-2 border-primary/20">
+          {/* 디바이스ID/채널ID 송출 시 디바이스 선택 */}
+          {channelBroadcastType === "device-channel" && (
+            <div className="space-y-3 rounded-lg border p-4 bg-muted/20">
               <div className="space-y-1">
-                <p className="text-sm font-medium">채널 ID: <span className="font-mono text-primary">{channelCode || "미설정"}</span></p>
+                <Label className="text-sm font-semibold">채널 ID</Label>
+                <p className="text-sm font-mono text-primary bg-background px-2 py-1 rounded border inline-block">
+                  {channelCode || "미설정"}
+                </p>
                 {currentChannel && (
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs text-muted-foreground mt-1">
                     /send/setup 페이지에서 채널별 디바이스를 관리할 수 있습니다.
                   </p>
                 )}
               </div>
               {registeredDevices.length === 0 ? (
-                <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-                  등록된 디바이스가 없습니다. <a href={`/send/setup?channel=${currentChannel?.id || ""}`} className="text-primary underline">전송 설정 페이지</a>에서 디바이스를 추가해주세요.
+                <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground bg-muted/50">
+                  등록된 디바이스가 없습니다.{" "}
+                  <a 
+                    href={`/send/setup?channel=${currentChannel?.id || ""}`} 
+                    className="text-primary underline hover:text-primary/80"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    전송 설정 페이지
+                  </a>
+                  에서 디바이스를 추가해주세요.
                 </div>
               ) : (
                 <div className="space-y-2">
+                  <Label className="text-sm font-semibold">디바이스 선택</Label>
                   {registeredDevices.map((device) => (
                     <label
                       key={device.id}
-                      className="flex items-center justify-between rounded-lg border p-3 text-sm"
+                      className={`flex items-center justify-between rounded-lg border p-3 text-sm cursor-pointer transition-colors ${
+                        selectedDeviceIds.includes(device.id)
+                          ? "border-primary bg-primary/5"
+                          : "border-border hover:border-primary/50 hover:bg-muted/50"
+                      }`}
                     >
-                      <div className="flex flex-col">
+                      <div className="flex flex-col gap-1">
                         <span className="font-medium">{device.name}</span>
-                        <span className="text-xs text-muted-foreground">ID: {device.id}</span>
+                        <span className="text-xs text-muted-foreground font-mono">ID: {device.id}</span>
                       </div>
                       <Checkbox
                         checked={selectedDeviceIds.includes(device.id)}
@@ -476,8 +537,11 @@ export default function BroadcastDialog({
                 </div>
               )}
             </div>
-          ) : (
-            <div className="space-y-3 pl-6 border-l-2 border-primary/20">
+          )}
+
+          {/* Public 송출 시 고객 정보 입력 */}
+          {channelBroadcastType === "public" && (
+            <div className="space-y-3 rounded-lg border p-4 bg-muted/20">
               <div className="space-y-2">
                 <Label htmlFor="customer-id">고객 ID *</Label>
                 <Input

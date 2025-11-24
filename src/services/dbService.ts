@@ -496,7 +496,7 @@ export async function loadGenerationBlob(userId: string, id: string): Promise<{ 
 
     // 일부 레거시 데이터는 "[73,68,...]" 형태의 문자열로 저장되어 있음
     // 첫 바이트가 '['(91)인 경우 JSON 배열로 파싱 후 Uint8Array로 변환
-    const firstByte = new Uint8Array(buf)[0];
+    let firstByte = new Uint8Array(buf)[0];
     if (firstByte === 91 /* '[' */) {
       try {
         const text = new TextDecoder().decode(buf);
@@ -505,9 +505,86 @@ export async function loadGenerationBlob(userId: string, id: string): Promise<{ 
           const bytes = new Uint8Array(parsed as number[]);
           buf = bytes.buffer;
           console.log(`[loadGenerationBlob] JSON 배열 디코딩 완료: ${bytes.length} bytes`);
+          
+          // JSON 배열 디코딩 후에도 JSON 객체가 포함되어 있을 수 있음
+          // 첫 바이트를 다시 확인
+          if (bytes.length > 0) {
+            firstByte = bytes[0];
+          }
         }
       } catch (error) {
         console.warn("[loadGenerationBlob] JSON 배열 파싱 실패:", error);
+      }
+    }
+    
+    // JSON 배열 디코딩 후 또는 원본 데이터에서 JSON 객체 확인
+    if (firstByte === 123 /* '{' */) {
+      // JSON 객체 형식인 경우 (예: {"audioData":"base64..."})
+      try {
+        const text = new TextDecoder().decode(buf);
+        const parsed = JSON.parse(text);
+        if (parsed && typeof parsed === 'object') {
+          // audioData 필드에서 base64 데이터 추출
+          let base64Data: string | null = null;
+          if (parsed.audioData) {
+            base64Data = parsed.audioData;
+          } else if (parsed.audio_data) {
+            base64Data = parsed.audio_data;
+          } else if (parsed.audioBase64) {
+            base64Data = parsed.audioBase64;
+          } else if (parsed.data) {
+            base64Data = parsed.data;
+          }
+          
+          if (base64Data) {
+            // base64 데이터에서 data URL prefix 제거 (있는 경우)
+            if (base64Data.includes(',')) {
+              base64Data = base64Data.split(',').pop() || base64Data;
+            }
+            
+            // base64 디코딩
+            try {
+              const binaryString = atob(base64Data);
+              const decodedBytes = new Uint8Array(binaryString.length);
+              for (let i = 0; i < binaryString.length; i++) {
+                decodedBytes[i] = binaryString.charCodeAt(i);
+              }
+              buf = decodedBytes.buffer;
+              console.log(`[loadGenerationBlob] JSON 객체 (base64) 디코딩 완료: ${decodedBytes.length} bytes`);
+            } catch (decodeError) {
+              console.warn("[loadGenerationBlob] Base64 디코딩 실패:", decodeError);
+            }
+          } else {
+            console.warn("[loadGenerationBlob] JSON 객체에 audioData 필드 없음");
+          }
+        }
+      } catch (error) {
+        console.warn("[loadGenerationBlob] JSON 객체 파싱 실패:", error);
+      }
+    }
+
+    // 최종 변환 후 오디오 데이터 유효성 검증
+    if (buf && buf.byteLength > 0) {
+      const bytes = new Uint8Array(buf);
+      const firstBytes = bytes.slice(0, 3);
+      
+      // MP3 시그니처 확인
+      const isValidMP3 = 
+        (firstBytes[0] === 0x49 && firstBytes[1] === 0x44 && firstBytes[2] === 0x33) || // ID3
+        (firstBytes[0] === 0xFF && (firstBytes[1] & 0xE0) === 0xE0); // MPEG frame sync
+      
+      // WAV 시그니처 확인
+      const isValidWAV = bytes.length >= 12 &&
+        firstBytes[0] === 0x52 && firstBytes[1] === 0x49 && 
+        firstBytes[2] === 0x46 && firstBytes[3] === 0x46 &&
+        bytes[8] === 0x57 && bytes[9] === 0x41 && bytes[10] === 0x56 && bytes[11] === 0x45;
+      
+      if (!isValidMP3 && !isValidWAV && buf.byteLength > 10) {
+        const firstBytesHex = Array.from(firstBytes).map(b => b.toString(16).padStart(2, '0')).join(' ');
+        console.warn(`[loadGenerationBlob] ⚠️ 유효하지 않은 오디오 시그니처: ${firstBytesHex} (파일 크기: ${buf.byteLength} bytes)`);
+        // 경고만 출력하고 계속 진행 (일부 오디오 형식은 시그니처가 다를 수 있음)
+      } else {
+        console.log(`[loadGenerationBlob] ✅ 유효한 오디오 데이터 확인 (크기: ${buf.byteLength} bytes)`);
       }
     }
 
@@ -1062,6 +1139,12 @@ export interface ScheduleRequestEntry {
   failReason?: string;
   mixingState?: any;
   createdAt?: string;
+  scheduleName?: string;
+  scheduleType?: string; // "immediate" | "delayed" | "scheduled"
+  // 송출 타입 관련 필드 추가
+  isPlayerBroadcast?: boolean;
+  targetDevices?: string[];
+  customerInfo?: CustomerInfo;
 }
 
 // 예약 요청 저장
@@ -1095,6 +1178,19 @@ export async function saveScheduleRequest(userId: string, request: ScheduleReque
     }
     if ((request as any).scheduleType) {
       baseData.schedule_type = (request as any).scheduleType;
+    }
+    // 송출 타입 관련 필드 저장
+    if (request.isPlayerBroadcast !== undefined) {
+      baseData.is_player_broadcast = request.isPlayerBroadcast;
+    }
+    if (request.targetDevices && Array.isArray(request.targetDevices) && request.targetDevices.length > 0) {
+      baseData.target_devices = request.targetDevices;
+    }
+    if (request.customerInfo) {
+      baseData.customer_id = request.customerInfo.customerId || null;
+      baseData.customer_name = request.customerInfo.customerName || null;
+      baseData.category_code = request.customerInfo.categoryCode || null;
+      baseData.memo = request.customerInfo.memo || null;
     }
 
     const { data, error } = await supabase

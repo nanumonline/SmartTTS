@@ -35,6 +35,7 @@ interface JobEntry {
   // 스케줄 정보
   scheduleId?: string;
   scheduleName?: string;
+  scheduleType?: string; // "immediate" | "delayed" | "scheduled"
   generationName?: string;
   generationPurpose?: string;
   generationPurposeLabel?: string;
@@ -173,6 +174,7 @@ export default function ManageJobsPage() {
           error: schedule.failReason || undefined,
           scheduleId: schedule.id,
           scheduleName,
+          scheduleType: schedule.scheduleType || "scheduled", // "immediate" | "delayed" | "scheduled"
           generationName,
           generationPurpose,
           generationPurposeLabel,
@@ -343,7 +345,7 @@ export default function ManageJobsPage() {
     }
   };
 
-  const getJobTypeLabel = (type: string) => {
+  const getJobTypeLabel = (type: string, scheduleType?: string) => {
     switch (type) {
       case "generation":
         return "음성 생성";
@@ -352,7 +354,14 @@ export default function ManageJobsPage() {
       case "cloning":
         return "클로닝";
       case "schedule":
-        return "스케줄";
+        // scheduleType에 따라 다른 라벨 반환
+        if (scheduleType === "immediate") {
+          return "즉시전송";
+        } else if (scheduleType === "delayed") {
+          return "지연전송";
+        } else {
+          return "스케줄전송";
+        }
       default:
         return type;
     }
@@ -453,11 +462,27 @@ export default function ManageJobsPage() {
                 >
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                     <div className="min-w-0 space-y-2 flex-1">
-                      <p className="font-medium text-base truncate">
-                        {job.type === "schedule" && job.scheduleName
-                          ? job.scheduleName
-                          : getJobTypeLabel(job.type)}
-                      </p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-medium text-base truncate">
+                          {job.type === "schedule" && job.scheduleName
+                            ? job.scheduleName
+                            : getJobTypeLabel(job.type, job.scheduleType)}
+                        </p>
+                        {job.type === "schedule" && job.scheduleType && (
+                          <Badge 
+                            variant="outline"
+                            className={cn(
+                              "text-[10px] px-1.5 py-0 h-4",
+                              job.scheduleType === "immediate" && "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20",
+                              job.scheduleType === "delayed" && "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20",
+                              job.scheduleType === "scheduled" && "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20"
+                            )}
+                          >
+                            {job.scheduleType === "immediate" ? "즉시전송" : 
+                             job.scheduleType === "delayed" ? "지연전송" : "스케줄전송"}
+                          </Badge>
+                        )}
+                      </div>
                       {job.type === "schedule" && (
                         <div className="text-xs text-muted-foreground space-y-0.5">
                           {job.generationName && (
@@ -480,18 +505,27 @@ export default function ManageJobsPage() {
                       )}
                       <div className="text-[10px] text-muted-foreground space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            생성: {formatDateTime(job.createdAt)}
-                          </span>
-                          {job.type === "schedule" && job.scheduledTime && (
+                          {job.type === "schedule" ? (
                             <>
-                              <span className="text-muted-foreground/50">•</span>
                               <span className="flex items-center gap-1">
-                                <Radio className="w-3 h-3" />
-                                전송: {formatDateTime(job.scheduledTime)}
+                                <Clock className="w-3 h-3" />
+                                요청: {formatDateTime(job.createdAt)}
                               </span>
+                              {job.scheduledTime && (
+                                <>
+                                  <span className="text-muted-foreground/50">•</span>
+                                  <span className="flex items-center gap-1">
+                                    <Radio className="w-3 h-3" />
+                                    설정: {formatDateTime(job.scheduledTime)}
+                                  </span>
+                                </>
+                              )}
                             </>
+                          ) : (
+                            <span className="flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              생성: {formatDateTime(job.createdAt)}
+                            </span>
                           )}
                         </div>
                         {job.type === "schedule" && job.broadcastStatus && (

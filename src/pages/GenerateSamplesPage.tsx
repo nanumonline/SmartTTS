@@ -65,6 +65,7 @@ export default function GenerateSamplesPage() {
   const [isLoadingVoices, setIsLoadingVoices] = useState(true);
   const [samples, setSamples] = useState<SampleConfig[]>(defaultSamples);
   const [voiceNameMap, setVoiceNameMap] = useState<Record<string, string>>({});
+  const [sampleVoiceNames, setSampleVoiceNames] = useState<Record<string, string>>({});
   const [favoriteGenerations, setFavoriteGenerations] = useState<any[]>([]);
   const [isLoadingFavorites, setIsLoadingFavorites] = useState(false);
   const [favoriteVoiceIds, setFavoriteVoiceIds] = useState<string[]>([]);
@@ -90,9 +91,10 @@ export default function GenerateSamplesPage() {
     });
   };
 
-  // 음성 ID로 한글 이름 가져오기
+  // 음성 ID로 한글 이름 가져오기 (동기 버전)
   const getVoiceNameKo = (voiceId: string): string => {
-    if (voiceNameMap[voiceId]) {
+    // 먼저 voiceNameMap에서 확인 (가장 빠름)
+    if (voiceNameMap[voiceId] && voiceNameMap[voiceId] !== voiceId) {
       return voiceNameMap[voiceId];
     }
     
@@ -105,11 +107,36 @@ export default function GenerateSamplesPage() {
     if (voice) {
       const voiceData = voice.voice_data || voice;
       const nameKo = voiceData.name_ko || getVoiceDisplayNameKo(voiceData.name, voiceId, voiceData.name_ko);
-      return nameKo || voiceId;
+      if (nameKo && nameKo !== voiceId) {
+        // voiceNameMap에 캐시
+        setVoiceNameMap(prev => ({ ...prev, [voiceId]: nameKo }));
+        return nameKo;
+      }
     }
     
-    return getVoiceDisplayNameKo("", voiceId, "") || voiceId;
+    // 마지막 폴백: getVoiceDisplayNameKo 사용
+    const fallbackName = getVoiceDisplayNameKo("", voiceId, "");
+    if (fallbackName && fallbackName !== voiceId) {
+      return fallbackName;
+    }
+    
+    // 모든 방법이 실패하면 voiceId 반환
+    return voiceId;
   };
+
+  // 샘플의 한글명을 업데이트하는 useEffect
+  useEffect(() => {
+    if (availableVoices.length > 0 || Object.keys(voiceNameMap).length > 0) {
+      const names: Record<string, string> = {};
+      samples.forEach(sample => {
+        const nameKo = getVoiceNameKo(sample.voiceId);
+        if (nameKo && nameKo !== sample.voiceId) {
+          names[sample.id] = nameKo;
+        }
+      });
+      setSampleVoiceNames(prev => ({ ...prev, ...names }));
+    }
+  }, [availableVoices, voiceNameMap, samples]);
 
   // 사용 가능한 음성 목록 로드
   useEffect(() => {
@@ -444,23 +471,12 @@ export default function GenerateSamplesPage() {
             <p className="text-sm text-muted-foreground">
               각 샘플을 개별 생성하거나 모두 한 번에 생성할 수 있습니다.
             </p>
-            {isLoadingVoices && (
-              <p className="text-xs text-blue-500 flex items-center gap-2">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                음성 목록을 불러오는 중...
-              </p>
-            )}
           </div>
           <Button 
             onClick={generateAll} 
             disabled={generating.size > 0 || isLoadingVoices}
           >
-            {isLoadingVoices ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                음성 로딩 중...
-              </>
-            ) : generating.size > 0 ? (
+            {generating.size > 0 ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 생성 중...
@@ -482,14 +498,15 @@ export default function GenerateSamplesPage() {
                 <CardHeader>
                   <CardTitle className="text-lg">{sample.description}</CardTitle>
                   <CardDescription>
-                    음성: {getVoiceNameKo(sample.voiceId)}
-                    {sample.model && (
+                    음성: {sampleVoiceNames[sample.id] || getVoiceNameKo(sample.voiceId)}
+                    {sample.speed !== undefined && sample.speed !== 1.0 && (
                       <span className="ml-2 text-xs">
-                        ({sample.model}
-                        {sample.style && `, ${sample.style}`}
-                        {sample.speed !== undefined && `, 속도: ${sample.speed}`}
-                        {sample.pitchShift !== undefined && sample.pitchShift !== 0 && `, 피치: ${sample.pitchShift}`}
-                        )
+                        (속도: {sample.speed})
+                      </span>
+                    )}
+                    {sample.pitchShift !== undefined && sample.pitchShift !== 0 && (
+                      <span className="ml-2 text-xs">
+                        (피치: {sample.pitchShift > 0 ? '+' : ''}{sample.pitchShift})
                       </span>
                     )}
                   </CardDescription>
@@ -566,7 +583,7 @@ export default function GenerateSamplesPage() {
                     />
                     {sample.voiceId && (
                       <p className="text-xs text-muted-foreground">
-                        한글명: <span className="font-medium text-foreground">{getVoiceNameKo(sample.voiceId)}</span>
+                        한글명: <span className="font-medium text-foreground">{sampleVoiceNames[sample.id] || getVoiceNameKo(sample.voiceId)}</span>
                       </p>
                     )}
                   </div>
@@ -588,7 +605,7 @@ export default function GenerateSamplesPage() {
                   <div className="flex items-center gap-2">
                     <Button
                       onClick={() => generateSample(sample)}
-                      disabled={isGenerating || isLoadingVoices || isLoadingFavorites}
+                      disabled={isGenerating || isLoadingFavorites || !sample.voiceId || sample.voiceId.trim() === ''}
                       className="flex-1"
                     >
                       {isGenerating ? (

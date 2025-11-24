@@ -224,7 +224,9 @@ const App = () => (
               path="/emergency" 
               element={
                 <ProtectedRoute>
-                  <EmergencyBroadcastPage />
+                  <AppShell>
+                    <EmergencyBroadcastPage />
+                  </AppShell>
                 </ProtectedRoute>
               } 
             />

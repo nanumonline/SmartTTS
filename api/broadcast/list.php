@@ -72,6 +72,14 @@ $files = array_filter($files, function($file) {
     return preg_match('/\.(mp3|wav|ogg)$/i', $file);
 });
 
+// 디버깅: 전체 파일 목록 로그
+$debugInfo = [
+    'requested_channel_id' => $channelId,
+    'total_files_found' => count($files),
+    'files_checked' => [],
+    'files_matched' => 0
+];
+
 foreach ($files as $file) {
     $filePath = $audioDir . '/' . $file;
     $metadataFile = $metadataDir . '/' . $file . '.json';
@@ -97,9 +105,19 @@ foreach ($files as $file) {
         }
     }
     
+    // 디버깅: 각 파일의 채널 ID 정보 기록
+    $fileDebugInfo = [
+        'filename' => $file,
+        'file_channel_id' => $fileChannelId,
+        'matches' => ($fileChannelId === $channelId)
+    ];
+    $debugInfo['files_checked'][] = $fileDebugInfo;
+    
     if ($fileChannelId !== $channelId) {
         continue;
     }
+    
+    $debugInfo['files_matched']++;
     
     // 파일명에서 스케줄 이름 추출
     // 형식 1: "스케줄이름_2025-11-20_10-11-11.mp3" (새 형식)
@@ -242,7 +260,8 @@ $response = [
     'channel_id' => $channelId,
     'audio_list' => $audioFiles,
     'count' => count($audioFiles),
-    'timestamp' => date('Y-m-d H:i:s')
+    'timestamp' => date('Y-m-d H:i:s'),
+    'debug' => $debugInfo // 디버깅 정보 추가 (개발 환경에서만)
 ];
 
 // JSON 인코딩 및 출력

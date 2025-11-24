@@ -105,8 +105,9 @@ if ($fileContent === false) {
     exit();
 }
 
-// JSON 배열 문자열인지 확인 (처음이 '['인 경우)
+// JSON 배열 또는 객체 문자열인지 확인
 $isJsonArray = (strlen($fileContent) > 0 && $fileContent[0] === '[');
+$isJsonObject = (strlen($fileContent) > 0 && $fileContent[0] === '{');
 
 if ($isJsonArray) {
     // JSON 배열 문자열을 바이너리 데이터로 변환
@@ -166,6 +167,82 @@ if ($isJsonArray) {
             'error' => 'Invalid audio file: JSON array string detected but failed to parse',
             'file' => $filename,
             'json_error' => $jsonError
+        ]);
+        exit();
+    }
+} elseif ($isJsonObject) {
+    // JSON 객체인 경우 (예: {"audioData":"base64..."})
+    error_log("[audio.php] Detected JSON object string: {$filename} (original size: " . strlen($fileContent) . " bytes)");
+    
+    try {
+        $parsedObject = json_decode($fileContent, true);
+        if (is_array($parsedObject)) {
+            // audioData 필드에서 base64 데이터 추출
+            $base64Data = null;
+            if (!empty($parsedObject['audioData'])) {
+                $base64Data = $parsedObject['audioData'];
+            } elseif (!empty($parsedObject['audio_data'])) {
+                $base64Data = $parsedObject['audio_data'];
+            } elseif (!empty($parsedObject['data'])) {
+                $base64Data = $parsedObject['data'];
+            }
+            
+            if ($base64Data) {
+                // base64 데이터에서 data URL prefix 제거 (있는 경우)
+                if (strpos($base64Data, ',') !== false) {
+                    $base64Data = substr($base64Data, strpos($base64Data, ',') + 1);
+                }
+                
+                // base64 디코딩
+                $binaryData = base64_decode($base64Data, true);
+                if ($binaryData !== false && strlen($binaryData) > 0) {
+                    $fileSize = strlen($binaryData);
+                    $audioData = $binaryData;
+                    
+                    // 변환된 데이터의 첫 바이트 확인
+                    $firstByteHex = bin2hex(substr($binaryData, 0, 3));
+                    error_log("[audio.php] Converted JSON object (base64) to binary: {$filename} ({$fileSize} bytes, first bytes: {$firstByteHex})");
+                    
+                    // 변환된 파일을 실제 파일로 저장 (다음 요청을 위해)
+                    $convertedFile = $audioFile . '.converted';
+                    if (file_put_contents($convertedFile, $binaryData) !== false) {
+                        // 원본 파일을 백업하고 변환된 파일로 교체
+                        $backupFile = $audioFile . '.json_backup';
+                        if (rename($audioFile, $backupFile)) {
+                            rename($convertedFile, $audioFile);
+                            error_log("[audio.php] Replaced original JSON object file with converted binary: {$filename}");
+                        }
+                    }
+                } else {
+                    http_response_code(400);
+                    echo json_encode([
+                        'error' => 'Invalid audio file: JSON object base64 decode failed or produced empty data',
+                        'file' => $filename
+                    ]);
+                    exit();
+                }
+            } else {
+                http_response_code(400);
+                echo json_encode([
+                    'error' => 'Invalid audio file: No audioData field found in JSON object',
+                    'file' => $filename
+                ]);
+                exit();
+            }
+        } else {
+            http_response_code(400);
+            echo json_encode([
+                'error' => 'Invalid audio file: JSON object decode failed',
+                'file' => $filename
+            ]);
+            exit();
+        }
+    } catch (Exception $e) {
+        http_response_code(400);
+        echo json_encode([
+            'error' => 'Invalid audio file: Failed to parse JSON object',
+            'file' => $filename,
+            'exception' => $e->getMessage()
         ]);
         exit();
     }

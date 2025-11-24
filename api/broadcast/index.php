@@ -105,36 +105,118 @@ $audioData = file_get_contents('php://input');
 $contentType = $_SERVER['CONTENT_TYPE'] ?? 'audio/mpeg';
 $contentLength = $_SERVER['CONTENT_LENGTH'] ?? strlen($audioData);
 
-// 디버깅: 처음 몇 바이트 확인 (JSON 배열 문자열인지 확인)
+// 디버깅: 처음 몇 바이트 확인 (JSON 배열/객체 문자열인지 확인)
 if (strlen($audioData) > 0) {
     $firstBytes = substr($audioData, 0, min(20, strlen($audioData)));
     $isJsonArray = (substr($firstBytes, 0, 1) === '[');
+    $isJsonObject = (substr($firstBytes, 0, 1) === '{');
     
     if ($isJsonArray) {
         // JSON 배열 문자열인 경우, 실제 바이너리 데이터로 변환
         error_log("[index.php] WARNING: Received JSON array string instead of binary data. Attempting to parse...");
+        error_log("[index.php] First 100 chars: " . substr($audioData, 0, 100));
         
         try {
             $parsedArray = json_decode($audioData, true);
-            if (is_array($parsedArray)) {
+            if (is_array($parsedArray) && count($parsedArray) > 0) {
                 // JSON 배열을 바이너리 데이터로 변환
                 $binaryData = '';
+                $byteCount = 0;
                 foreach ($parsedArray as $byte) {
-                    $binaryData .= chr($byte);
+                    if (is_numeric($byte) && $byte >= 0 && $byte <= 255) {
+                        $binaryData .= chr((int)$byte);
+                        $byteCount++;
+                    } else {
+                        error_log("[index.php] WARNING: Invalid byte value in array: " . var_export($byte, true));
+                    }
                 }
-                $audioData = $binaryData;
-                $contentLength = strlen($audioData);
-                error_log("[index.php] Converted JSON array to binary data: " . strlen($audioData) . " bytes");
+                
+                if (strlen($binaryData) > 0) {
+                    $audioData = $binaryData;
+                    $contentLength = strlen($audioData);
+                    error_log("[index.php] Converted JSON array to binary data: " . strlen($audioData) . " bytes (from " . count($parsedArray) . " array elements)");
+                    
+                    // 변환된 데이터의 첫 바이트 확인 (MP3 시그니처 등)
+                    $firstByteHex = bin2hex(substr($binaryData, 0, 3));
+                    error_log("[index.php] First 3 bytes (hex): " . $firstByteHex);
+                } else {
+                    error_log("[index.php] ERROR: JSON array conversion produced empty binary data");
+                }
+            } else {
+                error_log("[index.php] ERROR: JSON decode failed or empty array");
             }
         } catch (Exception $e) {
             error_log("[index.php] Failed to parse JSON array: " . $e->getMessage());
         }
+    } elseif ($isJsonObject) {
+        // JSON 객체인 경우 (예: {"audioData":"base64..."})
+        error_log("[index.php] WARNING: Received JSON object instead of binary data. Attempting to parse...");
+        error_log("[index.php] First 100 chars: " . substr($audioData, 0, 100));
+        
+        try {
+            $parsedObject = json_decode($audioData, true);
+            if (is_array($parsedObject)) {
+                // audioData 필드에서 base64 데이터 추출
+                $base64Data = null;
+                if (!empty($parsedObject['audioData'])) {
+                    $base64Data = $parsedObject['audioData'];
+                } elseif (!empty($parsedObject['audio_data'])) {
+                    $base64Data = $parsedObject['audio_data'];
+                } elseif (!empty($parsedObject['data'])) {
+                    $base64Data = $parsedObject['data'];
+                }
+                
+                if ($base64Data) {
+                    // base64 데이터에서 data URL prefix 제거 (있는 경우)
+                    if (strpos($base64Data, ',') !== false) {
+                        $base64Data = substr($base64Data, strpos($base64Data, ',') + 1);
+                    }
+                    
+                    // base64 디코딩
+                    $binaryData = base64_decode($base64Data, true);
+                    if ($binaryData !== false && strlen($binaryData) > 0) {
+                        $audioData = $binaryData;
+                        $contentLength = strlen($audioData);
+                        error_log("[index.php] Converted JSON object (base64) to binary data: " . strlen($audioData) . " bytes");
+                        
+                        // 변환된 데이터의 첫 바이트 확인 (MP3 시그니처 등)
+                        $firstByteHex = bin2hex(substr($binaryData, 0, 3));
+                        error_log("[index.php] First 3 bytes (hex): " . $firstByteHex);
+                    } else {
+                        error_log("[index.php] ERROR: Base64 decode failed or produced empty data");
+                    }
+                } else {
+                    error_log("[index.php] ERROR: No audioData field found in JSON object");
+                }
+            } else {
+                error_log("[index.php] ERROR: JSON decode failed");
+            }
+        } catch (Exception $e) {
+            error_log("[index.php] Failed to parse JSON object: " . $e->getMessage());
+        }
+    } else {
+        // 바이너리 데이터인 경우 첫 바이트 확인
+        $firstByteHex = bin2hex(substr($audioData, 0, 3));
+        error_log("[index.php] Received binary data (first 3 bytes hex): " . $firstByteHex);
     }
 }
 
 // 고객/기관 식별 정보
+// 디바이스ID/채널ID 송출 모드일 때는 X-Channel-Code를 우선 사용
+$rawChannelCode = $_SERVER['HTTP_X_CHANNEL_CODE'] ?? null;
 $rawCustomerId = $_SERVER['HTTP_X_CUSTOMER_ID'] ?? null;
-$customerId = sanitize_channel_id($rawCustomerId);
+
+// 채널 코드가 있으면 우선 사용, 없으면 Customer ID 사용
+$channelIdForMetadata = null;
+if ($rawChannelCode && !empty(trim($rawChannelCode))) {
+    $channelIdForMetadata = sanitize_channel_id($rawChannelCode);
+} elseif ($rawCustomerId && !empty(trim($rawCustomerId))) {
+    $channelIdForMetadata = sanitize_channel_id($rawCustomerId);
+} else {
+    $channelIdForMetadata = 'public';
+}
+
+$customerId = $channelIdForMetadata;
 $customerName = sanitize_metadata_value($_SERVER['HTTP_X_CUSTOMER_NAME'] ?? null);
 $categoryCode = sanitize_metadata_value($_SERVER['HTTP_X_CATEGORY_CODE'] ?? null);
 $customerMemo = sanitize_metadata_value($_SERVER['HTTP_X_CUSTOMER_MEMO'] ?? null);
@@ -178,6 +260,32 @@ if (strlen($audioData) < 100) {
         'message' => 'Audio data may be incomplete or invalid'
     ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
     exit();
+}
+
+// 오디오 파일 유효성 검사 (MP3 시그니처 확인)
+$isValidAudio = false;
+$firstBytes = substr($audioData, 0, 3);
+if (strlen($firstBytes) >= 3) {
+    // MP3 파일 시그니처 확인
+    // ID3 태그: "ID3" (0x49 0x44 0x33)
+    // MP3 프레임: 0xFF 0xFB 또는 0xFF 0xF3 등
+    if ($firstBytes === 'ID3') {
+        $isValidAudio = true;
+        error_log("[index.php] Detected MP3 file with ID3 tag");
+    } elseif (ord($firstBytes[0]) === 0xFF && (ord($firstBytes[1]) & 0xE0) === 0xE0) {
+        $isValidAudio = true;
+        error_log("[index.php] Detected MP3 file with frame sync");
+    } elseif (ord($firstBytes[0]) === 0x52 && ord($firstBytes[1]) === 0x49 && ord($firstBytes[2]) === 0x46) {
+        // WAV 파일: "RIFF"
+        $isValidAudio = true;
+        error_log("[index.php] Detected WAV file (RIFF header)");
+    }
+}
+
+if (!$isValidAudio && strlen($audioData) > 10) {
+    // 유효한 오디오 시그니처가 없어도 경고만 기록 (일부 오디오 형식은 시그니처가 다를 수 있음)
+    $firstByteHex = bin2hex(substr($audioData, 0, 10));
+    error_log("[index.php] WARNING: No recognized audio signature found. First 10 bytes (hex): " . $firstByteHex);
 }
 
 // 로그 기록
@@ -252,6 +360,33 @@ if (file_put_contents($audioFile, $audioData) === false) {
     http_response_code(500);
     echo json_encode(['error' => $errorMsg]);
     exit();
+}
+
+// 저장된 파일의 첫 바이트 확인 (유효성 검증)
+$savedFileContent = file_get_contents($audioFile);
+if ($savedFileContent !== false && strlen($savedFileContent) > 0) {
+    $savedFirstBytes = substr($savedFileContent, 0, 3);
+    $savedFirstBytesHex = bin2hex($savedFirstBytes);
+    $isSavedJsonArray = (strlen($savedFileContent) > 0 && $savedFileContent[0] === '[');
+    
+    if ($isSavedJsonArray) {
+        error_log("[index.php] ERROR: Saved file is still JSON array! File: " . basename($audioFile));
+        file_put_contents($logFile, date('Y-m-d H:i:s') . " - WARNING: Saved file is JSON array: " . basename($audioFile) . "\n", FILE_APPEND);
+    } else {
+        // MP3 시그니처 확인
+        $isValidSaved = false;
+        if ($savedFirstBytes === 'ID3') {
+            $isValidSaved = true;
+            error_log("[index.php] Saved file has valid MP3 ID3 tag: " . basename($audioFile));
+        } elseif (ord($savedFirstBytes[0]) === 0xFF && (ord($savedFirstBytes[1]) & 0xE0) === 0xE0) {
+            $isValidSaved = true;
+            error_log("[index.php] Saved file has valid MP3 frame sync: " . basename($audioFile));
+        } else {
+            error_log("[index.php] WARNING: Saved file may not be valid MP3. First bytes (hex): " . $savedFirstBytesHex . " File: " . basename($audioFile));
+        }
+    }
+} else {
+    error_log("[index.php] ERROR: Failed to read saved file for validation: " . basename($audioFile));
 }
 
 file_put_contents($logFile, date('Y-m-d H:i:s') . " - Saved: " . basename($audioFile) . "\n", FILE_APPEND);

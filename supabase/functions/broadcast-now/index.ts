@@ -228,31 +228,99 @@ serve(async (req) => {
 
       // 스케줄 생성
       const hasDeviceTargets = Array.isArray(requestData.deviceIds) && requestData.deviceIds.length > 0;
-      const scheduleData: any = {
+      
+      // 기본 필수 필드만 포함한 기본 데이터
+      const baseScheduleData: any = {
         user_id: userId,
         generation_id: generationId,
         target_channel: channelId,
         scheduled_time: targetTime.toISOString(),
         status: "scheduled",
-        schedule_name: scheduleName || "Broadcast",
-        schedule_type: scheduleType,
-        is_player_broadcast: hasDeviceTargets,
-        target_devices: hasDeviceTargets ? requestData.deviceIds : null,
       };
 
+      // 선택적 필드들을 추가 (target_devices는 제외)
+      const optionalFields: any = {};
+      
+      if (scheduleName) {
+        optionalFields.schedule_name = scheduleName || "Broadcast";
+      }
+      
+      if (scheduleType) {
+        optionalFields.schedule_type = scheduleType;
+      }
+      
+      if (hasDeviceTargets !== undefined) {
+        optionalFields.is_player_broadcast = hasDeviceTargets;
+      }
+      
       // 고객 정보가 있으면 컬럼에 저장
       if (customerInfo) {
-        scheduleData.customer_id = customerInfo.customerId || null;
-        scheduleData.customer_name = customerInfo.customerName || null;
-        scheduleData.category_code = customerInfo.categoryCode || null;
-        scheduleData.memo = customerInfo.memo || null;
+        if (customerInfo.customerId) optionalFields.customer_id = customerInfo.customerId;
+        if (customerInfo.customerName) optionalFields.customer_name = customerInfo.customerName;
+        if (customerInfo.categoryCode) optionalFields.category_code = customerInfo.categoryCode;
+        if (customerInfo.memo) optionalFields.memo = customerInfo.memo;
       }
 
-      const { data: schedule, error: scheduleError } = await supabaseServiceClient
+      // target_devices는 절대 포함하지 않음 (컬럼이 없을 수 있음)
+      // 먼저 기본 필드 + 선택적 필드로 시도
+      let scheduleData = { ...baseScheduleData, ...optionalFields };
+      let { data: schedule, error: scheduleError } = await supabaseServiceClient
         .from("tts_schedule_requests")
         .insert(scheduleData)
         .select()
         .single();
+
+      // 스키마 오류 발생 시 점진적으로 필드 제거하며 재시도
+      if (scheduleError && (scheduleError.code === "PGRST204" || scheduleError.message?.includes("column") || scheduleError.message?.includes("does not exist"))) {
+        console.warn("[broadcast-now] 스키마 오류 발생, 선택적 필드를 제외하고 재시도:", scheduleError.message);
+        
+        // 1차 재시도: 고객 정보 필드 제외
+        let retryData = { ...baseScheduleData };
+        if (scheduleName) retryData.schedule_name = scheduleName;
+        if (scheduleType) retryData.schedule_type = scheduleType;
+        if (hasDeviceTargets !== undefined) retryData.is_player_broadcast = hasDeviceTargets;
+        
+        let retryResult = await supabaseServiceClient
+          .from("tts_schedule_requests")
+          .insert(retryData)
+          .select()
+          .single();
+        
+        if (retryResult.error && (retryResult.error.code === "PGRST204" || retryResult.error.message?.includes("column"))) {
+          console.warn("[broadcast-now] 1차 재시도 실패, 필수 필드만으로 재시도:", retryResult.error.message);
+          
+          // 2차 재시도: 필수 필드만
+          retryResult = await supabaseServiceClient
+            .from("tts_schedule_requests")
+            .insert(baseScheduleData)
+            .select()
+            .single();
+        }
+        
+        schedule = retryResult.data;
+        scheduleError = retryResult.error;
+      }
+
+      // target_devices는 별도로 업데이트 시도 (실패해도 무시)
+      if (!scheduleError && hasDeviceTargets && requestData.deviceIds && requestData.deviceIds.length > 0) {
+        try {
+          const updateResult = await supabaseServiceClient
+            .from("tts_schedule_requests")
+            .update({ target_devices: requestData.deviceIds })
+            .eq("id", schedule.id)
+            .select()
+            .single();
+          
+          if (updateResult.error) {
+            console.warn("[broadcast-now] target_devices 업데이트 실패 (무시):", updateResult.error.message);
+            // target_devices 업데이트 실패해도 스케줄 생성은 성공했으므로 계속 진행
+          } else if (updateResult.data) {
+            schedule = updateResult.data;
+          }
+        } catch (updateError) {
+          console.warn("[broadcast-now] target_devices 업데이트 실패 (무시):", updateError);
+        }
+      }
 
       if (scheduleError) {
         console.error("[broadcast-now] Error creating schedule:", scheduleError);
@@ -261,6 +329,7 @@ serve(async (req) => {
         
         // 데이터베이스 스키마 오류인 경우 400으로 반환
         const isSchemaError = scheduleError.code === "42703" || // column does not exist
+                             scheduleError.code === "PGRST204" ||
                              scheduleError.message?.includes("column") ||
                              scheduleError.message?.includes("does not exist");
         
@@ -298,32 +367,97 @@ serve(async (req) => {
     // 즉시 송출도 작업 큐에 기록 생성 (상태 추적을 위해)
     const now = new Date();
     const hasDeviceTargets = Array.isArray(requestData.deviceIds) && requestData.deviceIds.length > 0;
-    const scheduleData: any = {
+    
+    // 기본 필수 필드만 포함한 기본 데이터
+    const baseScheduleData: any = {
       user_id: userId,
       generation_id: generationId,
       target_channel: channelId,
       scheduled_time: now.toISOString(), // 현재 시간으로 설정
       status: "processing", // 처리 중 상태
-      schedule_name: scheduleName || "즉시 송출",
-      schedule_type: "immediate",
-      is_player_broadcast: hasDeviceTargets,
-      target_devices: hasDeviceTargets ? requestData.deviceIds : null,
     };
 
+    // 선택적 필드들을 추가 (target_devices는 제외)
+    const optionalFields: any = {};
+    
+    if (scheduleName) {
+      optionalFields.schedule_name = scheduleName || "즉시 송출";
+    }
+    
+    optionalFields.schedule_type = "immediate";
+    
+    if (hasDeviceTargets !== undefined) {
+      optionalFields.is_player_broadcast = hasDeviceTargets;
+    }
+    
     // 고객 정보가 있으면 컬럼에 저장
     if (customerInfo) {
-      scheduleData.customer_id = customerInfo.customerId || null;
-      scheduleData.customer_name = customerInfo.customerName || null;
-      scheduleData.category_code = customerInfo.categoryCode || null;
-      scheduleData.memo = customerInfo.memo || null;
+      if (customerInfo.customerId) optionalFields.customer_id = customerInfo.customerId;
+      if (customerInfo.customerName) optionalFields.customer_name = customerInfo.customerName;
+      if (customerInfo.categoryCode) optionalFields.category_code = customerInfo.categoryCode;
+      if (customerInfo.memo) optionalFields.memo = customerInfo.memo;
     }
 
-    // 작업 큐에 기록 생성
-    const { data: schedule, error: scheduleError } = await supabaseServiceClient
+    // target_devices는 절대 포함하지 않음 (컬럼이 없을 수 있음)
+    // 먼저 기본 필드 + 선택적 필드로 시도
+    let scheduleData = { ...baseScheduleData, ...optionalFields };
+    let { data: schedule, error: scheduleError } = await supabaseServiceClient
       .from("tts_schedule_requests")
       .insert(scheduleData)
       .select()
       .single();
+
+    // 스키마 오류 발생 시 점진적으로 필드 제거하며 재시도
+    if (scheduleError && (scheduleError.code === "PGRST204" || scheduleError.message?.includes("column") || scheduleError.message?.includes("does not exist"))) {
+      console.warn("[broadcast-now] 스키마 오류 발생, 선택적 필드를 제외하고 재시도:", scheduleError.message);
+      
+      // 1차 재시도: 고객 정보 필드 제외
+      let retryData = { ...baseScheduleData };
+      if (scheduleName) retryData.schedule_name = scheduleName;
+      retryData.schedule_type = "immediate";
+      if (hasDeviceTargets !== undefined) retryData.is_player_broadcast = hasDeviceTargets;
+      
+      let retryResult = await supabaseServiceClient
+        .from("tts_schedule_requests")
+        .insert(retryData)
+        .select()
+        .single();
+      
+      if (retryResult.error && (retryResult.error.code === "PGRST204" || retryResult.error.message?.includes("column"))) {
+        console.warn("[broadcast-now] 1차 재시도 실패, 필수 필드만으로 재시도:", retryResult.error.message);
+        
+        // 2차 재시도: 필수 필드만
+        retryResult = await supabaseServiceClient
+          .from("tts_schedule_requests")
+          .insert(baseScheduleData)
+          .select()
+          .single();
+      }
+      
+      schedule = retryResult.data;
+      scheduleError = retryResult.error;
+    }
+
+    // target_devices는 별도로 업데이트 시도 (실패해도 무시)
+    if (!scheduleError && hasDeviceTargets && requestData.deviceIds && requestData.deviceIds.length > 0) {
+      try {
+        const updateResult = await supabaseServiceClient
+          .from("tts_schedule_requests")
+          .update({ target_devices: requestData.deviceIds })
+          .eq("id", schedule.id)
+          .select()
+          .single();
+        
+        if (updateResult.error) {
+          console.warn("[broadcast-now] target_devices 업데이트 실패 (무시):", updateResult.error.message);
+          // target_devices 업데이트 실패해도 스케줄 생성은 성공했으므로 계속 진행
+        } else if (updateResult.data) {
+          schedule = updateResult.data;
+        }
+      } catch (updateError) {
+        console.warn("[broadcast-now] target_devices 업데이트 실패 (무시):", updateError);
+      }
+    }
 
     let scheduleId: string | null = null;
     if (scheduleError) {
@@ -599,6 +733,16 @@ serve(async (req) => {
       }
     };
 
+    // 엔드포인트 구분: public 송출 vs 디바이스ID/채널ID 송출
+    // 주의: API 엔드포인트는 동일하며, 헤더로 구분합니다
+    const getBroadcastEndpoint = (device?: RegisteredDevice): string => {
+      const baseEndpoint = channel.endpoint || "";
+      
+      // 모든 송출 타입에서 기본 엔드포인트 사용
+      // 디바이스ID/채널ID 송출은 헤더(X-Device-Id, X-Channel-Code 등)로 구분
+      return baseEndpoint;
+    };
+
     const createBaseHeaders = (): Record<string, string> => {
       const headers: Record<string, string> = {
         "Content-Type": mimeType,
@@ -631,35 +775,81 @@ serve(async (req) => {
 
     const sendToDevice = async (device?: RegisteredDevice) => {
       const headers = createBaseHeaders();
+      const broadcastType = device ? "디바이스ID/채널ID 송출" : "Public 송출";
+      
       if (device) {
+        // 디바이스ID/채널ID 송출 헤더
         headers["X-Customer-Id"] = sanitizeHeaderValue(sanitizedChannelCode);
         headers["X-Channel-Code"] = sanitizeHeaderValue(sanitizedChannelCode);
         headers["X-Device-Id"] = sanitizeHeaderValue(device.id);
         headers["X-Device-Name"] = sanitizeHeaderValue(device.name);
         headers["X-Device-Token"] = sanitizeHeaderValue(device.token);
+        headers["X-Broadcast-Type"] = "device-channel"; // 송출 타입 명시
+      } else {
+        // Public 송출 헤더
+        // Public 송출 모드에서도 채널 코드를 포함하여 플레이어가 올바른 파일을 찾을 수 있도록 함
+        headers["X-Channel-Code"] = sanitizeHeaderValue(sanitizedChannelCode);
+        headers["X-Broadcast-Type"] = "public"; // 송출 타입 명시
+        // X-Customer-Id는 createBaseHeaders에서 customerInfo가 있을 때만 설정됨
       }
 
+      const targetEndpoint = getBroadcastEndpoint(device);
+      
       console.log(
-        `[broadcast-now] Sending audio to endpoint: ${channel.endpoint}`,
-        device ? ` (device ${device.name})` : ""
+        `[broadcast-now] [${broadcastType}] Sending audio to endpoint: ${targetEndpoint}`,
+        device ? ` (디바이스: ${device.name}, ID: ${device.id}, 채널: ${sanitizedChannelCode})` : ` (Public 송출)`
       );
-      console.log(`[broadcast-now] Headers:`, JSON.stringify(headers, null, 2));
+      console.log(`[broadcast-now] [${broadcastType}] Headers:`, JSON.stringify(headers, null, 2));
 
-      const response = await fetch(channel.endpoint, {
+      // ArrayBuffer를 Uint8Array로 변환하여 전송 (JSON 직렬화 방지)
+      const audioBytes = new Uint8Array(audioData);
+      
+      const response = await fetch(targetEndpoint, {
         method: "POST",
         headers,
-        body: audioData,
+        body: audioBytes,
       });
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => response.statusText);
+        console.error(`[broadcast-now] [${broadcastType}] HTTP Error Response:`, {
+          status: response.status,
+          statusText: response.statusText,
+          errorText: errorText
+        });
         throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
 
+      // 응답 본문 확인 (저장된 파일 정보 등)
+      let responseData: any = null;
+      try {
+        const responseText = await response.text();
+        if (responseText) {
+          try {
+            responseData = JSON.parse(responseText);
+          } catch (e) {
+            // JSON이 아닌 경우 텍스트로 처리
+            responseData = { raw: responseText };
+          }
+        }
+      } catch (e) {
+        console.warn(`[broadcast-now] [${broadcastType}] Failed to read response body:`, e);
+      }
+
       console.log(
-        `[broadcast-now] Successfully sent to ${channel.endpoint}`,
-        device ? ` (device ${device.name})` : ""
+        `[broadcast-now] [${broadcastType}] Successfully sent to ${targetEndpoint}`,
+        device ? ` (디바이스: ${device.name})` : ` (Public 송출)`
       );
+      
+      if (responseData) {
+        console.log(`[broadcast-now] [${broadcastType}] API Response:`, JSON.stringify(responseData, null, 2));
+        if (responseData.saved_file) {
+          console.log(`[broadcast-now] [${broadcastType}] Audio file saved: ${responseData.saved_file}`);
+        }
+        if (responseData.channel_id) {
+          console.log(`[broadcast-now] [${broadcastType}] Channel ID: ${responseData.channel_id}`);
+        }
+      }
     };
 
     try {
@@ -688,13 +878,30 @@ serve(async (req) => {
         }
       }
 
+      // 송출 타입 구분
+      const broadcastType = resolvedDevices.length > 0 ? "디바이스ID/채널ID 송출" : "Public 송출";
+      const endpointInfo = resolvedDevices.length > 0 
+        ? resolvedDevices.map(d => ({
+            deviceId: d.id,
+            deviceName: d.name,
+            channelId: sanitizedChannelCode,
+            endpoint: getBroadcastEndpoint(d)
+          }))
+        : [{
+            type: "public",
+            endpoint: getBroadcastEndpoint()
+          }];
+
       return new Response(
         JSON.stringify({
           success: true,
           message: "Broadcast sent successfully",
+          broadcastType: broadcastType,
           endpoint: channel.endpoint,
+          endpointDetails: endpointInfo,
           audioSize: audioData.byteLength,
           scheduleId: scheduleId || null,
+          deviceCount: resolvedDevices.length,
         }),
         {
           headers: { ...corsHeaders, "Content-Type": "application/json" },

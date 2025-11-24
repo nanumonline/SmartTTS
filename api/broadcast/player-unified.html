@@ -729,8 +729,17 @@
             try {
                 updateStatus('오디오 확인 중...', 'waiting');
                 
-                const response = await fetch(`${API_BASE}/list.php?${CHANNEL_QUERY}&limit=5`);
+                const listUrl = `${API_BASE}/list.php?${CHANNEL_QUERY}&limit=5`;
+                console.log('[player-unified] Fetching audio list from:', listUrl);
+                
+                const response = await fetch(listUrl);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
                 const data = await response.json();
+                console.log('[player-unified] Audio list response:', data);
                 
                 const audioList = Array.isArray(data.audio_list)
                     ? data.audio_list.map(item => ({
@@ -739,12 +748,24 @@
                     }))
                     : [];
                 
+                console.log('[player-unified] Processed audio list:', audioList);
+                
                 if (data.success && audioList.length > 0) {
                     const latestAudio = audioList[0];
+                    console.log('[player-unified] Latest audio:', latestAudio);
+                    
+                    // 오디오 데이터 유효성 검사
+                    if (!latestAudio.url || !latestAudio.filename) {
+                        console.error('[player-unified] Invalid audio data in list:', latestAudio);
+                        updateStatus('오디오 데이터 오류: URL 또는 파일명이 없습니다', 'disconnected');
+                        updateAudioList(audioList);
+                        return;
+                    }
                     
                     // 새로운 오디오인지 확인
                     if (latestAudio.filename !== lastCheckedFile && !isPlaying) {
                         lastCheckedFile = latestAudio.filename;
+                        console.log('[player-unified] Playing new audio:', latestAudio.filename, 'URL:', latestAudio.url);
                         playAudio(latestAudio);
                     } else if (isPlaying) {
                         updateStatus('재생 중... (새 오디오 대기)', 'connected');
@@ -753,7 +774,29 @@
                     }
                     updateAudioList(audioList);
                 } else {
-                    updateStatus('대기 중... (재생할 오디오 없음)', 'waiting');
+                    console.warn('[player-unified] No audio files found. Response:', data);
+                    if (data.debug) {
+                        console.warn('[player-unified] Debug info:', data.debug);
+                        console.warn('[player-unified] Requested channel_id:', data.debug.requested_channel_id);
+                        console.warn('[player-unified] Total files found:', data.debug.total_files_found);
+                        console.warn('[player-unified] Files checked:', data.debug.files_checked);
+                        console.warn('[player-unified] Files matched:', data.debug.files_matched);
+                        
+                        // 디버깅 정보를 상태 메시지에 표시
+                        if (data.debug.files_matched === 0 && data.debug.total_files_found > 0) {
+                            const channelMismatch = data.debug.files_checked
+                                .filter(f => f.file_channel_id !== data.debug.requested_channel_id)
+                                .map(f => `${f.filename} (channel: ${f.file_channel_id})`)
+                                .slice(0, 3);
+                            updateStatus(`대기 중... (채널 ID 불일치: 요청=${data.debug.requested_channel_id}, 파일=${channelMismatch.join(', ')})`, 'waiting');
+                        } else if (data.debug.total_files_found === 0) {
+                            updateStatus('대기 중... (저장된 오디오 파일 없음)', 'waiting');
+                        } else {
+                            updateStatus('대기 중... (재생할 오디오 없음)', 'waiting');
+                        }
+                    } else {
+                        updateStatus('대기 중... (재생할 오디오 없음)', 'waiting');
+                    }
                     updateAudioList([]);
                 }
                 
@@ -776,13 +819,38 @@
         function playAudio(audio) {
             const audioPlayer = document.getElementById('audioPlayer');
             
-            if (!audio || !audio.url || !audio.filename) {
-                console.error('Invalid audio data:', audio);
-                updateStatus('오디오 정보 오류', 'disconnected');
+            console.log('[player-unified] playAudio called with:', audio);
+            
+            if (!audio) {
+                console.error('[player-unified] Invalid audio data: audio is null or undefined');
+                updateStatus('오디오 정보 오류: 데이터가 없습니다', 'disconnected');
                 return;
             }
             
-            if (audioPlayer.src === audio.url && !audioPlayer.ended && !audioPlayer.paused) {
+            if (!audio.url) {
+                console.error('[player-unified] Invalid audio data: url is missing', audio);
+                updateStatus('오디오 정보 오류: URL이 없습니다', 'disconnected');
+                return;
+            }
+            
+            if (!audio.filename) {
+                console.error('[player-unified] Invalid audio data: filename is missing', audio);
+                updateStatus('오디오 정보 오류: 파일명이 없습니다', 'disconnected');
+                return;
+            }
+            
+            const resolvedUrl = appendChannelId(audio.url);
+            console.log('[player-unified] Resolved audio URL:', resolvedUrl);
+            console.log('[player-unified] Original audio URL:', audio.url);
+            
+            if (!resolvedUrl || resolvedUrl === '' || resolvedUrl === 'undefined' || resolvedUrl === 'null') {
+                console.error('[player-unified] Invalid resolved URL:', resolvedUrl);
+                updateStatus('오디오 정보 오류: 유효하지 않은 URL', 'disconnected');
+                return;
+            }
+            
+            if (audioPlayer.src === resolvedUrl && !audioPlayer.ended && !audioPlayer.paused) {
+                console.log('[player-unified] Audio already playing:', resolvedUrl);
                 return;
             }
             
@@ -790,8 +858,13 @@
             audioPlayer.onerror = null;
             audioPlayer.oncanplay = null;
             
-            audioPlayer.src = appendChannelId(audio.url);
+            console.log('[player-unified] Setting audio source to:', resolvedUrl);
+            audioPlayer.src = resolvedUrl;
             currentAudioId = audio.filename;
+            
+            // 소스 설정 후 확인
+            console.log('[player-unified] Audio player src after setting:', audioPlayer.src);
+            console.log('[player-unified] Audio player currentSrc:', audioPlayer.currentSrc);
             
             const scheduleName = audio.schedule_name || null;
             const displayName = audio.display_name || audio.schedule_name || audio.filename;
@@ -810,6 +883,32 @@
 
             audioPlayer.onerror = async (error) => {
                 console.error('Audio playback error:', error);
+                console.error('Audio player error details:', {
+                    error: audioPlayer.error,
+                    errorCode: audioPlayer.error?.code,
+                    errorMessage: audioPlayer.error?.message,
+                    src: audioPlayer.src,
+                    currentSrc: audioPlayer.currentSrc,
+                    networkState: audioPlayer.networkState,
+                    readyState: audioPlayer.readyState
+                });
+                
+                // 오디오 URL이 유효한지 확인
+                if (audio.url) {
+                    console.log('[player-unified] Testing audio URL:', audio.url);
+                    try {
+                        const testResponse = await fetch(audio.url, { method: 'HEAD' });
+                        console.log('[player-unified] Audio URL test response:', {
+                            status: testResponse.status,
+                            statusText: testResponse.statusText,
+                            contentType: testResponse.headers.get('content-type'),
+                            contentLength: testResponse.headers.get('content-length')
+                        });
+                    } catch (fetchError) {
+                        console.error('[player-unified] Failed to fetch audio URL:', fetchError);
+                    }
+                }
+                
                 let errorMessage = '재생 오류: 오디오 파일을 확인할 수 없습니다';
                 
                 if (audioPlayer.error) {

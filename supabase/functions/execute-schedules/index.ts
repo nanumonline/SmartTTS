@@ -114,7 +114,7 @@ serve(async (req) => {
       // 디버깅: 모든 상태의 스케줄 확인
       const { data: allSchedules } = await supabaseClient
         .from("tts_schedule_requests")
-        .select("id, scheduled_time, status, schedule_name, target_channel, customer_id, customer_name, category_code, memo, is_player_broadcast")
+        .select("id, scheduled_time, status, schedule_name, target_channel, customer_id, customer_name, category_code, memo, is_player_broadcast, target_devices")
         .order("scheduled_time", { ascending: false })
         .limit(10);
       
@@ -563,18 +563,7 @@ serve(async (req) => {
         try {
           // config에서 추가 헤더나 인증 정보 가져오기
           const config = (channel.config as Record<string, any>) || {};
-          const headers: Record<string, string> = {
-            "Content-Type": mimeType,
-            "Content-Length": String(audioData.byteLength),
-          };
-
-          // config에 인증 헤더가 있으면 추가
-          if (config.authHeader) {
-            headers["Authorization"] = config.authHeader;
-          }
-          if (config.apiKey) {
-            headers["X-API-Key"] = config.apiKey;
-          }
+          
           // 헤더 값 검증 및 인코딩 함수 (한글/특수 문자를 안전한 형식으로 변환)
           const sanitizeHeaderValue = (value: any): string => {
             if (value === null || value === undefined) {
@@ -607,62 +596,189 @@ serve(async (req) => {
             }
           };
 
-          // 스케줄 이름을 헤더로 전송 (파일명에 포함하기 위해)
-          if (schedule.schedule_name) {
-            headers["X-Schedule-Name"] = sanitizeHeaderValue(schedule.schedule_name);
-          }
-          // 스케줄 ID도 헤더로 전송 (추적용)
-          headers["X-Schedule-Id"] = sanitizeHeaderValue(schedule.id);
+          // 채널 코드 정규화
+          const normalizeChannelCode = (value: any, fallback: string): string => {
+            if (typeof value === "string" && value.trim().length > 0) {
+              return value.trim();
+            }
+            return fallback;
+          };
+          const sanitizedChannelCode = normalizeChannelCode(config.channelCode, channel.id);
+
+          // 디바이스 목록 정규화
+          const normalizeDeviceList = (config: any): Array<{ id: string; name: string; token: string }> => {
+            if (!Array.isArray(config?.devices)) return [];
+            return config.devices
+              .map((device: any) => ({
+                id: typeof device?.id === "string" ? device.id : "",
+                name: typeof device?.name === "string" ? device.name : "출력 장치",
+                token: typeof device?.token === "string" ? device.token : "",
+              }))
+              .filter((device: { id: string; name: string; token: string }) => device.id.length > 0 && device.token.length > 0);
+          };
+          const registeredDevices = normalizeDeviceList(config);
+
+          // 스케줄에서 송출 타입 확인
+          const isPlayerBroadcast = (schedule as any).is_player_broadcast === true;
+          const targetDeviceIds = Array.isArray((schedule as any).target_devices) ? (schedule as any).target_devices : [];
           
-          // 고객 정보 헤더 (플레이어 송출 시)
-          if ((schedule as any).customer_id) {
-            headers["X-Customer-Id"] = sanitizeHeaderValue((schedule as any).customer_id);
-          }
-          if ((schedule as any).customer_name) {
-            headers["X-Customer-Name"] = sanitizeHeaderValue((schedule as any).customer_name);
-          }
-          if ((schedule as any).category_code) {
-            headers["X-Category-Code"] = sanitizeHeaderValue((schedule as any).category_code);
-          }
-          if ((schedule as any).memo) {
-            headers["X-Memo"] = sanitizeHeaderValue((schedule as any).memo);
-          }
-          // config의 customHeaders 병합 (값도 검증)
-          if (config.customHeaders && typeof config.customHeaders === "object") {
-            for (const [key, value] of Object.entries(config.customHeaders)) {
-              headers[key] = sanitizeHeaderValue(value);
+          // 디바이스 송출인 경우 디바이스 목록 확인
+          let resolvedDevices: Array<{ id: string; name: string; token: string }> = [];
+          if (isPlayerBroadcast && targetDeviceIds.length > 0) {
+            resolvedDevices = registeredDevices.filter((device) => targetDeviceIds.includes(device.id));
+            const missingDevices = targetDeviceIds.filter(
+              (deviceId) => !resolvedDevices.some((device) => device.id === deviceId)
+            );
+            if (missingDevices.length > 0) {
+              console.warn(`[execute-schedules] Some devices not found: ${missingDevices.join(", ")}`);
             }
           }
 
-          console.log(`[execute-schedules] ────────────────────────────────────────`);
-          console.log(`[execute-schedules] Sending audio to endpoint: ${channel.endpoint}`);
-          console.log(`[execute-schedules] Audio size: ${audioData.byteLength} bytes`);
-          console.log(`[execute-schedules] MIME type: ${mimeType}`);
-          console.log(`[execute-schedules] Headers:`, JSON.stringify(headers, null, 2));
-          console.log(`[execute-schedules] ────────────────────────────────────────`);
+          // 엔드포인트 구분: public 송출 vs 디바이스ID/채널ID 송출
+          // 주의: API 엔드포인트는 동일하며, 헤더로 구분합니다
+          const getBroadcastEndpoint = (device?: { id: string; name: string; token: string }): string => {
+            const baseEndpoint = channel.endpoint || "";
+            
+            // 모든 송출 타입에서 기본 엔드포인트 사용
+            // 디바이스ID/채널ID 송출은 헤더(X-Device-Id, X-Channel-Code 등)로 구분
+            return baseEndpoint;
+          };
 
-          // ArrayBuffer를 직접 전송 (바이너리 데이터)
-          // fetch API는 ArrayBuffer를 자동으로 바이너리로 전송합니다
-          const fetchStartTime = Date.now();
-          const response = await fetch(channel.endpoint, {
-            method: "POST",
-            headers,
-            body: audioData, // ArrayBuffer를 직접 전송 (바이너리)
-          });
-          const fetchDuration = Date.now() - fetchStartTime;
+          // 기본 헤더 생성 함수
+          const createBaseHeaders = (): Record<string, string> => {
+            const headers: Record<string, string> = {
+              "Content-Type": mimeType,
+              "Content-Length": String(audioData.byteLength),
+            };
+            
+            if (schedule.schedule_name) {
+              headers["X-Schedule-Name"] = sanitizeHeaderValue(schedule.schedule_name);
+            }
+            headers["X-Schedule-Id"] = sanitizeHeaderValue(schedule.id);
+            
+            if (config.authHeader) {
+              headers["Authorization"] = sanitizeHeaderValue(config.authHeader);
+            }
+            if (config.apiKey) {
+              headers["X-API-Key"] = sanitizeHeaderValue(config.apiKey);
+            }
+            if (config.customHeaders && typeof config.customHeaders === "object") {
+              for (const [key, value] of Object.entries(config.customHeaders)) {
+                headers[key] = sanitizeHeaderValue(value);
+              }
+            }
+            
+            return headers;
+          };
 
-          console.log(`[execute-schedules] Response received in ${fetchDuration}ms`);
-          console.log(`[execute-schedules] Response status: ${response.status} ${response.statusText}`);
+          // 디바이스별 또는 Public 송출 함수
+          const sendToDevice = async (device?: { id: string; name: string; token: string }) => {
+            const headers = createBaseHeaders();
+            const broadcastType = device ? "디바이스ID/채널ID 송출" : "Public 송출";
+            
+            if (device) {
+              // 디바이스ID/채널ID 송출 헤더
+              headers["X-Customer-Id"] = sanitizeHeaderValue(sanitizedChannelCode);
+              headers["X-Channel-Code"] = sanitizeHeaderValue(sanitizedChannelCode);
+              headers["X-Device-Id"] = sanitizeHeaderValue(device.id);
+              headers["X-Device-Name"] = sanitizeHeaderValue(device.name);
+              headers["X-Device-Token"] = sanitizeHeaderValue(device.token);
+              headers["X-Broadcast-Type"] = "device-channel";
+            } else {
+              // Public 송출 헤더
+              // Public 송출 모드에서도 채널 코드를 포함하여 플레이어가 올바른 파일을 찾을 수 있도록 함
+              headers["X-Channel-Code"] = sanitizeHeaderValue(sanitizedChannelCode);
+              headers["X-Broadcast-Type"] = "public";
+              // 고객 정보 헤더 (Public 송출 시)
+              if ((schedule as any).customer_id) {
+                headers["X-Customer-Id"] = sanitizeHeaderValue((schedule as any).customer_id);
+              }
+              if ((schedule as any).customer_name) {
+                headers["X-Customer-Name"] = sanitizeHeaderValue((schedule as any).customer_name);
+              }
+              if ((schedule as any).category_code) {
+                headers["X-Category-Code"] = sanitizeHeaderValue((schedule as any).category_code);
+              }
+              if ((schedule as any).memo) {
+                headers["X-Customer-Memo"] = sanitizeHeaderValue((schedule as any).memo);
+              }
+            }
 
-          if (!response.ok) {
-            const errorText = await response.text().catch(() => response.statusText);
-            console.error(`[execute-schedules] HTTP Error Response:`, errorText);
-            throw new Error(`HTTP ${response.status}: ${errorText || response.statusText}`);
+            const targetEndpoint = getBroadcastEndpoint(device);
+            
+            console.log(`[execute-schedules] ────────────────────────────────────────`);
+            console.log(`[execute-schedules] [${broadcastType}] Sending audio to endpoint: ${targetEndpoint}`);
+            console.log(`[execute-schedules] [${broadcastType}] Audio size: ${audioData.byteLength} bytes`);
+            console.log(`[execute-schedules] [${broadcastType}] MIME type: ${mimeType}`);
+            if (device) {
+              console.log(`[execute-schedules] [${broadcastType}] Device: ${device.name} (ID: ${device.id}, Channel: ${sanitizedChannelCode})`);
+            }
+            console.log(`[execute-schedules] [${broadcastType}] Headers:`, JSON.stringify(headers, null, 2));
+            console.log(`[execute-schedules] ────────────────────────────────────────`);
+
+            const fetchStartTime = Date.now();
+            const response = await fetch(targetEndpoint, {
+              method: "POST",
+              headers,
+              body: audioData,
+            });
+            const fetchDuration = Date.now() - fetchStartTime;
+
+            console.log(`[execute-schedules] [${broadcastType}] Response received in ${fetchDuration}ms`);
+            console.log(`[execute-schedules] [${broadcastType}] Response status: ${response.status} ${response.statusText}`);
+
+            if (!response.ok) {
+              const errorText = await response.text().catch(() => response.statusText);
+              console.error(`[execute-schedules] [${broadcastType}] HTTP Error Response:`, {
+                status: response.status,
+                statusText: response.statusText,
+                errorText: errorText
+              });
+              throw new Error(`HTTP ${response.status}: ${errorText || response.statusText}`);
+            }
+
+            // 응답 본문 확인 (저장된 파일 정보 등)
+            let responseData: any = null;
+            try {
+              const responseText = await response.text();
+              if (responseText) {
+                try {
+                  responseData = JSON.parse(responseText);
+                } catch (e) {
+                  // JSON이 아닌 경우 텍스트로 처리
+                  responseData = { raw: responseText };
+                }
+              }
+            } catch (e) {
+              console.warn(`[execute-schedules] [${broadcastType}] Failed to read response body:`, e);
+            }
+
+            console.log(`[execute-schedules] [${broadcastType}] ✅ Successfully sent to ${targetEndpoint}`);
+            if (device) {
+              console.log(`[execute-schedules] [${broadcastType}] Device: ${device.name}`);
+            }
+            
+            if (responseData) {
+              console.log(`[execute-schedules] [${broadcastType}] API Response:`, JSON.stringify(responseData, null, 2));
+              if (responseData.saved_file) {
+                console.log(`[execute-schedules] [${broadcastType}] Audio file saved: ${responseData.saved_file}`);
+              }
+              if (responseData.channel_id) {
+                console.log(`[execute-schedules] [${broadcastType}] Channel ID: ${responseData.channel_id}`);
+              }
+            }
+          };
+
+          // 송출 실행
+          if (resolvedDevices.length > 0) {
+            // 디바이스 송출: 각 디바이스별로 전송
+            for (const device of resolvedDevices) {
+              await sendToDevice(device);
+            }
+          } else {
+            // Public 송출
+            await sendToDevice();
           }
-
-          const responseText = await response.text().catch(() => "");
-          console.log(`[execute-schedules] ✅ Successfully sent to ${channel.endpoint}`);
-          console.log(`[execute-schedules] Response body (first 200 chars): ${responseText.substring(0, 200)}`);
         } catch (sendError) {
           console.error(`[execute-schedules] ❌ Failed to send to channel ${channel.endpoint}`);
           console.error(`[execute-schedules] Error type: ${sendError instanceof Error ? sendError.constructor.name : typeof sendError}`);

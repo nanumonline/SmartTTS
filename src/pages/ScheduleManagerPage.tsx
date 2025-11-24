@@ -56,6 +56,15 @@ export default function ScheduleManagerPage() {
   
   // 즉시 송출 모드 확인 (URL 경로가 /send/broadcast인 경우)
   const isBroadcastMode = location.pathname === "/send/broadcast";
+  
+  // 디버깅: 페이지 로드 확인
+  useEffect(() => {
+    console.log("[ScheduleManagerPage] 페이지 로드됨:", {
+      pathname: location.pathname,
+      isBroadcastMode,
+      userId: user?.id
+    });
+  }, [location.pathname, isBroadcastMode, user?.id]);
   const [schedules, setSchedules] = useState<dbService.ScheduleRequestEntry[]>([]);
   const [generations, setGenerations] = useState<dbService.GenerationEntry[]>([]);
   const [channels, setChannels] = useState<any[]>([]);
@@ -399,6 +408,38 @@ export default function ScheduleManagerPage() {
       // 중복된 시간 정보를 저장 (사용자에게 표시용)
       const conflictTimes: Array<{ date: string; time: string }> = [];
       
+      // 채널 설정 확인하여 송출 타입 정보 가져오기
+      const selectedChannel = channels.find(
+        (ch) => ch.id === newSchedule.targetChannel || ch.type === newSchedule.targetChannel
+      );
+      const channelConfig = (selectedChannel as any)?.config || {};
+      const channelBroadcastType = channelConfig.broadcastType || "public";
+      
+      // 송출 타입에 따른 정보 설정
+      let isPlayerBroadcast = false;
+      let targetDevices: string[] | undefined = undefined;
+      let customerInfo: dbService.CustomerInfo | undefined = undefined;
+      
+      if (channelBroadcastType === "device-channel") {
+        // 디바이스ID/채널ID 송출 모드
+        isPlayerBroadcast = true;
+        const registeredDevices = Array.isArray(channelConfig.devices) ? channelConfig.devices : [];
+        // 등록된 모든 디바이스 ID 추출
+        targetDevices = registeredDevices
+          .filter((device: any) => device?.id && device?.token)
+          .map((device: any) => device.id);
+      } else {
+        // Public 송출 모드
+        isPlayerBroadcast = false;
+        // 사용자 정보로 기본 고객 정보 설정
+        customerInfo = {
+          customerId: user?.email?.split("@")[0] || user?.id?.substring(0, 8) || "",
+          customerName: user?.name || user?.email?.split("@")[0] || "",
+          categoryCode: user?.department || user?.organization || "",
+          memo: "",
+        };
+      }
+      
       // 반복 옵션에 따라 스케줄 생성
       if (newSchedule.repeatOption === "once" && newSchedule.scheduleType === "routine") {
         // 일상방송에서 1회만: 시작일만 저장
@@ -425,6 +466,9 @@ export default function ScheduleManagerPage() {
             status: "scheduled",
             scheduleName: newSchedule.scheduleName,
             scheduleType: newSchedule.scheduleType,
+            isPlayerBroadcast,
+            targetDevices,
+            customerInfo,
           } as any);
         }
       } else {
@@ -478,6 +522,9 @@ export default function ScheduleManagerPage() {
               status: "scheduled",
               scheduleName: newSchedule.scheduleName,
               scheduleType: newSchedule.scheduleType,
+              isPlayerBroadcast,
+              targetDevices,
+              customerInfo,
             } as any);
           } else {
             // 여러 번 전송: 하루를 균등하게 분할
@@ -506,6 +553,9 @@ export default function ScheduleManagerPage() {
                 status: "scheduled",
                 scheduleName: newSchedule.scheduleName,
                 scheduleType: newSchedule.scheduleType,
+                isPlayerBroadcast,
+                targetDevices,
+                customerInfo,
               } as any);
             }
           }
@@ -889,12 +939,23 @@ export default function ScheduleManagerPage() {
     }
   };
 
+  // 페이지가 제대로 렌더링되는지 확인
+  if (!user?.id) {
+    return (
+      <PageContainer maxWidth="wide">
+        <div className="flex items-center justify-center h-64">
+          <p className="text-muted-foreground">로그인이 필요합니다.</p>
+        </div>
+      </PageContainer>
+    );
+  }
+
   return (
     <PageContainer maxWidth="wide">
       <PageHeader
-        title="스케줄 관리"
-        description="방송 일정을 관리하고 자동화합니다"
-        icon={CalendarIcon}
+        title={isBroadcastMode ? "즉시 송출" : "스케줄 관리"}
+        description={isBroadcastMode ? "생성된 음원을 즉시 송출합니다" : "방송 일정을 관리하고 자동화합니다"}
+        icon={isBroadcastMode ? Radio : CalendarIcon}
         action={
           <div className="flex items-center gap-2">
             <Button

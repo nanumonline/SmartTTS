@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Download, Trash2, Play, Filter, Music2, Calendar, FileSearch, AlertCircle, Loader2, Star, Waves } from "lucide-react";
+import { Search, Download, Trash2, Play, Filter, Music2, Calendar, FileSearch, AlertCircle, Loader2, Star, Waves, CheckSquare, Square } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/components/ui/use-toast";
 import { useNavigate } from "react-router-dom";
@@ -18,6 +18,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Pagination, PaginationContent, PaginationItem } from "@/components/ui/pagination";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Checkbox } from "@/components/ui/checkbox";
 
 import { getPurposeColor } from "@/lib/categoryColors";
 import { getVoiceDisplayNameKo } from "@/lib/voiceNames";
@@ -73,6 +74,8 @@ export default function AudioHistoryPage() {
   const [loadingPreviewIds, setLoadingPreviewIds] = useState<Set<string>>(new Set());
   const [favoriteOnly, setFavoriteOnly] = useState(false);
   const [favoriteLoadingIds, setFavoriteLoadingIds] = useState<Set<string>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const preloadHistoryRef = useRef<Set<string>>(new Set());
 
@@ -238,9 +241,10 @@ export default function AudioHistoryPage() {
   const endIndex = startIndex + itemsPerPage;
   const paginatedGenerations = filteredGenerations.slice(startIndex, endIndex);
 
-  // 검색어 또는 필터 변경 시 첫 페이지로 리셋
+  // 검색어 또는 필터 변경 시 첫 페이지로 리셋 및 선택 초기화
   useEffect(() => {
     setCurrentPage(1);
+    setSelectedIds(new Set());
   }, [searchQuery, filterPurpose, filterStatus, favoriteOnly]);
 
   const handleDelete = async (id: string) => {
@@ -309,6 +313,11 @@ export default function AudioHistoryPage() {
       await dbService.deleteGeneration(user.id, deleteDialog.id);
       await loadGenerations();
       setDeleteDialog({ open: false, id: null });
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        next.delete(deleteDialog.id!);
+        return next;
+      });
       toast({
         title: "삭제 완료",
         description: "음원이 삭제되었습니다.",
@@ -321,6 +330,59 @@ export default function AudioHistoryPage() {
         variant: "destructive",
       });
     }
+  };
+
+  // 선택 삭제
+  const handleBulkDelete = async () => {
+    if (!user?.id || selectedIds.size === 0) return;
+    
+    const idsArray = Array.from(selectedIds);
+    setIsDeleting(true);
+    
+    try {
+      // 모든 선택된 항목 삭제
+      const deletePromises = idsArray.map(id => dbService.deleteGeneration(user.id, id));
+      await Promise.all(deletePromises);
+      
+      await loadGenerations();
+      setSelectedIds(new Set());
+      toast({
+        title: "삭제 완료",
+        description: `${idsArray.length}개의 음원이 삭제되었습니다.`,
+      });
+    } catch (error) {
+      console.error("일괄 삭제 실패:", error);
+      toast({
+        title: "삭제 실패",
+        description: "일부 음원 삭제에 실패했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // 전체 선택/해제
+  const toggleSelectAll = () => {
+    if (selectedIds.size === paginatedGenerations.length) {
+      setSelectedIds(new Set());
+    } else {
+      const allIds = new Set(paginatedGenerations.map(gen => String(gen.id)).filter(Boolean));
+      setSelectedIds(allIds);
+    }
+  };
+
+  // 개별 선택/해제
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
   };
 
   const purposes = Array.from(new Set(generations.map((g) => g.purpose)));
@@ -338,10 +400,12 @@ export default function AudioHistoryPage() {
         }
       }
 
-      if (!forceReload && gen.audioUrl && (gen.audioUrl.startsWith("data:") || gen.audioUrl.startsWith("blob:"))) {
+      // data URL은 안정적이므로 재사용, blob URL은 만료될 수 있으므로 무시하고 DB에서 다시 로드
+      if (!forceReload && gen.audioUrl && gen.audioUrl.startsWith("data:")) {
         setPreviewUrls((prev) => ({ ...prev, [idStr]: gen.audioUrl! }));
         return gen.audioUrl;
       }
+      // blob URL은 만료될 수 있으므로 무시하고 DB에서 다시 로드
 
       let blob: Blob | null = null;
       let mimeType = gen.mimeType || "audio/mpeg";
@@ -351,7 +415,55 @@ export default function AudioHistoryPage() {
           const result = await dbService.loadGenerationBlob(user.id, idStr);
           if (result?.audioBlob) {
             mimeType = result.mimeType || mimeType;
-            blob = dbService.arrayBufferToBlob(result.audioBlob, mimeType);
+            
+            // ArrayBuffer에서 직접 바이트 확인하여 추가 검증
+            const bytes = new Uint8Array(result.audioBlob);
+            
+            // 첫 바이트가 '{' (123)인 경우 JSON 객체일 수 있음 (loadGenerationBlob에서 처리되지 않은 경우)
+            if (bytes.length > 0 && bytes[0] === 123 /* '{' */) {
+              try {
+                const text = new TextDecoder().decode(result.audioBlob);
+                const parsed = JSON.parse(text);
+                
+                // JSON 객체에서 오디오 데이터 추출
+                if (parsed && typeof parsed === 'object') {
+                  let base64Data: string | null = null;
+                  if (parsed.audioData) {
+                    base64Data = parsed.audioData;
+                  } else if (parsed.audio_data) {
+                    base64Data = parsed.audio_data;
+                  } else if (parsed.audioBase64) {
+                    base64Data = parsed.audioBase64;
+                  } else if (parsed.data) {
+                    base64Data = parsed.data;
+                  }
+                  
+                  if (base64Data) {
+                    // base64 데이터에서 data URL prefix 제거 (있는 경우)
+                    if (base64Data.includes(',')) {
+                      base64Data = base64Data.split(',').pop() || base64Data;
+                    }
+                    
+                    // base64 디코딩
+                    const binaryString = atob(base64Data);
+                    const decodedBytes = new Uint8Array(binaryString.length);
+                    for (let i = 0; i < binaryString.length; i++) {
+                      decodedBytes[i] = binaryString.charCodeAt(i);
+                    }
+                    
+                    // 디코딩된 데이터로 blob 재생성
+                    blob = dbService.arrayBufferToBlob(decodedBytes.buffer, mimeType);
+                    console.log(`[AudioHistoryPage] JSON 객체에서 오디오 데이터 추출 완료: ${decodedBytes.length} bytes`);
+                  }
+                }
+              } catch (error) {
+                console.warn("[AudioHistoryPage] JSON 객체 파싱 실패, 원본 데이터 사용:", error);
+                blob = dbService.arrayBufferToBlob(result.audioBlob, mimeType);
+              }
+            } else {
+              // 정상적인 바이너리 데이터인 경우
+              blob = dbService.arrayBufferToBlob(result.audioBlob, mimeType);
+            }
           }
         } catch (error) {
           console.error("생성내역 음원 로드 실패:", error);
@@ -374,9 +486,35 @@ export default function AudioHistoryPage() {
         return null;
       }
 
-      const newUrl = URL.createObjectURL(blob);
+      // blob URL 대신 data URL 사용 (더 안정적이고 브라우저 호환성 좋음)
+      // blob URL은 만료될 수 있고 DEMUXER_ERROR가 발생할 수 있음
+      let newUrl: string;
+      try {
+        newUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            if (reader.result && typeof reader.result === 'string') {
+              console.log(`[AudioHistoryPage] Data URL 생성 완료: ${idStr}`);
+              resolve(reader.result);
+            } else {
+              reject(new Error("FileReader 결과가 문자열이 아님"));
+            }
+          };
+          reader.onerror = (e) => {
+            console.error("[AudioHistoryPage] FileReader 에러:", e);
+            reject(new Error("FileReader 에러"));
+          };
+          reader.readAsDataURL(blob);
+        });
+      } catch (error) {
+        console.warn("[AudioHistoryPage] Data URL 변환 실패, blob URL 사용:", error);
+        // data URL 변환 실패 시 blob URL 사용 (fallback)
+        newUrl = URL.createObjectURL(blob);
+      }
+
       setPreviewUrls((prev) => {
         const prevUrl = prev[idStr];
+        // 이전 URL이 blob URL이면 정리
         if (prevUrl && prevUrl !== newUrl && prevUrl.startsWith("blob:")) {
           try {
             URL.revokeObjectURL(prevUrl);
@@ -564,6 +702,24 @@ export default function AudioHistoryPage() {
     }
   }, [ensureGenerationAudio, loadingPreviewIds, markPreviewLoading, selectedGeneration, toast]);
 
+  // selectedGeneration이 변경될 때 previewUrl이 없으면 ensureGenerationAudio 호출
+  useEffect(() => {
+    if (!selectedGeneration || !user?.id) return;
+    
+    const gen = generations.find((g) => g.id === selectedGeneration);
+    if (!gen) return;
+    
+    const genIdStr = String(gen.id);
+    const previewUrl = previewUrls[genIdStr];
+    
+    // previewUrl이 없거나 blob URL인 경우 ensureGenerationAudio 호출
+    if (!previewUrl || previewUrl.startsWith("blob:")) {
+      ensureGenerationAudio(gen).catch((error) => {
+        console.error("선택된 음원 로드 실패:", error);
+      });
+    }
+  }, [selectedGeneration, generations, previewUrls, ensureGenerationAudio, user?.id]);
+
   useEffect(() => {
     if (!user?.id || generations.length === 0) return;
 
@@ -691,6 +847,33 @@ export default function AudioHistoryPage() {
           </div>
         </div>
 
+        {/* 선택 삭제 버튼 */}
+        {selectedIds.size > 0 && (
+          <div className="flex items-center justify-between p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
+            <span className="text-sm font-medium">
+              {selectedIds.size}개 항목 선택됨
+            </span>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleBulkDelete}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  삭제 중...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  선택 항목 삭제
+                </>
+              )}
+            </Button>
+          </div>
+        )}
+
       {/* 생성 내역 목록 */}
         {filteredGenerations.length === 0 ? (
           <Card>
@@ -703,17 +886,42 @@ export default function AudioHistoryPage() {
         <>
           <Card>
             <CardContent className="p-0">
+              {/* 전체 선택 헤더 */}
+              <div className="flex items-center gap-3 p-4 border-b">
+                <Checkbox
+                  checked={paginatedGenerations.length > 0 && selectedIds.size === paginatedGenerations.length}
+                  onCheckedChange={toggleSelectAll}
+                  className="data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                />
+                <span className="text-sm font-medium">
+                  전체 선택 ({selectedIds.size}/{paginatedGenerations.length})
+                </span>
+              </div>
               <div className="space-y-2 p-4" role="list" aria-label="생성 내역 목록">
-                {paginatedGenerations.map((gen) => (
-                <div
-                  key={gen.id}
-                  role="listitem"
-                  tabIndex={0}
-                  className="rounded-lg border bg-card p-3 hover:bg-muted/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                >
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-                    {/* 왼쪽 정보 */}
-                    <div className="flex-1 min-w-0">
+                {paginatedGenerations.map((gen) => {
+                  const genId = String(gen.id);
+                  const isSelected = selectedIds.has(genId);
+                  return (
+                  <div
+                    key={gen.id}
+                    role="listitem"
+                    tabIndex={0}
+                    className={cn(
+                      "rounded-lg border bg-card p-3 hover:bg-muted/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                      isSelected && "border-primary bg-primary/5"
+                    )}
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                      {/* 체크박스 */}
+                      <div className="flex items-center">
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => toggleSelect(genId)}
+                          className="data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                        />
+                      </div>
+                      {/* 왼쪽 정보 */}
+                      <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-2 mb-1 text-sm text-muted-foreground">
                         {/* 카테고리 배지 */}
                         <Badge variant="outline" className={cn("font-medium", getPurposeColor(gen.purpose))}>
@@ -877,16 +1085,19 @@ export default function AudioHistoryPage() {
                     <div className="pt-3">
                       {(() => {
                         const genIdStr = String(gen.id);
-                        const previewUrl = previewUrls[genIdStr] ?? gen.audioUrl ?? "";
+                        // blob URL은 만료될 수 있으므로 사용하지 않음, data URL만 사용
+                        const fallbackUrl = gen.audioUrl && !gen.audioUrl.startsWith("blob:") ? gen.audioUrl : "";
+                        const previewUrl = previewUrls[genIdStr] ?? fallbackUrl;
                         const cacheKey = gen.cacheKey || genIdStr;
+                        
                         return (
-                  <AudioPlayer
-                            audioUrl={previewUrl}
-                    title={gen.savedName || "생성된 음원"}
-                    duration={gen.duration || 0}
-                    mimeType={gen.mimeType || "audio/mpeg"}
+                          <AudioPlayer
+                            audioUrl={previewUrl || ""}
+                            title={gen.savedName || "생성된 음원"}
+                            duration={gen.duration || 0}
+                            mimeType={gen.mimeType || "audio/mpeg"}
                             cacheKey={cacheKey}
-                    onError={async () => {
+                            onError={async () => {
                               const newUrl = await ensureGenerationAudio(gen, { forceReload: true });
                               if (!newUrl) {
                                 toast({
@@ -894,15 +1105,16 @@ export default function AudioHistoryPage() {
                                   description: "음원 데이터를 불러올 수 없습니다. 다시 생성해주세요.",
                                   variant: "destructive",
                                 });
-                      }
-                    }}
-                  />
+                              }
+                            }}
+                          />
                         );
                       })()}
                     </div>
                   )}
                 </div>
-              ))}
+                  );
+                })}
               </div>
                 </CardContent>
           </Card>
