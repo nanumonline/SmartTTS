@@ -741,7 +741,7 @@ export default function EmergencyBroadcastPage() {
                                     variant="outline" 
                                     className={cn("text-xs mb-2", getPurposeColor(msg.purpose || ""))}
                                   >
-                                    {msg.purposeLabel || "문구"}
+                                    {msg.purpose || "문구"}
                                   </Badge>
                                   <p className="text-sm line-clamp-2">{msg.text}</p>
                                 </div>
