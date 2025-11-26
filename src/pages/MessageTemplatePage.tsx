@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,9 +39,14 @@ export default function MessageTemplatePage() {
     purpose: "announcement",
     category: "greeting",
   });
+  // 초기 템플릿 생성 시도 여부를 추적 (중복 생성 방지)
+  const initialTemplatesCreatedRef = useRef<boolean>(false);
+  const isCreatingInitialTemplatesRef = useRef<boolean>(false);
 
   useEffect(() => {
     if (user?.id) {
+      // 사용자가 변경되면 초기 템플릿 생성 플래그 리셋
+      initialTemplatesCreatedRef.current = false;
       loadTemplates();
       setCurrentPage(1); // 카테고리 변경 시 첫 페이지로 리셋
     }
@@ -54,10 +59,20 @@ export default function MessageTemplatePage() {
       const data = await dbService.loadTemplates(user.id, category);
       setTemplates(data);
       
-      // 템플릿이 없으면 초기 템플릿 생성
-      if (data.length === 0 && selectedCategory === "all") {
-        await createInitialTemplates();
-        await loadTemplates(); // 재로드
+      // 템플릿이 없고, 아직 초기 템플릿 생성 시도를 하지 않았으며, 전체 카테고리일 때만 생성
+      if (data.length === 0 && selectedCategory === "all" && !initialTemplatesCreatedRef.current && !isCreatingInitialTemplatesRef.current) {
+        isCreatingInitialTemplatesRef.current = true;
+        try {
+          await createInitialTemplates();
+          initialTemplatesCreatedRef.current = true;
+          await loadTemplates(); // 재로드
+        } catch (error) {
+          console.error("초기 템플릿 생성 실패:", error);
+          // 생성 실패해도 다시 시도하지 않도록 플래그 설정
+          initialTemplatesCreatedRef.current = true;
+        } finally {
+          isCreatingInitialTemplatesRef.current = false;
+        }
       }
     } catch (error) {
       console.error("템플릿 로드 실패:", error);
