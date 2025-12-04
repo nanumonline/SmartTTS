@@ -1,19 +1,17 @@
 {
-  "buildCommand": "bash scripts/pre-build.sh && npm run clean:php && npm run build",
+  "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "ignoreCommand": "git diff --quiet HEAD^ HEAD ./",
   "functions": {
-    "api/broadcast/index.js": {
-      "runtime": "nodejs18.x",
-      "includeFiles": "api/broadcast/index.js"
+    "api/broadcast-node/index.js": {
+      "runtime": "nodejs18.x"
     }
   },
   "rewrites": [
     {
       "source": "/api/broadcast",
-      "destination": "/api/broadcast/index.js"
+      "destination": "/api/broadcast-node/index.js"
     }
-  ],
-  "cleanUrls": true
+  ]
 }
 
