@@ -44,7 +44,23 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   // Supabase 인증 상태 관리
   useEffect(() => {
     // 초기 세션 확인
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      // Refresh token 오류 처리
+      if (error && (error.message?.includes('Invalid Refresh Token') || error.message?.includes('Refresh Token Not Found'))) {
+        console.warn("[Auth] 유효하지 않은 refresh token 감지, 세션 클리어:", error.message);
+        // 유효하지 않은 토큰으로 인한 오류 - 세션 클리어
+        supabase.auth.signOut().catch(() => {});
+        // localStorage에서 Supabase 관련 키 클리어
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('sb-') || key.includes('supabase')) {
+            localStorage.removeItem(key);
+          }
+        });
+        setUser(null);
+        setIsLoading(false);
+        return;
+      }
+
       if (session?.user) {
         // 즉시 기본 사용자 정보 설정 (프로필 로드 기다리지 않음)
         const defaultUser: User = {
@@ -70,6 +86,16 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         setIsLoading(false);
       }
     }).catch((error) => {
+      // Refresh token 오류 처리
+      if (error?.message?.includes('Invalid Refresh Token') || error?.message?.includes('Refresh Token Not Found')) {
+        console.warn("[Auth] 유효하지 않은 refresh token 감지, 세션 클리어:", error.message);
+        supabase.auth.signOut().catch(() => {});
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('sb-') || key.includes('supabase')) {
+            localStorage.removeItem(key);
+          }
+        });
+      }
       console.error("Session check failed:", error);
       setUser(null);
       setIsLoading(false);
@@ -77,7 +103,23 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
     // 인증 상태 변경 리스너 (CRITICAL: async 사용 금지 - 데드락 방지)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
+      async (event, session) => {
+        // Refresh token 오류 처리
+        if (event === 'TOKEN_REFRESHED' && !session) {
+          console.warn("[Auth] 토큰 갱신 실패 - 세션 클리어");
+          // 토큰 갱신 실패 시 세션 클리어
+          await supabase.auth.signOut().catch(() => {});
+          Object.keys(localStorage).forEach(key => {
+            if (key.startsWith('sb-') || key.includes('supabase')) {
+              localStorage.removeItem(key);
+            }
+          });
+          setUser(null);
+          setIsLoading(false);
+          localStorage.removeItem("user");
+          return;
+        }
+
         if (event === 'SIGNED_IN' && session?.user) {
           // login 함수에서 이미 처리했으므로 중복 방지
           if (!isLoggingInRef.current) {
@@ -108,9 +150,17 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           setIsLoading(false);
           isLoggingInRef.current = false;
           localStorage.removeItem("user");
+          // Supabase 관련 키도 클리어
+          Object.keys(localStorage).forEach(key => {
+            if (key.startsWith('sb-') || key.includes('supabase')) {
+              localStorage.removeItem(key);
+            }
+          });
         } else if (event === 'TOKEN_REFRESHED') {
           // 토큰 갱신 성공
-          console.log("[Auth] 토큰이 성공적으로 갱신되었습니다.");
+          if (session?.user) {
+            console.log("[Auth] 토큰이 성공적으로 갱신되었습니다.");
+          }
         } else if (event === 'USER_UPDATED') {
           // 사용자 정보 업데이트
           if (session?.user) {
@@ -311,6 +361,12 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     await supabase.auth.signOut();
     setUser(null);
     localStorage.removeItem("user");
+    // Supabase 관련 키도 클리어
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith('sb-') || key.includes('supabase')) {
+        localStorage.removeItem(key);
+      }
+    });
   };
 
   const value: AuthContextType = {
