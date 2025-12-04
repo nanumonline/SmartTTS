@@ -25,3 +25,6 @@ dist-ssr
 
 # Editor history files
 .history/
+
+# Bun lock file (using npm)
+bun.lockb
