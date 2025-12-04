@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run clean:php && npm run build",
+  "buildCommand": "bash scripts/pre-build.sh && npm run clean:php && npm run build",
   "outputDirectory": "dist",
   "ignoreCommand": "git diff --quiet HEAD^ HEAD ./",
   "functions": {
