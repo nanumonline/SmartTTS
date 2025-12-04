@@ -2,6 +2,11 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "ignoreCommand": "git diff --quiet HEAD^ HEAD ./",
+  "ignore": [
+    "api/**/*.php",
+    "api/broadcast/index.php",
+    "api/broadcasting/**/*.php"
+  ],
   "functions": {
     "api/broadcast/index.js": {
       "runtime": "nodejs18.x"
