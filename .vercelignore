@@ -1,0 +1,15 @@
+# Vercel 배포 시 무시할 파일/폴더
+# PHP 파일들은 Vercel 서버리스 함수로 작동하지 않으므로 제외
+
+# PHP 파일들 제외
+api/broadcast/*.php
+api/broadcasting/*.php
+
+# 문서 파일들 제외
+**/*.md
+!README.md
+
+# 빌드 결과물 제외
+dist/
+node_modules/
+
