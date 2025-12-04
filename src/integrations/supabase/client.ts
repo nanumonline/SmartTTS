@@ -39,7 +39,7 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
   },
   global: {
     headers: {
-      'X-Client-Info': 'voicecraft-designer',
+      'X-Client-Info': 'SmartTTS',
     },
     fetch: supabaseFetch,
   },
