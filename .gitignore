@@ -28,3 +28,6 @@ dist-ssr
 
 # Bun lock file (using npm)
 bun.lockb
+
+# PHP files in api folder (for Vercel - use server/php for hosting)
+api/**/*.php
